@@ -10473,6 +10473,24 @@ const Emitter = struct {
         try beamEmitter.writeTest(w, .is_ne_exact, plain_tuple, &.{ Op.xr(0), Op.atom("true") });
         try beamEmitter.writeTest(w, .is_ne_exact, plain_tuple, &.{ Op.xr(0), Op.atom("false") });
         try beamEmitter.writeTest(w, .is_ne_exact, plain_tuple, &.{ Op.xr(0), Op.atom("undefined") });
+        // Front 229 / decision 1104 piece 2 — a generator (`@Iter<T>` /
+        // `@AsyncIter<T>`) is this target's own `{'__bp_gen', Pid}` handle
+        // (`gen_runtime.zig`'s process protocol, decision 105, 144 B-128):
+        // caught here, before the generic tagged-value dispatch below sees
+        // its atom tag and falls through to `~p`'s raw
+        // `{'__bp_gen',<0.123.0>}`. The panic text is wasm's, word for word
+        // (`wat.zig`'s `gcTaggedPrinter`, front 229 s2's third box,
+        // a64af21ff) — one text, so no target answers differently. A
+        // `@Async<T>` has no runtime handle to catch here: this target
+        // lowers it eagerly to its settled `T` (`erlang.zig`'s `fnForms`
+        // comment, shared by this backend), so a task reaching an unknown
+        // slot is already its plain value by the time it would print —
+        // nothing to intercept.
+        const not_gen = self.allocLabel();
+        try beamEmitter.writeTest(w, .is_eq_exact, not_gen, &.{ Op.xr(0), Op.atom("__bp_gen") });
+        try beamEmitter.writeMove(w, Term.tupleOf(&[_]Term{ Term.atomOf("panic"), Term.str("wasm cannot print a generator value dynamically yet") }), 0);
+        try beamEmitter.writeCall(w, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "error" } }, 0);
+        try beamEmitter.writeLabel(w, not_gen);
         // A `@Result` (`{ok, P}` / `{error, P}`) prints the way the source
         // writes it: `Ok(` / `Error(`, the payload shown nested, `)` (144 B-53).
         // `y1` (Top) is free from here on and holds the opening text.

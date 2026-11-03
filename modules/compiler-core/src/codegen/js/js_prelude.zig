@@ -1156,6 +1156,27 @@ const fn_branch: ast.Stmt = .{ .if_ = .{
     } } },
 } };
 
+/// Front 229 / decision 1104 piece 2 — a Task is a Promise on this target
+/// (`js_prelude.zig`'s `task` helper, decision 432): `v instanceof Promise`
+/// catches it before it ever reaches `%O`'s `Promise { ... }`. The panic text
+/// is wasm's, word for word (`wat.zig`'s `gcTaggedPrinter`, front 229 s2's
+/// third box, a64af21ff) — one text, so no target answers differently.
+const task_branch: ast.Stmt = hIf(
+    "v instanceof Promise",
+    &.{.{ .throw_ = hx("Object.defineProperty(new Error(\"wasm cannot print a Task value dynamically yet\"), \"__bp_panic\", { value: true })") }},
+);
+
+/// Front 229 / decision 1104 piece 2 — a generator (`@Iter<T>` / `@AsyncIter<T>`)
+/// is a native `function*` / `async function*` object on this target
+/// (decisions 120, 122, 123): `Object.prototype.toString.call(v)` names it
+/// `[object Generator]` / `[object AsyncGenerator]` precisely, so a record
+/// whose own fields happen to be named `next` is never caught here. The panic
+/// text is wasm's, word for word (see `task_branch`).
+const generator_branch: ast.Stmt = hIf(
+    "(Object.prototype.toString.call(v) === \"[object Generator]\") || (Object.prototype.toString.call(v) === \"[object AsyncGenerator]\")",
+    &.{.{ .throw_ = hx("Object.defineProperty(new Error(\"wasm cannot print a generator value dynamically yet\"), \"__bp_panic\", { value: true })") }},
+);
+
 /// `function __bp_show(v, s, top, a) { … }` — see `Helper.show`. It answers the
 /// `console.log` format of `v` and pushes the values its `%s` / `%O` verbs
 /// consume onto `a`: a string through `%s` (quoted when nested), an array or a
@@ -1190,6 +1211,16 @@ const show: ast.Stmt = .{
                 } },
                 result_branch,
                 named_branch,
+                // Front 229 / decision 1104 piece 2 — a Task (a Promise) or a
+                // generator object reaching an unknown slot (a generic
+                // field's erasure, or `println`/`debug` of one directly,
+                // decision 1104 names `print` alone for the static refusal)
+                // answers the same named panic every target gives it — wasm's
+                // `gcTaggedPrinter` (front 229 s2's third box, a64af21ff) —
+                // never this engine's own inspect text (`Promise { ... }`,
+                // `Object [Generator] {}`).
+                task_branch,
+                generator_branch,
                 // Decision 47: absent has ONE spelling, `null`. JavaScript has two
                 // nones, and `?.` / an `if` with no `else` answer the other one —
                 // printed through `%O` it read `undefined`.

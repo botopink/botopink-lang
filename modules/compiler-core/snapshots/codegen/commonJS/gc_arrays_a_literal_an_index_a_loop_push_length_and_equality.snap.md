@@ -113,6 +113,8 @@ function __bp_show(v, s, top, a) {
         const k = Object.keys(v);
         return (((typeof Object.getPrototypeOf(v).tag === "string") ? ((v.__bp + ".") + Object.getPrototypeOf(v).tag) : v.__bp) + ((k.length === 0) ? "" : (("(" + k.map((n) => ((n + ": ") + __bp_show(v[n], v.__bp_s?.[n], false, a))).join(", ")) + ")")));
     }
+    if (v instanceof Promise) { throw Object.defineProperty(new Error("wasm cannot print a Task value dynamically yet"), "__bp_panic", { value: true }); }
+    if ((Object.prototype.toString.call(v) === "[object Generator]") || (Object.prototype.toString.call(v) === "[object AsyncGenerator]")) { throw Object.defineProperty(new Error("wasm cannot print a generator value dynamically yet"), "__bp_panic", { value: true }); }
     if ((v === undefined)) return "null";
     a.push(v);
     return "%O";

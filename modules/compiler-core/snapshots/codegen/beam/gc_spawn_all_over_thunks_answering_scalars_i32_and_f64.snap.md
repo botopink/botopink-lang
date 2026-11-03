@@ -1567,7 +1567,7 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
 {module, std@async}.
 {exports, [{delay, 2}, {failed, 1}, {newGate, 0}, {openGate, 1}, {awaitGate, 2}, {errorText, 1}, {allOf, 1}, {all, 1}, {race, 1}, {runAll, 1}, {raceOf, 1}, {timeout, 2}, {nextDelay, 2}, {retry, 2}, {'__bp_priv__array_range', 2}, {'__bp_priv__array_repeat', 2}, {'__bp_priv__answerNow', 1}, {'__bp_priv__answered', 1}, {'__bp_priv__errorProbe', 0}, {'__bp_priv__expireAfter', 2}, {'__bp_priv__flaky', 2}, {'__bp_priv__gateBudget', 0}, {'__bp_priv__gated', 2}, {'__bp_priv__ghost', 2}, {'__bp_priv__grown', 4}, {'__bp_priv__handshake', 3}, {'__bp_priv__panicOf', 1}, {'__bp_priv__pauseText', 2}, {'__bp_priv__pauses', 2}, {'__bp_priv__policyProblem', 1}, {'__bp_priv__retryFrom', 3}, {'__bp_priv__slowOk', 2}]}.
 {attributes, []}.
-{labels, 406}.
+{labels, 407}.
 
 {function, 'array_range', 2, 3}.
   {label, 2}.
@@ -2434,9 +2434,9 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
     {move, {x, 2}, {x, 0}}.
     {call, 2, {f, 316}}.
     {call, 1, {f, 314}}.
-    {jump, {f, 350}}.
+    {jump, {f, 351}}.
   {label, 312}.
-  {label, 350}.
+  {label, 351}.
     {move, {y, 0}, {x, 0}}.
     {move, {integer, 1}, {x, 2}}.
     {move, {y, 1}, {x, 1}}.
@@ -2495,10 +2495,10 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
     {call, 2, {f, 13}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_eq, {f, 351}, [{x, 0}, {atom, true}]}.
+    {test, is_eq, {f, 352}, [{x, 0}, {atom, true}]}.
     {move, {y, 1}, {x, 0}}.
-    {jump, {f, 352}}.
-  {label, 351}.
+    {jump, {f, 353}}.
+  {label, 352}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 1}, {x, 0}}.
@@ -2512,10 +2512,10 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 347}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 348}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
-  {label, 352}.
+  {label, 353}.
     {deallocate, 6}.
     return.
 % Open `mine`, then answer `value` once `theirs` is open. Two of these over the
@@ -2640,20 +2640,20 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
     {call_ext, 1, {extfunc, std@failure, attemptTask, 1}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 354}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 355}, [{x, 0}, 2, {atom, ok}]}.
     {move, {literal, <<"">>}, {x, 0}}.
-    {jump, {f, 353}}.
-  {label, 354}.
-    {test, is_tagged_tuple, {f, 355}, [{x, 0}, 2, {atom, error}]}.
+    {jump, {f, 354}}.
+  {label, 355}.
+    {test, is_tagged_tuple, {f, 356}, [{x, 0}, 2, {atom, error}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
     {move, {atom, message}, {x, 1}}.
-    {call, 2, {f, 357}}.
-    {jump, {f, 353}}.
-  {label, 355}.
+    {call, 2, {f, 358}}.
+    {jump, {f, 354}}.
+  {label, 356}.
     {case_end, {x, 0}}.
-  {label, 353}.
+  {label, 354}.
     {deallocate, 3}.
     return.
 % Attempt `n` of a task that fails until its `succeedAt`-th call:
@@ -2672,7 +2672,7 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
-    {test, is_lt, {f, 362}, [{y, 0}, {y, 1}]}.
+    {test, is_lt, {f, 363}, [{y, 0}, {y, 1}]}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
@@ -2696,7 +2696,7 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {deallocate, 8}.
     return.
-  {label, 362}.
+  {label, 363}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 0}, {x, 0}}.
@@ -2736,13 +2736,13 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
     {move, {y, 1}, {x, 1}}.
     {call, 2, {f, 33}}.
     {move, {x, 0}, {y, 2}}.
-    {test, is_ne_exact, {f, 363}, [{y, 2}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 364}, [{y, 2}, {atom, undefined}]}.
     {move, {y, 2}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, integer_to_binary, 1}}.
-    {jump, {f, 364}}.
-  {label, 363}.
-    {move, {literal, <<"none">>}, {x, 0}}.
+    {jump, {f, 365}}.
   {label, 364}.
+    {move, {literal, <<"none">>}, {x, 0}}.
+  {label, 365}.
     {deallocate, 3}.
     return.
 % `pauseText` for attempts 1 to `last`, joined by `,`.
@@ -2757,19 +2757,19 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {gc_bif, '+', {f, 0}, 0, [{y, 1}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 365}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 365}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 366}}.
-  {label, 365}.
+    {test, is_ge, {f, 366}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 366}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 367}}.
+  {label, 366}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/async.bp:727:24">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 366}.
+  {label, 367}.
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 1}, {x, 0}}.
     {call, 2, {f, 3}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 1}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 368}, 0, 0, {x, 0}, {list, [{y, 0}]}}.
+    {make_fun3, {f, 369}, 0, 0, {x, 0}, {list, [{y, 0}]}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<",">>}, {x, 0}}.
@@ -2778,130 +2778,130 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
     {move, {x, 2}, {x, 0}}.
     {call_last, 2, {f, 316}, 6}.
 
-{function, '__bp_priv__array_range', 2, 371}.
-  {label, 370}.
+{function, '__bp_priv__array_range', 2, 372}.
+  {label, 371}.
     {line, [{location, "std@async.erl", 34}]}.
     {func_info, {atom, std@async}, {atom, '__bp_priv__array_range'}, 2}.
-  {label, 371}.
+  {label, 372}.
     {call_only, 2, {f, 3}}.
 
-{function, '__bp_priv__array_repeat', 2, 373}.
-  {label, 372}.
+{function, '__bp_priv__array_repeat', 2, 374}.
+  {label, 373}.
     {line, [{location, "std@async.erl", 35}]}.
     {func_info, {atom, std@async}, {atom, '__bp_priv__array_repeat'}, 2}.
-  {label, 373}.
+  {label, 374}.
     {call_only, 2, {f, 5}}.
 
-{function, '__bp_priv__answerNow', 1, 375}.
-  {label, 374}.
+{function, '__bp_priv__answerNow', 1, 376}.
+  {label, 375}.
     {line, [{location, "std@async.erl", 36}]}.
     {func_info, {atom, std@async}, {atom, '__bp_priv__answerNow'}, 1}.
-  {label, 375}.
+  {label, 376}.
     {call_only, 1, {f, 45}}.
 
-{function, '__bp_priv__answered', 1, 377}.
-  {label, 376}.
+{function, '__bp_priv__answered', 1, 378}.
+  {label, 377}.
     {line, [{location, "std@async.erl", 37}]}.
     {func_info, {atom, std@async}, {atom, '__bp_priv__answered'}, 1}.
-  {label, 377}.
+  {label, 378}.
     {call_only, 1, {f, 23}}.
 
-{function, '__bp_priv__errorProbe', 0, 379}.
-  {label, 378}.
+{function, '__bp_priv__errorProbe', 0, 380}.
+  {label, 379}.
     {line, [{location, "std@async.erl", 38}]}.
     {func_info, {atom, std@async}, {atom, '__bp_priv__errorProbe'}, 0}.
-  {label, 379}.
+  {label, 380}.
     {call_only, 0, {f, 49}}.
 
-{function, '__bp_priv__expireAfter', 2, 381}.
-  {label, 380}.
+{function, '__bp_priv__expireAfter', 2, 382}.
+  {label, 381}.
     {line, [{location, "std@async.erl", 39}]}.
     {func_info, {atom, std@async}, {atom, '__bp_priv__expireAfter'}, 2}.
-  {label, 381}.
+  {label, 382}.
     {call_only, 2, {f, 25}}.
 
-{function, '__bp_priv__flaky', 2, 383}.
-  {label, 382}.
+{function, '__bp_priv__flaky', 2, 384}.
+  {label, 383}.
     {line, [{location, "std@async.erl", 40}]}.
     {func_info, {atom, std@async}, {atom, '__bp_priv__flaky'}, 2}.
-  {label, 383}.
+  {label, 384}.
     {call_only, 2, {f, 55}}.
 
-{function, '__bp_priv__gateBudget', 0, 385}.
-  {label, 384}.
+{function, '__bp_priv__gateBudget', 0, 386}.
+  {label, 385}.
     {line, [{location, "std@async.erl", 41}]}.
     {func_info, {atom, std@async}, {atom, '__bp_priv__gateBudget'}, 0}.
-  {label, 385}.
+  {label, 386}.
     {call_only, 0, {f, 39}}.
 
-{function, '__bp_priv__gated', 2, 387}.
-  {label, 386}.
+{function, '__bp_priv__gated', 2, 388}.
+  {label, 387}.
     {line, [{location, "std@async.erl", 42}]}.
     {func_info, {atom, std@async}, {atom, '__bp_priv__gated'}, 2}.
-  {label, 387}.
+  {label, 388}.
     {call_only, 2, {f, 41}}.
 
-{function, '__bp_priv__ghost', 2, 389}.
-  {label, 388}.
+{function, '__bp_priv__ghost', 2, 390}.
+  {label, 389}.
     {line, [{location, "std@async.erl", 43}]}.
     {func_info, {atom, std@async}, {atom, '__bp_priv__ghost'}, 2}.
-  {label, 389}.
+  {label, 390}.
     {call_only, 2, {f, 51}}.
 
-{function, '__bp_priv__grown', 4, 391}.
-  {label, 390}.
+{function, '__bp_priv__grown', 4, 392}.
+  {label, 391}.
     {line, [{location, "std@async.erl", 44}]}.
     {func_info, {atom, std@async}, {atom, '__bp_priv__grown'}, 4}.
-  {label, 391}.
+  {label, 392}.
     {call_only, 4, {f, 31}}.
 
-{function, '__bp_priv__handshake', 3, 393}.
-  {label, 392}.
+{function, '__bp_priv__handshake', 3, 394}.
+  {label, 393}.
     {line, [{location, "std@async.erl", 45}]}.
     {func_info, {atom, std@async}, {atom, '__bp_priv__handshake'}, 3}.
-  {label, 393}.
+  {label, 394}.
     {call_only, 3, {f, 43}}.
 
-{function, '__bp_priv__panicOf', 1, 395}.
-  {label, 394}.
+{function, '__bp_priv__panicOf', 1, 396}.
+  {label, 395}.
     {line, [{location, "std@async.erl", 46}]}.
     {func_info, {atom, std@async}, {atom, '__bp_priv__panicOf'}, 1}.
-  {label, 395}.
+  {label, 396}.
     {call_only, 1, {f, 53}}.
 
-{function, '__bp_priv__pauseText', 2, 397}.
-  {label, 396}.
+{function, '__bp_priv__pauseText', 2, 398}.
+  {label, 397}.
     {line, [{location, "std@async.erl", 47}]}.
     {func_info, {atom, std@async}, {atom, '__bp_priv__pauseText'}, 2}.
-  {label, 397}.
+  {label, 398}.
     {call_only, 2, {f, 57}}.
 
-{function, '__bp_priv__pauses', 2, 399}.
-  {label, 398}.
+{function, '__bp_priv__pauses', 2, 400}.
+  {label, 399}.
     {line, [{location, "std@async.erl", 48}]}.
     {func_info, {atom, std@async}, {atom, '__bp_priv__pauses'}, 2}.
-  {label, 399}.
+  {label, 400}.
     {call_only, 2, {f, 59}}.
 
-{function, '__bp_priv__policyProblem', 1, 401}.
-  {label, 400}.
+{function, '__bp_priv__policyProblem', 1, 402}.
+  {label, 401}.
     {line, [{location, "std@async.erl", 49}]}.
     {func_info, {atom, std@async}, {atom, '__bp_priv__policyProblem'}, 1}.
-  {label, 401}.
+  {label, 402}.
     {call_only, 1, {f, 29}}.
 
-{function, '__bp_priv__retryFrom', 3, 403}.
-  {label, 402}.
+{function, '__bp_priv__retryFrom', 3, 404}.
+  {label, 403}.
     {line, [{location, "std@async.erl", 50}]}.
     {func_info, {atom, std@async}, {atom, '__bp_priv__retryFrom'}, 3}.
-  {label, 403}.
+  {label, 404}.
     {call_only, 3, {f, 35}}.
 
-{function, '__bp_priv__slowOk', 2, 405}.
-  {label, 404}.
+{function, '__bp_priv__slowOk', 2, 406}.
+  {label, 405}.
     {line, [{location, "std@async.erl", 51}]}.
     {func_info, {atom, std@async}, {atom, '__bp_priv__slowOk'}, 2}.
-  {label, 405}.
+  {label, 406}.
     {call_only, 2, {f, 47}}.
 
 {function, '__bp_tpl_0-t/2-fun-0-', 2, 65}.
@@ -3865,6 +3865,10 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
     {test, is_ne_exact, {f, 334}, [{x, 0}, {atom, true}]}.
     {test, is_ne_exact, {f, 334}, [{x, 0}, {atom, false}]}.
     {test, is_ne_exact, {f, 334}, [{x, 0}, {atom, undefined}]}.
+    {test, is_eq_exact, {f, 342}, [{x, 0}, {atom, '__bp_gen'}]}.
+    {move, {literal, {panic, <<"wasm cannot print a generator value dynamically yet">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 342}.
     {test, is_eq_exact, {f, 340}, [{x, 0}, {atom, ok}]}.
     {move, {literal, <<"Ok(">>}, {y, 1}}.
     {jump, {f, 341}}.
@@ -3948,28 +3952,28 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
     {call_ext, 1, {extfunc, erlang, atom_to_list, 1}}.
     {move, {literal, <<"__v__">>}, {x, 1}}.
     {call_ext, 2, {extfunc, string, split, 2}}.
-    {test, is_nonempty_list, {f, 342}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 343}, [{x, 0}]}.
     {get_list, {x, 0}, {x, 1}, {x, 2}}.
     {move, {x, 1}, {y, 2}}.
-    {test, is_nonempty_list, {f, 342}, [{x, 2}]}.
+    {test, is_nonempty_list, {f, 343}, [{x, 2}]}.
     {move, {y, 2}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, list_to_atom, 1}}.
     {move, {x, 0}, {y, 1}}.
-  {label, 342}.
+  {label, 343}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, code, ensure_loaded, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {atom, '__bp_format'}, {x, 1}}.
     {move, {integer, 1}, {x, 2}}.
     {call_ext, 3, {extfunc, erlang, function_exported, 3}}.
-    {test, is_eq_exact, {f, 343}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 344}, [{x, 0}, {atom, true}]}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, nil, {x, 2}}.
     {move, {y, 1}, {x, 0}}.
     {move, {atom, '__bp_format'}, {x, 1}}.
     {call_ext, 3, {extfunc, erlang, apply, 3}}.
     {call_last, 1, {f, 328}, 3}.
-  {label, 343}.
+  {label, 344}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, nil, {x, 1}}.
     {move, {literal, <<"~p">>}, {x, 0}}.
@@ -3986,20 +3990,20 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
     {move, {integer, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test, is_eq_exact, {f, 344}, [{x, 0}, {atom, text}]}.
-    {move, {integer, 2}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
-  {label, 344}.
-    {move, {integer, 3}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {move, {x, 0}, {y, 1}}.
-    {test, is_eq_exact, {f, 345}, [{x, 0}, nil]}.
+    {test, is_eq_exact, {f, 345}, [{x, 0}, {atom, text}]}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
   {label, 345}.
+    {move, {integer, 3}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {move, {x, 0}, {y, 1}}.
+    {test, is_eq_exact, {f, 346}, [{x, 0}, nil]}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
+  {label, 346}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
     {make_fun3, {f, 330}, 0, 0, {x, 0}, {list, []}}.
     {move, {y, 1}, {x, 1}}.
@@ -4043,19 +4047,19 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
     {deallocate, 2}.
     return.
 
-{function, '-bp_stringify-', 1, 347}.
-  {label, 346}.
+{function, '-bp_stringify-', 1, 348}.
+  {label, 347}.
     {line, [{location, "std@async.erl", 22}]}.
     {func_info, {atom, std@async}, {atom, '-bp_stringify-'}, 1}.
-  {label, 347}.
+  {label, 348}.
     {allocate, 0, 1}.
-    {test, is_binary, {f, 348}, [{x, 0}]}.
+    {test, is_binary, {f, 349}, [{x, 0}]}.
     {deallocate, 0}.
     return.
-  {label, 348}.
-    {test, is_integer, {f, 349}, [{x, 0}]}.
-    {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 0}.
   {label, 349}.
+    {test, is_integer, {f, 350}, [{x, 0}]}.
+    {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 0}.
+  {label, 350}.
     {call, 1, {f, 322}}.
     {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 0}.
 
@@ -4069,28 +4073,28 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
     {move, {x, 1}, {y, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 347}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 348}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 2, {extfunc, lists, join, 2}}.
     {call_ext_last, 1, {extfunc, erlang, iolist_to_binary, 1}, 1}.
 
-{function, '-bp_field-', 2, 357}.
-  {label, 356}.
+{function, '-bp_field-', 2, 358}.
+  {label, 357}.
     {line, [{location, "std@async.erl", 30}]}.
     {func_info, {atom, std@async}, {atom, '-bp_field-'}, 2}.
-  {label, 357}.
-    {test, is_map, {f, 358}, [{x, 0}]}.
+  {label, 358}.
+    {test, is_map, {f, 359}, [{x, 0}]}.
     {move, {x, 0}, {x, 2}}.
     {move, {x, 1}, {x, 0}}.
     {move, {x, 2}, {x, 1}}.
     {move, {atom, undefined}, {x, 2}}.
     {call_ext_only, 3, {extfunc, maps, get, 3}}.
-  {label, 358}.
-    {test, is_tuple, {f, 359}, [{x, 0}]}.
-    {bif, element, {f, 361}, [{integer, 1}, {x, 0}], {x, 2}}.
-    {test, is_atom, {f, 361}, [{x, 2}]}.
+  {label, 359}.
+    {test, is_tuple, {f, 360}, [{x, 0}]}.
+    {bif, element, {f, 362}, [{integer, 1}, {x, 0}], {x, 2}}.
+    {test, is_atom, {f, 362}, [{x, 2}]}.
     {test_heap, 4, 3}.
     {put_list, {x, 1}, nil, {x, 3}}.
     {put_list, {x, 0}, {x, 3}, {x, 3}}.
@@ -4098,27 +4102,27 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
     {move, {atom, '__bp_get'}, {x, 1}}.
     {move, {x, 3}, {x, 2}}.
     {call_ext_only, 3, {extfunc, erlang, apply, 3}}.
-  {label, 359}.
-    {test, is_eq_exact, {f, 361}, [{x, 1}, {atom, length}]}.
-    {test, is_list, {f, 360}, [{x, 0}]}.
+  {label, 360}.
+    {test, is_eq_exact, {f, 362}, [{x, 1}, {atom, length}]}.
+    {test, is_list, {f, 361}, [{x, 0}]}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
     return.
-  {label, 360}.
-    {test, is_binary, {f, 361}, [{x, 0}]}.
+  {label, 361}.
+    {test, is_binary, {f, 362}, [{x, 0}]}.
     {allocate, 0, 1}.
     {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
     {deallocate, 0}.
     return.
-  {label, 361}.
+  {label, 362}.
     {move, {atom, undefined}, {x, 0}}.
     return.
 
-{function, '-pauses/2-fun-4-', 2, 368}.
-  {label, 367}.
+{function, '-pauses/2-fun-4-', 2, 369}.
+  {label, 368}.
     {line, [{location, "std@async.erl", 33}]}.
     {func_info, {atom, std@async}, {atom, '-pauses/2-fun-4-'}, 2}.
-  {label, 368}.
+  {label, 369}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -4139,11 +4143,11 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_list, {f, 369}, [{x, 0}]}.
+    {test, is_list, {f, 370}, [{x, 0}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext_last, 2, {extfunc, lists, append, 2}, 2}.
-  {label, 369}.
+  {label, 370}.
     %% unresolved_method: append/2
     {move, {literal, {unresolved_method, append, 2}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
@@ -4355,7 +4359,7 @@ import {io.terminal.print, async} from "std";
 {module, test@main}.
 {exports, [{'_botopink_main', 0}, {main, 1}, {main, 0}, {'__bp_priv__doubled', 1}, {'__bp_priv__doubledF', 1}, {'__bp_priv__run', 0}]}.
 {attributes, []}.
-{labels, 70}.
+{labels, 71}.
 
 %% @Async — eager lowering
 {function, doubled, 1, 3}.
@@ -4426,13 +4430,13 @@ import {io.terminal.print, async} from "std";
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 56}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 57}, 0, 0, {x, 0}, {list, []}}.
     {move, {y, 2}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 58}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 59}, 0, 0, {x, 0}, {list, []}}.
     {move, {y, 2}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
@@ -4484,13 +4488,13 @@ import {io.terminal.print, async} from "std";
     {allocate, 0, 0}.
     {move, {atom, test@main}, {x, 0}}.
     {call_ext, 1, {extfunc, code, which, 1}}.
-    {test, is_list, {f, 59}, [{x, 0}]}.
+    {test, is_list, {f, 60}, [{x, 0}]}.
     {call_ext, 1, {extfunc, filename, dirname, 1}}.
     {move, {literal, [42, 46, 101, 114, 108]}, {x, 1}}.
     {call_ext, 2, {extfunc, filename, join, 2}}.
     {call_ext, 1, {extfunc, filelib, wildcard, 1}}.
     {call_last, 1, {f, 17}, 0}.
-  {label, 59}.
+  {label, 60}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 0}.
     return.
@@ -4500,7 +4504,7 @@ import {io.terminal.print, async} from "std";
     {line, [{location, "test@main.erl", 8}]}.
     {func_info, {atom, test@main}, {atom, '-bp_load_sibling-'}, 1}.
   {label, 17}.
-    {test, is_nonempty_list, {f, 60}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 61}, [{x, 0}]}.
     {allocate, 2, 1}.
     {get_list, {x, 0}, {y, 1}, {y, 0}}.
     {move, {literal, [46, 101, 114, 108]}, {x, 1}}.
@@ -4508,19 +4512,19 @@ import {io.terminal.print, async} from "std";
     {call_ext, 2, {extfunc, filename, basename, 2}}.
     {call_ext, 1, {extfunc, erlang, list_to_atom, 1}}.
     {call_ext, 1, {extfunc, code, ensure_loaded, 1}}.
-    {test, is_tagged_tuple, {f, 61}, [{x, 0}, 2, {atom, module}]}.
-    {jump, {f, 63}}.
-  {label, 61}.
+    {test, is_tagged_tuple, {f, 62}, [{x, 0}, 2, {atom, module}]}.
+    {jump, {f, 64}}.
+  {label, 62}.
     {move, {literal, [binary, return_errors]}, {x, 1}}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 2, {extfunc, compile, file, 2}}.
-    {test, is_tagged_tuple, {f, 62}, [{x, 0}, 3, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 63}, [{x, 0}, 3, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 2, {x, 2}}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 3, {extfunc, code, load_binary, 3}}.
-    {jump, {f, 63}}.
-  {label, 62}.
+    {jump, {f, 64}}.
+  {label, 63}.
     {test_heap, 4, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {put_list, {y, 1}, {x, 0}, {x, 1}}.
@@ -4531,32 +4535,32 @@ import {io.terminal.print, async} from "std";
     {call_ext, 2, {extfunc, file, write, 2}}.
     {move, {integer, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, halt, 1}}.
-  {label, 63}.
+  {label, 64}.
     {move, {y, 0}, {x, 0}}.
     {call_last, 1, {f, 17}, 2}.
-  {label, 60}.
+  {label, 61}.
     {move, {atom, ok}, {x, 0}}.
     return.
 
-{function, '__bp_priv__doubled', 1, 65}.
-  {label, 64}.
+{function, '__bp_priv__doubled', 1, 66}.
+  {label, 65}.
     {line, [{location, "test@main.erl", 9}]}.
     {func_info, {atom, test@main}, {atom, '__bp_priv__doubled'}, 1}.
-  {label, 65}.
+  {label, 66}.
     {call_only, 1, {f, 3}}.
 
-{function, '__bp_priv__doubledF', 1, 67}.
-  {label, 66}.
+{function, '__bp_priv__doubledF', 1, 68}.
+  {label, 67}.
     {line, [{location, "test@main.erl", 10}]}.
     {func_info, {atom, test@main}, {atom, '__bp_priv__doubledF'}, 1}.
-  {label, 67}.
+  {label, 68}.
     {call_only, 1, {f, 5}}.
 
-{function, '__bp_priv__run', 0, 69}.
-  {label, 68}.
+{function, '__bp_priv__run', 0, 70}.
+  {label, 69}.
     {line, [{location, "test@main.erl", 11}]}.
     {func_info, {atom, test@main}, {atom, '__bp_priv__run'}, 0}.
-  {label, 69}.
+  {label, 70}.
     {call_only, 0, {f, 7}}.
 
 {function, '-run/0-fun-0-', 0, 21}.
@@ -4675,6 +4679,10 @@ import {io.terminal.print, async} from "std";
     {test, is_ne_exact, {f, 43}, [{x, 0}, {atom, true}]}.
     {test, is_ne_exact, {f, 43}, [{x, 0}, {atom, false}]}.
     {test, is_ne_exact, {f, 43}, [{x, 0}, {atom, undefined}]}.
+    {test, is_eq_exact, {f, 51}, [{x, 0}, {atom, '__bp_gen'}]}.
+    {move, {literal, {panic, <<"wasm cannot print a generator value dynamically yet">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 51}.
     {test, is_eq_exact, {f, 49}, [{x, 0}, {atom, ok}]}.
     {move, {literal, <<"Ok(">>}, {y, 1}}.
     {jump, {f, 50}}.
@@ -4758,28 +4766,28 @@ import {io.terminal.print, async} from "std";
     {call_ext, 1, {extfunc, erlang, atom_to_list, 1}}.
     {move, {literal, <<"__v__">>}, {x, 1}}.
     {call_ext, 2, {extfunc, string, split, 2}}.
-    {test, is_nonempty_list, {f, 51}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 52}, [{x, 0}]}.
     {get_list, {x, 0}, {x, 1}, {x, 2}}.
     {move, {x, 1}, {y, 2}}.
-    {test, is_nonempty_list, {f, 51}, [{x, 2}]}.
+    {test, is_nonempty_list, {f, 52}, [{x, 2}]}.
     {move, {y, 2}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, list_to_atom, 1}}.
     {move, {x, 0}, {y, 1}}.
-  {label, 51}.
+  {label, 52}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, code, ensure_loaded, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {atom, '__bp_format'}, {x, 1}}.
     {move, {integer, 1}, {x, 2}}.
     {call_ext, 3, {extfunc, erlang, function_exported, 3}}.
-    {test, is_eq_exact, {f, 52}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 53}, [{x, 0}, {atom, true}]}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, nil, {x, 2}}.
     {move, {y, 1}, {x, 0}}.
     {move, {atom, '__bp_format'}, {x, 1}}.
     {call_ext, 3, {extfunc, erlang, apply, 3}}.
     {call_last, 1, {f, 37}, 3}.
-  {label, 52}.
+  {label, 53}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, nil, {x, 1}}.
     {move, {literal, <<"~p">>}, {x, 0}}.
@@ -4796,20 +4804,20 @@ import {io.terminal.print, async} from "std";
     {move, {integer, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test, is_eq_exact, {f, 53}, [{x, 0}, {atom, text}]}.
-    {move, {integer, 2}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
-  {label, 53}.
-    {move, {integer, 3}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {move, {x, 0}, {y, 1}}.
-    {test, is_eq_exact, {f, 54}, [{x, 0}, nil]}.
+    {test, is_eq_exact, {f, 54}, [{x, 0}, {atom, text}]}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
   {label, 54}.
+    {move, {integer, 3}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {move, {x, 0}, {y, 1}}.
+    {test, is_eq_exact, {f, 55}, [{x, 0}, nil]}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
+  {label, 55}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
     {make_fun3, {f, 39}, 0, 0, {x, 0}, {list, []}}.
     {move, {y, 1}, {x, 1}}.
@@ -4853,22 +4861,22 @@ import {io.terminal.print, async} from "std";
     {deallocate, 2}.
     return.
 
-{function, '-run/0-fun-3-', 0, 56}.
-  {label, 55}.
+{function, '-run/0-fun-3-', 0, 57}.
+  {label, 56}.
     {line, [{location, "test@main.erl", 4}]}.
     {func_info, {atom, test@main}, {atom, '-run/0-fun-3-'}, 0}.
-  {label, 56}.
+  {label, 57}.
     {allocate, 0, 0}.
     {move, {float, 2.5}, {x, 0}}.
     {call, 1, {f, 5}}.
     {deallocate, 0}.
     return.
 
-{function, '-run/0-fun-4-', 0, 58}.
-  {label, 57}.
+{function, '-run/0-fun-4-', 0, 59}.
+  {label, 58}.
     {line, [{location, "test@main.erl", 4}]}.
     {func_info, {atom, test@main}, {atom, '-run/0-fun-4-'}, 0}.
-  {label, 58}.
+  {label, 59}.
     {allocate, 0, 0}.
     {move, {float, 1.5}, {x, 0}}.
     {call, 1, {f, 5}}.

@@ -271,6 +271,32 @@ test "every backend: builtin ---- an uncaught failed assert writes panic: <messa
     , "panic: assertion failed: 1 > 2: never at ");
 }
 
+// Front 229 / decision 1104 piece 2 — a `@Iter<T>` / `@AsyncIter<T>` held in
+// an `unknown` slot has no text of its own on commonJS, erlang or beam: each
+// backend's own runtime handle for a generator — commonJS's native
+// `function*` object, erlang's and beam's `{'__bp_gen', Pid}` process handle
+// (`gen_runtime.zig`'s protocol, decision 105, 144 B-128) — answers the same
+// named panic wasm already gives it under GC (`wat.zig`'s `gcTaggedPrinter`,
+// front 229 s2's third box, a64af21ff; its own pinned test,
+// `wat.zig`'s "a Task or a generator held unknown panics by name", covers
+// wasm) instead of that target's own default inspect text (commonJS's
+// `Object [Generator] {}`, erlang's and beam's raw `{'__bp_gen',<0.123.0>}`
+// term). `assertAbortWritesFailure`, not `...EveryBackend`: this program
+// never forces wasm's GC lowering, so its wasm leg would exercise the
+// separate, already-known linear-memory gap (the bare `unreachable` wasm's
+// own `-- a generic field of no GC shape` panic names), not this one.
+test "every backend but wasm: front 229 / decision 1104 piece 2 ---- a generator held unknown panics by the same name on every target" {
+    try h.assertAbortWritesFailure(std.testing.allocator,
+        \\iter fn gen1() -> Iter<i32> { yield 1; yield 2; }
+        \\pub fn main() -> void {
+        \\    val u: unknown = gen1();
+        \\    print(u);
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    , "panic: wasm cannot print a generator value dynamically yet\n");
+}
+
 test "js: builtin ---- @print single argument" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() -> void {

@@ -10,7 +10,7 @@ fn label(a: string, b: string) -> string {
 {module, test@main}.
 {exports, [{'__bp_priv__label', 2}]}.
 {attributes, []}.
-{labels, 39}.
+{labels, 40}.
 
 {function, label, 2, 3}.
   {label, 2}.
@@ -44,17 +44,17 @@ fn label(a: string, b: string) -> string {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 34}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 35}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
     {deallocate, 3}.
     return.
 
-{function, '__bp_priv__label', 2, 38}.
-  {label, 37}.
+{function, '__bp_priv__label', 2, 39}.
+  {label, 38}.
     {line, [{location, "test@main.erl", 2}]}.
     {func_info, {atom, test@main}, {atom, '__bp_priv__label'}, 2}.
-  {label, 38}.
+  {label, 39}.
     {call_only, 2, {f, 3}}.
 
 {function, '__bp_print', 1, 5}.
@@ -140,6 +140,10 @@ fn label(a: string, b: string) -> string {
     {test, is_ne_exact, {f, 21}, [{x, 0}, {atom, true}]}.
     {test, is_ne_exact, {f, 21}, [{x, 0}, {atom, false}]}.
     {test, is_ne_exact, {f, 21}, [{x, 0}, {atom, undefined}]}.
+    {test, is_eq_exact, {f, 29}, [{x, 0}, {atom, '__bp_gen'}]}.
+    {move, {literal, {panic, <<"wasm cannot print a generator value dynamically yet">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 29}.
     {test, is_eq_exact, {f, 27}, [{x, 0}, {atom, ok}]}.
     {move, {literal, <<"Ok(">>}, {y, 1}}.
     {jump, {f, 28}}.
@@ -223,28 +227,28 @@ fn label(a: string, b: string) -> string {
     {call_ext, 1, {extfunc, erlang, atom_to_list, 1}}.
     {move, {literal, <<"__v__">>}, {x, 1}}.
     {call_ext, 2, {extfunc, string, split, 2}}.
-    {test, is_nonempty_list, {f, 29}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 30}, [{x, 0}]}.
     {get_list, {x, 0}, {x, 1}, {x, 2}}.
     {move, {x, 1}, {y, 2}}.
-    {test, is_nonempty_list, {f, 29}, [{x, 2}]}.
+    {test, is_nonempty_list, {f, 30}, [{x, 2}]}.
     {move, {y, 2}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, list_to_atom, 1}}.
     {move, {x, 0}, {y, 1}}.
-  {label, 29}.
+  {label, 30}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, code, ensure_loaded, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {atom, '__bp_format'}, {x, 1}}.
     {move, {integer, 1}, {x, 2}}.
     {call_ext, 3, {extfunc, erlang, function_exported, 3}}.
-    {test, is_eq_exact, {f, 30}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 31}, [{x, 0}, {atom, true}]}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, nil, {x, 2}}.
     {move, {y, 1}, {x, 0}}.
     {move, {atom, '__bp_format'}, {x, 1}}.
     {call_ext, 3, {extfunc, erlang, apply, 3}}.
     {call_last, 1, {f, 15}, 3}.
-  {label, 30}.
+  {label, 31}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, nil, {x, 1}}.
     {move, {literal, <<"~p">>}, {x, 0}}.
@@ -261,20 +265,20 @@ fn label(a: string, b: string) -> string {
     {move, {integer, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test, is_eq_exact, {f, 31}, [{x, 0}, {atom, text}]}.
-    {move, {integer, 2}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
-  {label, 31}.
-    {move, {integer, 3}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {move, {x, 0}, {y, 1}}.
-    {test, is_eq_exact, {f, 32}, [{x, 0}, nil]}.
+    {test, is_eq_exact, {f, 32}, [{x, 0}, {atom, text}]}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
   {label, 32}.
+    {move, {integer, 3}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {move, {x, 0}, {y, 1}}.
+    {test, is_eq_exact, {f, 33}, [{x, 0}, nil]}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
+  {label, 33}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
     {make_fun3, {f, 17}, 0, 0, {x, 0}, {list, []}}.
     {move, {y, 1}, {x, 1}}.
@@ -318,19 +322,19 @@ fn label(a: string, b: string) -> string {
     {deallocate, 2}.
     return.
 
-{function, '-bp_stringify-', 1, 34}.
-  {label, 33}.
+{function, '-bp_stringify-', 1, 35}.
+  {label, 34}.
     {line, [{location, "test@main.erl", 2}]}.
     {func_info, {atom, test@main}, {atom, '-bp_stringify-'}, 1}.
-  {label, 34}.
+  {label, 35}.
     {allocate, 0, 1}.
-    {test, is_binary, {f, 35}, [{x, 0}]}.
+    {test, is_binary, {f, 36}, [{x, 0}]}.
     {deallocate, 0}.
     return.
-  {label, 35}.
-    {test, is_integer, {f, 36}, [{x, 0}]}.
-    {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 0}.
   {label, 36}.
+    {test, is_integer, {f, 37}, [{x, 0}]}.
+    {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 0}.
+  {label, 37}.
     {call, 1, {f, 9}}.
     {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 0}.
 ```

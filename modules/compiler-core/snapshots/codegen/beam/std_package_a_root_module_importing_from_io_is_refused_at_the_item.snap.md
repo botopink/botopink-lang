@@ -325,7 +325,7 @@ test "path.isInside treats a name starting with two dots as a name" {
 {module, std@path}.
 {exports, [{separator, 0}, {delimiter, 0}, {split, 1}, {isAbsolute, 1}, {basename, 1}, {dirname, 1}, {extname, 1}, {join, 1}, {normalize, 1}, {relative, 2}, {resolve, 1}, {withoutExtension, 1}, {isInside, 2}, {'__bp_priv__array_range', 2}, {'__bp_priv__array_repeat', 2}, {'__bp_priv__string_slice', 3}, {'__bp_priv__applyPieces', 2}, {'__bp_priv__commonPrefixCount', 3}, {'__bp_priv__makeUps', 1}, {'__bp_priv__resolveAll', 3}, {'__bp_priv__resolveStep', 2}]}.
 {attributes, []}.
-{labels, 285}.
+{labels, 286}.
 
 {function, 'array_range', 2, 3}.
   {label, 2}.
@@ -592,7 +592,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     {move, {x, 0}, {y, 4}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 13}}.
-    {test, is_eq, {f, 126}, [{x, 0}, {atom, true}]}.
+    {test, is_eq, {f, 127}, [{x, 0}, {atom, true}]}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 4}, {x, 0}}.
@@ -610,10 +610,10 @@ test "path.isInside treats a name starting with two dots as a name" {
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
     {call, 2, {f, 92}}.
-    {jump, {f, 127}}.
-  {label, 126}.
-    {move, {y, 4}, {x, 0}}.
+    {jump, {f, 128}}.
   {label, 127}.
+    {move, {y, 4}, {x, 0}}.
+  {label, 128}.
     {deallocate, 10}.
     return.
 % The trailing extension on the basename — the substring from the LAST
@@ -639,66 +639,66 @@ test "path.isInside treats a name starting with two dots as a name" {
     {move, {y, 2}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
     {move, {x, 0}, {y, 3}}.
-    {test, is_ge, {f, 128}, [{integer, 1}, {y, 3}]}.
+    {test, is_ge, {f, 129}, [{integer, 1}, {y, 3}]}.
     {move, {literal, <<"">>}, {x, 0}}.
     {deallocate, 10}.
     return.
-  {label, 128}.
+  {label, 129}.
     {move, {y, 2}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
     {call, 2, {f, 80}}.
-    {test, is_ne_exact, {f, 129}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 130}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {x, 0}}.
-    {jump, {f, 130}}.
-  {label, 129}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 131}}.
   {label, 130}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 131}.
     {move, {x, 0}, {y, 5}}.
     {gc_bif, '-', {f, 0}, 0, [{y, 3}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 132}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 132}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 133}}.
-  {label, 132}.
+    {test, is_ge, {f, 133}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 133}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 134}}.
+  {label, 133}.
     {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/path.bp:68:28">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 133}.
+  {label, 134}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 2}, {x, 0}}.
     {call, 2, {f, 80}}.
-    {test, is_ne_exact, {f, 131}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 132}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {x, 0}}.
-    {jump, {f, 134}}.
-  {label, 131}.
+    {jump, {f, 135}}.
+  {label, 132}.
     {move, {literal, <<"">>}, {x, 0}}.
-  {label, 134}.
+  {label, 135}.
     {move, {x, 0}, {y, 7}}.
     {move, {literal, <<"">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 135}, [{y, 5}, {x, 0}]}.
+    {test, is_eq_exact, {f, 136}, [{y, 5}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 136}}.
-  {label, 135}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 137}}.
   {label, 136}.
-    {move, {x, 0}, {x, 1}}.
-    {test, is_eq, {f, 137}, [{x, 1}, {atom, true}]}.
-    {test, is_eq_exact, {f, 139}, [{y, 3}, {integer, 2}]}.
-    {move, {atom, true}, {x, 0}}.
-    {jump, {f, 140}}.
-  {label, 139}.
     {move, {atom, false}, {x, 0}}.
-  {label, 140}.
-    {jump, {f, 138}}.
   {label, 137}.
+    {move, {x, 0}, {x, 1}}.
+    {test, is_eq, {f, 138}, [{x, 1}, {atom, true}]}.
+    {test, is_eq_exact, {f, 140}, [{y, 3}, {integer, 2}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 141}}.
+  {label, 140}.
     {move, {atom, false}, {x, 0}}.
+  {label, 141}.
+    {jump, {f, 139}}.
   {label, 138}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 139}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 8}, {x, 0}}.
-    {test, is_eq, {f, 141}, [{x, 0}, {atom, true}]}.
+    {test, is_eq, {f, 142}, [{x, 0}, {atom, true}]}.
     {move, {literal, <<"">>}, {x, 0}}.
-    {jump, {f, 142}}.
-  {label, 141}.
+    {jump, {f, 143}}.
+  {label, 142}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 7}, {x, 0}}.
@@ -716,7 +716,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
     {call, 2, {f, 92}}.
-  {label, 142}.
+  {label, 143}.
     {deallocate, 10}.
     return.
 % Join a list of path segments with the separator. Leading separator on
@@ -737,30 +737,30 @@ test "path.isInside treats a name starting with two dots as a name" {
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_eq_exact, {f, 143}, [{x, 0}, {integer, 0}]}.
+    {test, is_eq_exact, {f, 144}, [{x, 0}, {integer, 0}]}.
     {move, {atom, false}, {x, 0}}.
-    {jump, {f, 144}}.
-  {label, 143}.
+    {jump, {f, 145}}.
+  {label, 144}.
     {move, {y, 0}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
     {call, 2, {f, 80}}.
-    {test, is_ne_exact, {f, 145}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 146}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {jump, {f, 146}}.
-  {label, 145}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 147}}.
   {label, 146}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 147}.
     {call, 1, {f, 13}}.
-  {label, 144}.
+  {label, 145}.
     {move, {x, 0}, {y, 2}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 148}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 149}, 0, 0, {x, 0}, {list, []}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {move, {x, 0}, {y, 3}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 150}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 151}, 0, 0, {x, 0}, {list, []}}.
     {move, {y, 3}, {x, 1}}.
     {call_ext, 2, {extfunc, lists, filter, 2}}.
     {move, {x, 0}, {y, 4}}.
@@ -770,7 +770,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     {call, 2, {f, 92}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_eq, {f, 153}, [{x, 0}, {atom, true}]}.
+    {test, is_eq, {f, 154}, [{x, 0}, {atom, true}]}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 5}, {x, 0}}.
@@ -788,10 +788,10 @@ test "path.isInside treats a name starting with two dots as a name" {
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
     {call, 2, {f, 92}}.
-    {jump, {f, 154}}.
-  {label, 153}.
-    {move, {y, 5}, {x, 0}}.
+    {jump, {f, 155}}.
   {label, 154}.
+    {move, {y, 5}, {x, 0}}.
+  {label, 155}.
     {deallocate, 10}.
     return.
 % Collapse `//` and drop `.` segments via a `filter` over the split
@@ -809,11 +809,11 @@ test "path.isInside treats a name starting with two dots as a name" {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {literal, <<"">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 155}, [{y, 0}, {x, 0}]}.
+    {test, is_eq_exact, {f, 156}, [{y, 0}, {x, 0}]}.
     {move, {literal, <<".">>}, {x, 0}}.
     {deallocate, 11}.
     return.
-  {label, 155}.
+  {label, 156}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 13}}.
     {move, {x, 0}, {y, 1}}.
@@ -821,7 +821,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     {call, 1, {f, 11}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 157}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 158}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, filter, 2}}.
     {move, {x, 0}, {y, 2}}.
     {call, 0, {f, 7}}.
@@ -830,7 +830,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     {call, 2, {f, 92}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq, {f, 160}, [{x, 0}, {atom, true}]}.
+    {test, is_eq, {f, 161}, [{x, 0}, {atom, true}]}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 3}, {x, 0}}.
@@ -848,16 +848,16 @@ test "path.isInside treats a name starting with two dots as a name" {
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
     {call, 2, {f, 92}}.
-    {jump, {f, 161}}.
-  {label, 160}.
-    {move, {literal, <<"">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 162}, [{y, 3}, {x, 0}]}.
-    {move, {literal, <<".">>}, {x, 0}}.
-    {jump, {f, 163}}.
-  {label, 162}.
-    {move, {y, 3}, {x, 0}}.
-  {label, 163}.
+    {jump, {f, 162}}.
   {label, 161}.
+    {move, {literal, <<"">>}, {x, 0}}.
+    {test, is_eq_exact, {f, 163}, [{y, 3}, {x, 0}]}.
+    {move, {literal, <<".">>}, {x, 0}}.
+    {jump, {f, 164}}.
+  {label, 163}.
+    {move, {y, 3}, {x, 0}}.
+  {label, 164}.
+  {label, 162}.
     {deallocate, 11}.
     return.
 % Internal: count how many leading components two split paths share. Tail-
@@ -876,57 +876,57 @@ test "path.isInside treats a name starting with two dots as a name" {
     {move, {x, 2}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_ge, {f, 164}, [{y, 2}, {x, 0}]}.
-    {move, {y, 2}, {x, 0}}.
-    {deallocate, 7}.
-    return.
-  {label, 164}.
-    {move, {y, 1}, {x, 0}}.
-    {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
     {test, is_ge, {f, 165}, [{y, 2}, {x, 0}]}.
     {move, {y, 2}, {x, 0}}.
     {deallocate, 7}.
     return.
   {label, 165}.
+    {move, {y, 1}, {x, 0}}.
+    {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
+    {test, is_ge, {f, 166}, [{y, 2}, {x, 0}]}.
+    {move, {y, 2}, {x, 0}}.
+    {deallocate, 7}.
+    return.
+  {label, 166}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 2}, {x, 1}}.
     {call, 2, {f, 80}}.
-    {test, is_ne_exact, {f, 166}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 167}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
-    {jump, {f, 167}}.
-  {label, 166}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 168}}.
   {label, 167}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 168}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 2}, {x, 1}}.
     {call, 2, {f, 80}}.
-    {test, is_ne_exact, {f, 168}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 169}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 5}, {x, 0}}.
-    {jump, {f, 169}}.
-  {label, 168}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 170}}.
   {label, 169}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 170}.
     {move, {x, 0}, {y, 6}}.
-    {test, is_eq_exact, {f, 170}, [{y, 4}, {y, 6}]}.
+    {test, is_eq_exact, {f, 171}, [{y, 4}, {y, 6}]}.
     {gc_bif, '+', {f, 0}, 0, [{y, 2}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 172}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 172}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 173}}.
-  {label, 172}.
+    {test, is_ge, {f, 173}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 173}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 174}}.
+  {label, 173}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/path.bp:114:52">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 173}.
+  {label, 174}.
     {move, {y, 1}, {x, 1}}.
     {move, {x, 0}, {x, 2}}.
     {move, {y, 0}, {x, 0}}.
     {call, 3, {f, 25}}.
-    {jump, {f, 171}}.
-  {label, 170}.
-    {move, {y, 2}, {x, 0}}.
+    {jump, {f, 172}}.
   {label, 171}.
+    {move, {y, 2}, {x, 0}}.
+  {label, 172}.
     {deallocate, 7}.
     return.
 % Internal: build an array of `n` ".." strings via head/tail recursion.
@@ -940,24 +940,24 @@ test "path.isInside treats a name starting with two dots as a name" {
     {allocate, 3, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
-    {test, is_ge, {f, 174}, [{integer, 0}, {y, 0}]}.
+    {test, is_ge, {f, 175}, [{integer, 0}, {y, 0}]}.
     {move, nil, {x, 0}}.
-    {jump, {f, 175}}.
-  {label, 174}.
+    {jump, {f, 176}}.
+  {label, 175}.
     {gc_bif, '-', {f, 0}, 0, [{y, 0}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 176}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 176}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 177}}.
-  {label, 176}.
+    {test, is_ge, {f, 177}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 177}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 178}}.
+  {label, 177}.
     {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/path.bp:120:42">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 177}.
+  {label, 178}.
     {call, 1, {f, 27}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"..">>}, {x, 0}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
-  {label, 175}.
+  {label, 176}.
     {deallocate, 3}.
     return.
 % The relative path from `src` to `dst` — the path you would prefix to
@@ -992,28 +992,28 @@ test "path.isInside treats a name starting with two dots as a name" {
     {move, {y, 2}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
     {gc_bif, '-', {f, 0}, 1, [{x, 0}, {y, 4}], {x, 0}}.
-    {test, is_ge, {f, 178}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 178}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 179}}.
-  {label, 178}.
+    {test, is_ge, {f, 179}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 179}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 180}}.
+  {label, 179}.
     {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/path.bp:135:39">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 179}.
+  {label, 180}.
     {call, 1, {f, 27}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 3}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_ne_exact, {f, 180}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 181}, [{x, 0}, {atom, undefined}]}.
     {gc_bif, '+', {f, 0}, 1, [{y, 4}, {integer, 1}], {x, 1}}.
     {gc_bif, '-', {f, 0}, 2, [{x, 0}, {y, 4}], {x, 2}}.
     {move, {y, 3}, {x, 0}}.
     {call_ext, 3, {extfunc, lists, sublist, 3}}.
-    {jump, {f, 181}}.
-  {label, 180}.
+    {jump, {f, 182}}.
+  {label, 181}.
     {move, {y, 4}, {x, 0}}.
     {move, {y, 3}, {x, 1}}.
     {call_ext, 2, {extfunc, lists, nthtail, 2}}.
-  {label, 181}.
+  {label, 182}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 5}, {x, 0}}.
     {move, {y, 6}, {x, 1}}.
@@ -1025,12 +1025,12 @@ test "path.isInside treats a name starting with two dots as a name" {
     {call, 2, {f, 92}}.
     {move, {x, 0}, {y, 8}}.
     {move, {literal, <<"">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 182}, [{y, 8}, {x, 0}]}.
+    {test, is_eq_exact, {f, 183}, [{y, 8}, {x, 0}]}.
     {move, {literal, <<".">>}, {x, 0}}.
-    {jump, {f, 183}}.
-  {label, 182}.
-    {move, {y, 8}, {x, 0}}.
+    {jump, {f, 184}}.
   {label, 183}.
+    {move, {y, 8}, {x, 0}}.
+  {label, 184}.
     {deallocate, 11}.
     return.
 % Internal accumulator for `resolve`: a list of normalised path parts
@@ -1052,68 +1052,68 @@ test "path.isInside treats a name starting with two dots as a name" {
     {move, {x, 1}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_eq_exact, {f, 184}, [{x, 0}, {integer, 0}]}.
+    {test, is_eq_exact, {f, 185}, [{x, 0}, {integer, 0}]}.
     {move, {y, 0}, {x, 0}}.
     {deallocate, 7}.
     return.
-  {label, 184}.
+  {label, 185}.
     {move, {y, 1}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
     {call, 2, {f, 80}}.
-    {test, is_ne_exact, {f, 185}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 186}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
-    {jump, {f, 186}}.
-  {label, 185}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 187}}.
   {label, 186}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 187}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 1}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_ne_exact, {f, 187}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 188}, [{x, 0}, {atom, undefined}]}.
     {gc_bif, '+', {f, 0}, 1, [{integer, 1}, {integer, 1}], {x, 1}}.
     {gc_bif, '-', {f, 0}, 2, [{x, 0}, {integer, 1}], {x, 2}}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 3, {extfunc, lists, sublist, 3}}.
-    {jump, {f, 188}}.
-  {label, 187}.
+    {jump, {f, 189}}.
+  {label, 188}.
     {move, {integer, 1}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, lists, nthtail, 2}}.
-  {label, 188}.
+  {label, 189}.
     {move, {x, 0}, {y, 4}}.
     {move, {literal, <<"..">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 189}, [{y, 3}, {x, 0}]}.
+    {test, is_eq_exact, {f, 190}, [{y, 3}, {x, 0}]}.
     {move, {y, 0}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_eq_exact, {f, 191}, [{x, 0}, {integer, 0}]}.
+    {test, is_eq_exact, {f, 192}, [{x, 0}, {integer, 0}]}.
     {move, {y, 0}, {x, 0}}.
-    {jump, {f, 192}}.
-  {label, 191}.
+    {jump, {f, 193}}.
+  {label, 192}.
     {move, {y, 0}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
     {gc_bif, '-', {f, 0}, 1, [{x, 0}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 193}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 193}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 194}}.
-  {label, 193}.
+    {test, is_ge, {f, 194}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 194}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 195}}.
+  {label, 194}.
     {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/path.bp:159:63">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 194}.
-    {test, is_ne_exact, {f, 195}, [{x, 0}, {atom, undefined}]}.
+  {label, 195}.
+    {test, is_ne_exact, {f, 196}, [{x, 0}, {atom, undefined}]}.
     {gc_bif, '+', {f, 0}, 1, [{integer, 0}, {integer, 1}], {x, 1}}.
     {gc_bif, '-', {f, 0}, 2, [{x, 0}, {integer, 0}], {x, 2}}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 3, {extfunc, lists, sublist, 3}}.
-    {jump, {f, 196}}.
-  {label, 195}.
+    {jump, {f, 197}}.
+  {label, 196}.
     {move, {integer, 0}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, lists, nthtail, 2}}.
-  {label, 196}.
-  {label, 192}.
-    {jump, {f, 190}}.
-  {label, 189}.
+  {label, 197}.
+  {label, 193}.
+    {jump, {f, 191}}.
+  {label, 190}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 3}, {x, 0}}.
@@ -1123,7 +1123,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 2, {extfunc, lists, append, 2}}.
-  {label, 190}.
+  {label, 191}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {x, 0}}.
     {move, {y, 4}, {x, 1}}.
@@ -1144,27 +1144,27 @@ test "path.isInside treats a name starting with two dots as a name" {
     {move, {y, 1}, {x, 0}}.
     {call, 1, {f, 13}}.
     {move, {x, 0}, {x, 1}}.
-    {test, is_ne_exact, {f, 197}, [{x, 1}, {atom, true}]}.
+    {test, is_ne_exact, {f, 198}, [{x, 1}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 199}, [{x, 0}, 3, {atom, std@path@@PathAccum}]}.
+    {test, is_tagged_tuple, {f, 200}, [{x, 0}, 3, {atom, std@path@@PathAccum}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 199}.
-    {jump, {f, 198}}.
-  {label, 197}.
-    {move, {atom, true}, {x, 0}}.
+  {label, 200}.
+    {jump, {f, 199}}.
   {label, 198}.
+    {move, {atom, true}, {x, 0}}.
+  {label, 199}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 1}, {x, 0}}.
     {call, 1, {f, 13}}.
-    {test, is_eq, {f, 200}, [{x, 0}, {atom, true}]}.
+    {test, is_eq, {f, 201}, [{x, 0}, {atom, true}]}.
     {move, nil, {x, 0}}.
-    {jump, {f, 201}}.
-  {label, 200}.
-    {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 202}, [{x, 0}, 3, {atom, std@path@@PathAccum}]}.
-    {get_tuple_element, {x, 0}, 2, {x, 0}}.
-  {label, 202}.
+    {jump, {f, 202}}.
   {label, 201}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 203}, [{x, 0}, 3, {atom, std@path@@PathAccum}]}.
+    {get_tuple_element, {x, 0}, 2, {x, 0}}.
+  {label, 203}.
+  {label, 202}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {x, 0}}.
     {move, {y, 2}, {x, 1}}.
@@ -1186,34 +1186,34 @@ test "path.isInside treats a name starting with two dots as a name" {
     {move, {x, 2}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_ge, {f, 203}, [{y, 1}, {x, 0}]}.
+    {test, is_ge, {f, 204}, [{y, 1}, {x, 0}]}.
     {move, {y, 2}, {x, 0}}.
     {deallocate, 6}.
     return.
-  {label, 203}.
+  {label, 204}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call, 2, {f, 80}}.
-    {test, is_ne_exact, {f, 204}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 205}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
-    {jump, {f, 205}}.
-  {label, 204}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 206}}.
   {label, 205}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 206}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 2}, {x, 0}}.
     {move, {y, 4}, {x, 1}}.
     {call, 2, {f, 33}}.
     {move, {x, 0}, {y, 5}}.
     {gc_bif, '+', {f, 0}, 0, [{y, 1}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 206}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 206}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 207}}.
-  {label, 206}.
+    {test, is_ge, {f, 207}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 207}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 208}}.
+  {label, 207}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/path.bp:175:35">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 207}.
+  {label, 208}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 5}, {x, 2}}.
     {move, {y, 0}, {x, 0}}.
@@ -1242,9 +1242,9 @@ test "path.isInside treats a name starting with two dots as a name" {
     {call, 3, {f, 35}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 208}, [{x, 0}, 3, {atom, std@path@@PathAccum}]}.
+    {test, is_tagged_tuple, {f, 209}, [{x, 0}, 3, {atom, std@path@@PathAccum}]}.
     {get_tuple_element, {x, 0}, 2, {x, 0}}.
-  {label, 208}.
+  {label, 209}.
     {move, {x, 0}, {y, 2}}.
     {call, 0, {f, 7}}.
     {move, {x, 0}, {x, 1}}.
@@ -1252,10 +1252,10 @@ test "path.isInside treats a name starting with two dots as a name" {
     {call, 2, {f, 92}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 210}, [{x, 0}, 3, {atom, std@path@@PathAccum}]}.
+    {test, is_tagged_tuple, {f, 211}, [{x, 0}, 3, {atom, std@path@@PathAccum}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 210}.
-    {test, is_eq, {f, 209}, [{x, 0}, {atom, true}]}.
+  {label, 211}.
+    {test, is_eq, {f, 210}, [{x, 0}, {atom, true}]}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 3}, {x, 0}}.
@@ -1273,16 +1273,16 @@ test "path.isInside treats a name starting with two dots as a name" {
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
     {call, 2, {f, 92}}.
-    {jump, {f, 211}}.
-  {label, 209}.
+    {jump, {f, 212}}.
+  {label, 210}.
     {move, {literal, <<"">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 212}, [{y, 3}, {x, 0}]}.
+    {test, is_eq_exact, {f, 213}, [{y, 3}, {x, 0}]}.
     {move, {literal, <<".">>}, {x, 0}}.
-    {jump, {f, 213}}.
-  {label, 212}.
-    {move, {y, 3}, {x, 0}}.
+    {jump, {f, 214}}.
   {label, 213}.
-  {label, 211}.
+    {move, {y, 3}, {x, 0}}.
+  {label, 214}.
+  {label, 212}.
     {deallocate, 11}.
     return.
 % ── 1.0.10-beta front 01 additions ───────────────────────────────────────────
@@ -1306,26 +1306,26 @@ test "path.isInside treats a name starting with two dots as a name" {
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
     {move, {x, 0}, {y, 2}}.
     {move, {literal, <<"">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 214}, [{y, 1}, {x, 0}]}.
+    {test, is_eq_exact, {f, 215}, [{y, 1}, {x, 0}]}.
     {move, {y, 0}, {x, 0}}.
-    {jump, {f, 215}}.
-  {label, 214}.
+    {jump, {f, 216}}.
+  {label, 215}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
     {gc_bif, '-', {f, 0}, 1, [{y, 2}, {x, 0}], {x, 0}}.
-    {test, is_ge, {f, 218}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 218}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 219}}.
-  {label, 218}.
+    {test, is_ge, {f, 219}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 219}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 220}}.
+  {label, 219}.
     {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/path.bp:205:51">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 219}.
+  {label, 220}.
     {move, {integer, 0}, {x, 1}}.
     {move, {x, 0}, {x, 2}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 3, {f, 217}}.
-  {label, 215}.
+    {call, 3, {f, 218}}.
+  {label, 216}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
     {deallocate, 9}.
@@ -1374,114 +1374,114 @@ test "path.isInside treats a name starting with two dots as a name" {
     {call, 2, {f, 29}}.
     {move, {x, 0}, {y, 6}}.
     {move, {literal, <<"..">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 220}, [{y, 6}, {x, 0}]}.
+    {test, is_eq_exact, {f, 221}, [{y, 6}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 221}}.
-  {label, 220}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 222}}.
   {label, 221}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 222}.
     {move, {x, 0}, {x, 1}}.
-    {test, is_ne_exact, {f, 222}, [{x, 1}, {atom, true}]}.
+    {test, is_ne_exact, {f, 223}, [{x, 1}, {atom, true}]}.
     {move, {literal, <<"../">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 6}, {x, 0}}.
     {call_ext, 2, {extfunc, string, prefix, 2}}.
-    {test, is_eq, {f, 224}, [{x, 0}, {atom, nomatch}]}.
+    {test, is_eq, {f, 225}, [{x, 0}, {atom, nomatch}]}.
     {move, {atom, false}, {x, 0}}.
-    {jump, {f, 225}}.
-  {label, 224}.
-    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 226}}.
   {label, 225}.
-    {jump, {f, 223}}.
-  {label, 222}.
     {move, {atom, true}, {x, 0}}.
+  {label, 226}.
+    {jump, {f, 224}}.
   {label, 223}.
+    {move, {atom, true}, {x, 0}}.
+  {label, 224}.
     {move, {x, 0}, {y, 7}}.
     {move, {atom, false}, {x, 0}}.
-    {test, is_eq_exact, {f, 226}, [{y, 7}, {x, 0}]}.
+    {test, is_eq_exact, {f, 227}, [{y, 7}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 227}}.
-  {label, 226}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 228}}.
   {label, 227}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 228}.
     {deallocate, 10}.
     return.
 % ── tests ────────────────────────────────────────────────────────────────────
 
-{function, 'string_slice', 3, 217}.
-  {label, 216}.
+{function, 'string_slice', 3, 218}.
+  {label, 217}.
     {line, [{location, "std@path.erl", 21}]}.
     {func_info, {atom, std@path}, {atom, 'string_slice'}, 3}.
-  {label, 217}.
+  {label, 218}.
     {allocate, 3, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {x, 2}, {y, 2}}.
-    {test, is_ne_exact, {f, 228}, [{y, 2}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 229}, [{y, 2}, {atom, undefined}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 2}, {x, 2}}.
     {move, {y, 1}, {x, 1}}.
-    {call_last, 3, {f, 230}, 3}.
-  {label, 228}.
+    {call_last, 3, {f, 231}, 3}.
+  {label, 229}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
-    {call_last, 2, {f, 252}, 3}.
+    {call_last, 2, {f, 253}, 3}.
 
-{function, '__bp_priv__array_range', 2, 270}.
-  {label, 269}.
+{function, '__bp_priv__array_range', 2, 271}.
+  {label, 270}.
     {line, [{location, "std@path.erl", 23}]}.
     {func_info, {atom, std@path}, {atom, '__bp_priv__array_range'}, 2}.
-  {label, 270}.
+  {label, 271}.
     {call_only, 2, {f, 3}}.
 
-{function, '__bp_priv__array_repeat', 2, 272}.
-  {label, 271}.
+{function, '__bp_priv__array_repeat', 2, 273}.
+  {label, 272}.
     {line, [{location, "std@path.erl", 24}]}.
     {func_info, {atom, std@path}, {atom, '__bp_priv__array_repeat'}, 2}.
-  {label, 272}.
+  {label, 273}.
     {call_only, 2, {f, 5}}.
 
-{function, '__bp_priv__string_slice', 3, 274}.
-  {label, 273}.
+{function, '__bp_priv__string_slice', 3, 275}.
+  {label, 274}.
     {line, [{location, "std@path.erl", 25}]}.
     {func_info, {atom, std@path}, {atom, '__bp_priv__string_slice'}, 3}.
-  {label, 274}.
-    {call_only, 3, {f, 217}}.
-
-{function, '__bp_priv__applyPieces', 2, 276}.
   {label, 275}.
+    {call_only, 3, {f, 218}}.
+
+{function, '__bp_priv__applyPieces', 2, 277}.
+  {label, 276}.
     {line, [{location, "std@path.erl", 26}]}.
     {func_info, {atom, std@path}, {atom, '__bp_priv__applyPieces'}, 2}.
-  {label, 276}.
+  {label, 277}.
     {call_only, 2, {f, 31}}.
 
-{function, '__bp_priv__commonPrefixCount', 3, 278}.
-  {label, 277}.
+{function, '__bp_priv__commonPrefixCount', 3, 279}.
+  {label, 278}.
     {line, [{location, "std@path.erl", 27}]}.
     {func_info, {atom, std@path}, {atom, '__bp_priv__commonPrefixCount'}, 3}.
-  {label, 278}.
+  {label, 279}.
     {call_only, 3, {f, 25}}.
 
-{function, '__bp_priv__makeUps', 1, 280}.
-  {label, 279}.
+{function, '__bp_priv__makeUps', 1, 281}.
+  {label, 280}.
     {line, [{location, "std@path.erl", 28}]}.
     {func_info, {atom, std@path}, {atom, '__bp_priv__makeUps'}, 1}.
-  {label, 280}.
+  {label, 281}.
     {call_only, 1, {f, 27}}.
 
-{function, '__bp_priv__resolveAll', 3, 282}.
-  {label, 281}.
+{function, '__bp_priv__resolveAll', 3, 283}.
+  {label, 282}.
     {line, [{location, "std@path.erl", 29}]}.
     {func_info, {atom, std@path}, {atom, '__bp_priv__resolveAll'}, 3}.
-  {label, 282}.
+  {label, 283}.
     {call_only, 3, {f, 35}}.
 
-{function, '__bp_priv__resolveStep', 2, 284}.
-  {label, 283}.
+{function, '__bp_priv__resolveStep', 2, 285}.
+  {label, 284}.
     {line, [{location, "std@path.erl", 30}]}.
     {func_info, {atom, std@path}, {atom, '__bp_priv__resolveStep'}, 2}.
-  {label, 284}.
+  {label, 285}.
     {call_only, 2, {f, 33}}.
 
 {function, '__bp_tpl_0-t/2-fun-0-', 2, 57}.
@@ -1702,6 +1702,10 @@ test "path.isInside treats a name starting with two dots as a name" {
     {test, is_ne_exact, {f, 110}, [{x, 0}, {atom, true}]}.
     {test, is_ne_exact, {f, 110}, [{x, 0}, {atom, false}]}.
     {test, is_ne_exact, {f, 110}, [{x, 0}, {atom, undefined}]}.
+    {test, is_eq_exact, {f, 118}, [{x, 0}, {atom, '__bp_gen'}]}.
+    {move, {literal, {panic, <<"wasm cannot print a generator value dynamically yet">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 118}.
     {test, is_eq_exact, {f, 116}, [{x, 0}, {atom, ok}]}.
     {move, {literal, <<"Ok(">>}, {y, 1}}.
     {jump, {f, 117}}.
@@ -1785,28 +1789,28 @@ test "path.isInside treats a name starting with two dots as a name" {
     {call_ext, 1, {extfunc, erlang, atom_to_list, 1}}.
     {move, {literal, <<"__v__">>}, {x, 1}}.
     {call_ext, 2, {extfunc, string, split, 2}}.
-    {test, is_nonempty_list, {f, 118}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 119}, [{x, 0}]}.
     {get_list, {x, 0}, {x, 1}, {x, 2}}.
     {move, {x, 1}, {y, 2}}.
-    {test, is_nonempty_list, {f, 118}, [{x, 2}]}.
+    {test, is_nonempty_list, {f, 119}, [{x, 2}]}.
     {move, {y, 2}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, list_to_atom, 1}}.
     {move, {x, 0}, {y, 1}}.
-  {label, 118}.
+  {label, 119}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, code, ensure_loaded, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {atom, '__bp_format'}, {x, 1}}.
     {move, {integer, 1}, {x, 2}}.
     {call_ext, 3, {extfunc, erlang, function_exported, 3}}.
-    {test, is_eq_exact, {f, 119}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 120}, [{x, 0}, {atom, true}]}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, nil, {x, 2}}.
     {move, {y, 1}, {x, 0}}.
     {move, {atom, '__bp_format'}, {x, 1}}.
     {call_ext, 3, {extfunc, erlang, apply, 3}}.
     {call_last, 1, {f, 104}, 3}.
-  {label, 119}.
+  {label, 120}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, nil, {x, 1}}.
     {move, {literal, <<"~p">>}, {x, 0}}.
@@ -1823,20 +1827,20 @@ test "path.isInside treats a name starting with two dots as a name" {
     {move, {integer, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test, is_eq_exact, {f, 120}, [{x, 0}, {atom, text}]}.
-    {move, {integer, 2}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
-  {label, 120}.
-    {move, {integer, 3}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {move, {x, 0}, {y, 1}}.
-    {test, is_eq_exact, {f, 121}, [{x, 0}, nil]}.
+    {test, is_eq_exact, {f, 121}, [{x, 0}, {atom, text}]}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
   {label, 121}.
+    {move, {integer, 3}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {move, {x, 0}, {y, 1}}.
+    {test, is_eq_exact, {f, 122}, [{x, 0}, nil]}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
+  {label, 122}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
     {make_fun3, {f, 106}, 0, 0, {x, 0}, {list, []}}.
     {move, {y, 1}, {x, 1}}.
@@ -1880,19 +1884,19 @@ test "path.isInside treats a name starting with two dots as a name" {
     {deallocate, 2}.
     return.
 
-{function, '-bp_stringify-', 1, 123}.
-  {label, 122}.
+{function, '-bp_stringify-', 1, 124}.
+  {label, 123}.
     {line, [{location, "std@path.erl", 9}]}.
     {func_info, {atom, std@path}, {atom, '-bp_stringify-'}, 1}.
-  {label, 123}.
+  {label, 124}.
     {allocate, 0, 1}.
-    {test, is_binary, {f, 124}, [{x, 0}]}.
+    {test, is_binary, {f, 125}, [{x, 0}]}.
     {deallocate, 0}.
     return.
-  {label, 124}.
-    {test, is_integer, {f, 125}, [{x, 0}]}.
-    {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 0}.
   {label, 125}.
+    {test, is_integer, {f, 126}, [{x, 0}]}.
+    {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 0}.
+  {label, 126}.
     {call, 1, {f, 98}}.
     {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 0}.
 
@@ -1906,18 +1910,18 @@ test "path.isInside treats a name starting with two dots as a name" {
     {move, {x, 1}, {y, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 123}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 124}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 2, {extfunc, lists, join, 2}}.
     {call_ext_last, 1, {extfunc, erlang, iolist_to_binary, 1}, 1}.
 
-{function, '-join/1-fun-1-', 1, 148}.
-  {label, 147}.
+{function, '-join/1-fun-1-', 1, 149}.
+  {label, 148}.
     {line, [{location, "std@path.erl", 11}]}.
     {func_info, {atom, std@path}, {atom, '-join/1-fun-1-'}, 1}.
-  {label, 148}.
+  {label, 149}.
     {allocate, 3, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -1931,46 +1935,46 @@ test "path.isInside treats a name starting with two dots as a name" {
     {deallocate, 3}.
     return.
 
-{function, '-join/1-fun-2-', 1, 150}.
-  {label, 149}.
+{function, '-join/1-fun-2-', 1, 151}.
+  {label, 150}.
     {line, [{location, "std@path.erl", 11}]}.
     {func_info, {atom, std@path}, {atom, '-join/1-fun-2-'}, 1}.
-  {label, 150}.
+  {label, 151}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {literal, <<"">>}, {x, 0}}.
-    {test, is_ne_exact, {f, 151}, [{y, 0}, {x, 0}]}.
+    {test, is_ne_exact, {f, 152}, [{y, 0}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 152}}.
-  {label, 151}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 153}}.
   {label, 152}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 153}.
     {deallocate, 1}.
     return.
 
-{function, '-normalize/1-fun-3-', 1, 157}.
-  {label, 156}.
+{function, '-normalize/1-fun-3-', 1, 158}.
+  {label, 157}.
     {line, [{location, "std@path.erl", 12}]}.
     {func_info, {atom, std@path}, {atom, '-normalize/1-fun-3-'}, 1}.
-  {label, 157}.
+  {label, 158}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {literal, <<".">>}, {x, 0}}.
-    {test, is_ne_exact, {f, 158}, [{y, 0}, {x, 0}]}.
+    {test, is_ne_exact, {f, 159}, [{y, 0}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 159}}.
-  {label, 158}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 160}}.
   {label, 159}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 160}.
     {deallocate, 1}.
     return.
 
-{function, '__bp_tpl_1-t/3-fun-0-', 3, 234}.
-  {label, 233}.
-    {func_info, {atom, std@path}, {atom, '__bp_tpl_1-t/3-fun-0-'}, 3}.
+{function, '__bp_tpl_1-t/3-fun-0-', 3, 235}.
   {label, 234}.
+    {func_info, {atom, std@path}, {atom, '__bp_tpl_1-t/3-fun-0-'}, 3}.
+  {label, 235}.
     {allocate, 9, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}]}}.
     {move, {x, 0}, {y, 3}}.
@@ -1980,20 +1984,20 @@ test "path.isInside treats a name starting with two dots as a name" {
     {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {y, 0}}.
-    {jump, {f, 238}}.
-  {label, 238}.
+    {jump, {f, 239}}.
+  {label, 239}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, length, 1}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {y, 1}}.
-    {jump, {f, 240}}.
-  {label, 240}.
+    {jump, {f, 241}}.
+  {label, 241}.
     {move, {y, 4}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '<', 2}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 242}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 243}, [{x, 0}, {atom, true}]}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 4}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '+', 2}}.
@@ -2003,29 +2007,29 @@ test "path.isInside treats a name starting with two dots as a name" {
     {call_ext, 2, {extfunc, erlang, max, 2}}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 8}, {y, 7}}.
-    {jump, {f, 241}}.
-  {label, 242}.
+    {jump, {f, 242}}.
+  {label, 243}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 243}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 244}, [{x, 0}, {atom, false}]}.
     {move, {y, 4}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, min, 2}}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 8}, {y, 7}}.
-    {jump, {f, 241}}.
-  {label, 243}.
+    {jump, {f, 242}}.
+  {label, 244}.
     {move, {y, 6}, {x, 0}}.
     {case_end, {x, 0}}.
-  {label, 241}.
+  {label, 242}.
     {move, {y, 7}, {y, 2}}.
-    {jump, {f, 245}}.
-  {label, 245}.
+    {jump, {f, 246}}.
+  {label, 246}.
     {move, {y, 5}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '<', 2}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 247}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 248}, [{x, 0}, {atom, true}]}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 5}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '+', 2}}.
@@ -2035,23 +2039,23 @@ test "path.isInside treats a name starting with two dots as a name" {
     {call_ext, 2, {extfunc, erlang, max, 2}}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 8}, {y, 7}}.
-    {jump, {f, 246}}.
-  {label, 247}.
+    {jump, {f, 247}}.
+  {label, 248}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 248}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 249}, [{x, 0}, {atom, false}]}.
     {move, {y, 5}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, min, 2}}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 8}, {y, 7}}.
-    {jump, {f, 246}}.
-  {label, 248}.
+    {jump, {f, 247}}.
+  {label, 249}.
     {move, {y, 6}, {x, 0}}.
     {case_end, {x, 0}}.
-  {label, 246}.
+  {label, 247}.
     {move, {y, 7}, {y, 1}}.
-    {jump, {f, 250}}.
-  {label, 250}.
+    {jump, {f, 251}}.
+  {label, 251}.
     {move, {y, 2}, {x, 0}}.
     {move, {integer, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '+', 2}}.
@@ -2072,17 +2076,17 @@ test "path.isInside treats a name starting with two dots as a name" {
     {move, {y, 6}, {x, 0}}.
     {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 9}.
 
-{function, '__bp_tpl_1', 3, 230}.
-  {label, 229}.
-    {func_info, {atom, std@path}, {atom, '__bp_tpl_1'}, 3}.
+{function, '__bp_tpl_1', 3, 231}.
   {label, 230}.
+    {func_info, {atom, std@path}, {atom, '__bp_tpl_1'}, 3}.
+  {label, 231}.
     {allocate, 4, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {x, 2}, {y, 2}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 234}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 235}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -2092,10 +2096,10 @@ test "path.isInside treats a name starting with two dots as a name" {
     {deallocate, 4}.
     return.
 
-{function, '__bp_tpl_2-t/2-fun-0-', 2, 256}.
-  {label, 255}.
-    {func_info, {atom, std@path}, {atom, '__bp_tpl_2-t/2-fun-0-'}, 2}.
+{function, '__bp_tpl_2-t/2-fun-0-', 2, 257}.
   {label, 256}.
+    {func_info, {atom, std@path}, {atom, '__bp_tpl_2-t/2-fun-0-'}, 2}.
+  {label, 257}.
     {allocate, 7, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
     {move, {x, 0}, {y, 2}}.
@@ -2104,20 +2108,20 @@ test "path.isInside treats a name starting with two dots as a name" {
     {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {y, 0}}.
-    {jump, {f, 260}}.
-  {label, 260}.
+    {jump, {f, 261}}.
+  {label, 261}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, length, 1}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {y, 1}}.
-    {jump, {f, 262}}.
-  {label, 262}.
+    {jump, {f, 263}}.
+  {label, 263}.
     {move, {y, 3}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '<', 2}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 264}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 265}, [{x, 0}, {atom, true}]}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 3}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '+', 2}}.
@@ -2127,23 +2131,23 @@ test "path.isInside treats a name starting with two dots as a name" {
     {call_ext, 2, {extfunc, erlang, max, 2}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {y, 5}}.
-    {jump, {f, 263}}.
-  {label, 264}.
+    {jump, {f, 264}}.
+  {label, 265}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 265}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 266}, [{x, 0}, {atom, false}]}.
     {move, {y, 3}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, min, 2}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {y, 5}}.
-    {jump, {f, 263}}.
-  {label, 265}.
+    {jump, {f, 264}}.
+  {label, 266}.
     {move, {y, 4}, {x, 0}}.
     {case_end, {x, 0}}.
-  {label, 263}.
+  {label, 264}.
     {move, {y, 5}, {y, 1}}.
-    {jump, {f, 267}}.
-  {label, 267}.
+    {jump, {f, 268}}.
+  {label, 268}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, lists, nthtail, 2}}.
@@ -2151,16 +2155,16 @@ test "path.isInside treats a name starting with two dots as a name" {
     {move, {y, 4}, {x, 0}}.
     {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 7}.
 
-{function, '__bp_tpl_2', 2, 252}.
-  {label, 251}.
-    {func_info, {atom, std@path}, {atom, '__bp_tpl_2'}, 2}.
+{function, '__bp_tpl_2', 2, 253}.
   {label, 252}.
+    {func_info, {atom, std@path}, {atom, '__bp_tpl_2'}, 2}.
+  {label, 253}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 256}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 257}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -2179,11 +2183,11 @@ test "path.isInside treats a name starting with two dots as a name" {
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_list, {f, 268}, [{x, 0}]}.
+    {test, is_list, {f, 269}, [{x, 0}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext_last, 2, {extfunc, lists, append, 2}, 2}.
-  {label, 268}.
+  {label, 269}.
     %% unresolved_method: append/2
     {move, {literal, {unresolved_method, append, 2}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
@@ -3384,7 +3388,7 @@ fn wholeOf(v: f64) -> i32 {
 {module, std@io@random}.
 {exports, [{float, 0}, {seed, 1}, {seededFloat, 0}, {coin, 0}, {intInRange, 2}, {pick, 1}, {shuffle, 1}, {secureToken, 1}, {uuidV4, 0}, {randomBytes, 1}, {'__bp_priv__array_range', 2}, {'__bp_priv__array_repeat', 2}, {'__bp_priv__base64UrlOf', 1}, {'__bp_priv__floorWalk', 4}, {'__bp_priv__hexDigit', 1}, {'__bp_priv__hexOf', 1}, {'__bp_priv__randomByte', 0}, {'__bp_priv__randomBytesBody', 1}, {'__bp_priv__randomBytesOf', 1}, {'__bp_priv__secureTokenBody', 1}, {'__bp_priv__shuffleBody', 1}, {'__bp_priv__uuidV4Body', 0}, {'__bp_priv__wholeOf', 1}]}.
 {attributes, []}.
-{labels, 299}.
+{labels, 300}.
 
 {function, 'array_range', 2, 3}.
   {label, 2}.
@@ -4049,7 +4053,7 @@ fn wholeOf(v: f64) -> i32 {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 170}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 171}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
     {deallocate, 14}.
@@ -4092,8 +4096,8 @@ fn wholeOf(v: f64) -> i32 {
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
     {line, [{location, "std@io@random.erl", 20}]}.
-  {label, 173}.
-    {test, is_lt, {f, 174}, [{y, 2}, {y, 0}]}.
+  {label, 174}.
+    {test, is_lt, {f, 175}, [{y, 2}, {y, 0}]}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
     {call, 0, {f, 23}}.
@@ -4105,16 +4109,16 @@ fn wholeOf(v: f64) -> i32 {
     {call_ext, 2, {extfunc, lists, append, 2}}.
     {move, {x, 0}, {y, 1}}.
     {gc_bif, '+', {f, 0}, 0, [{y, 2}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 175}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 175}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 176}}.
-  {label, 175}.
+    {test, is_ge, {f, 176}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 176}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 177}}.
+  {label, 176}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/random.bp:358:15">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 176}.
+  {label, 177}.
     {move, {x, 0}, {y, 2}}.
-    {jump, {f, 173}}.
-  {label, 174}.
+    {jump, {f, 174}}.
+  {label, 175}.
     {move, {y, 1}, {x, 0}}.
     {deallocate, 6}.
     return.
@@ -4129,14 +4133,14 @@ fn wholeOf(v: f64) -> i32 {
     {move, {x, 0}, {y, 0}}.
     {move, {literal, <<"0123456789abcdef">>}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
-    {call, 2, {f, 179}}.
-    {test, is_ne_exact, {f, 177}, [{x, 0}, {atom, undefined}]}.
+    {call, 2, {f, 180}}.
+    {test, is_ne_exact, {f, 178}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {jump, {f, 201}}.
-  {label, 177}.
+    {jump, {f, 202}}.
+  {label, 178}.
     {move, {literal, <<"">>}, {x, 0}}.
-  {label, 201}.
+  {label, 202}.
     {deallocate, 2}.
     return.
 
@@ -4149,7 +4153,7 @@ fn wholeOf(v: f64) -> i32 {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 203}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 204}, 0, 0, {x, 0}, {list, []}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {move, {x, 0}, {x, 1}}.
@@ -4157,7 +4161,7 @@ fn wholeOf(v: f64) -> i32 {
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
-    {call_last, 2, {f, 207}, 3}.
+    {call_last, 2, {f, 208}, 3}.
 % RFC 4648 §5 base64url, unpadded.
 
 {function, base64UrlOf, 1, 31}.
@@ -4175,182 +4179,182 @@ fn wholeOf(v: f64) -> i32 {
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
     {line, [{location, "std@io@random.erl", 23}]}.
-  {label, 208}.
+  {label, 209}.
     {gc_bif, '*', {f, 0}, 0, [{integer, 3}, {y, 3}], {x, 0}}.
-    {test, is_ge, {f, 210}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 210}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 211}}.
-  {label, 210}.
+    {test, is_ge, {f, 211}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 211}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 212}}.
+  {label, 211}.
     {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at src/io/random.bp:376:14">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 211}.
+  {label, 212}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {gc_bif, length, {f, 0}, 2, [{x, 0}], {x, 0}}.
-    {test, is_lt, {f, 209}, [{x, 1}, {x, 0}]}.
+    {test, is_lt, {f, 210}, [{x, 1}, {x, 0}]}.
     {move, {y, 0}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {gc_bif, '*', {f, 0}, 2, [{integer, 3}, {y, 3}], {x, 0}}.
-    {test, is_ge, {f, 212}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 212}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 213}}.
-  {label, 212}.
+    {test, is_ge, {f, 213}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 213}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 214}}.
+  {label, 213}.
     {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at src/io/random.bp:377:34">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 213}.
-    {gc_bif, '-', {f, 0}, 2, [{x, 1}, {x, 0}], {x, 0}}.
-    {test, is_ge, {f, 214}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 214}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 215}}.
   {label, 214}.
+    {gc_bif, '-', {f, 0}, 2, [{x, 1}, {x, 0}], {x, 0}}.
+    {test, is_ge, {f, 215}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 215}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 216}}.
+  {label, 215}.
     {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/io/random.bp:377:30">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 215}.
+  {label, 216}.
     {move, {x, 0}, {y, 4}}.
     {gc_bif, '*', {f, 0}, 0, [{integer, 3}, {y, 3}], {x, 0}}.
-    {test, is_ge, {f, 217}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 217}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 218}}.
-  {label, 217}.
+    {test, is_ge, {f, 218}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 218}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 219}}.
+  {label, 218}.
     {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at src/io/random.bp:378:29">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 218}.
+  {label, 219}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call, 2, {f, 107}}.
-    {test, is_ne_exact, {f, 216}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 217}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 5}, {x, 0}}.
-    {jump, {f, 219}}.
-  {label, 216}.
+    {jump, {f, 220}}.
+  {label, 217}.
     {move, {integer, 0}, {x, 0}}.
-  {label, 219}.
+  {label, 220}.
     {move, {x, 0}, {y, 6}}.
-    {test, is_lt, {f, 220}, [{integer, 1}, {y, 4}]}.
+    {test, is_lt, {f, 221}, [{integer, 1}, {y, 4}]}.
     {gc_bif, '*', {f, 0}, 0, [{integer, 3}, {y, 3}], {x, 0}}.
-    {test, is_ge, {f, 223}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 223}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 224}}.
-  {label, 223}.
+    {test, is_ge, {f, 224}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 224}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 225}}.
+  {label, 224}.
     {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at src/io/random.bp:380:24">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 224}.
-    {gc_bif, '+', {f, 0}, 1, [{x, 0}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 225}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 225}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 226}}.
   {label, 225}.
+    {gc_bif, '+', {f, 0}, 1, [{x, 0}, {integer, 1}], {x, 0}}.
+    {test, is_ge, {f, 226}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 226}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 227}}.
+  {label, 226}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/random.bp:380:28">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 226}.
+  {label, 227}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call, 2, {f, 107}}.
-    {test, is_ne_exact, {f, 222}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 223}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 7}}.
     {move, {y, 7}, {x, 0}}.
-    {jump, {f, 227}}.
-  {label, 222}.
+    {jump, {f, 228}}.
+  {label, 223}.
     {move, {integer, 0}, {x, 0}}.
-  {label, 227}.
-    {jump, {f, 221}}.
-  {label, 220}.
-    {move, {integer, 0}, {x, 0}}.
+  {label, 228}.
+    {jump, {f, 222}}.
   {label, 221}.
+    {move, {integer, 0}, {x, 0}}.
+  {label, 222}.
     {move, {x, 0}, {y, 8}}.
-    {test, is_lt, {f, 228}, [{integer, 2}, {y, 4}]}.
+    {test, is_lt, {f, 229}, [{integer, 2}, {y, 4}]}.
     {gc_bif, '*', {f, 0}, 0, [{integer, 3}, {y, 3}], {x, 0}}.
-    {test, is_ge, {f, 231}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 231}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 232}}.
-  {label, 231}.
+    {test, is_ge, {f, 232}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 232}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 233}}.
+  {label, 232}.
     {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at src/io/random.bp:383:24">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 232}.
-    {gc_bif, '+', {f, 0}, 1, [{x, 0}, {integer, 2}], {x, 0}}.
-    {test, is_ge, {f, 233}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 233}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 234}}.
   {label, 233}.
+    {gc_bif, '+', {f, 0}, 1, [{x, 0}, {integer, 2}], {x, 0}}.
+    {test, is_ge, {f, 234}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 234}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 235}}.
+  {label, 234}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/random.bp:383:28">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 234}.
+  {label, 235}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call, 2, {f, 107}}.
-    {test, is_ne_exact, {f, 230}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 231}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {x, 0}}.
-    {jump, {f, 235}}.
-  {label, 230}.
+    {jump, {f, 236}}.
+  {label, 231}.
     {move, {integer, 0}, {x, 0}}.
-  {label, 235}.
-    {jump, {f, 229}}.
-  {label, 228}.
-    {move, {integer, 0}, {x, 0}}.
+  {label, 236}.
+    {jump, {f, 230}}.
   {label, 229}.
+    {move, {integer, 0}, {x, 0}}.
+  {label, 230}.
     {move, {x, 0}, {y, 10}}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 11}}.
     {gc_bif, 'rem', {f, 0}, 0, [{y, 6}, {integer, 4}], {x, 0}}.
     {gc_bif, '*', {f, 0}, 1, [{x, 0}, {integer, 16}], {x, 0}}.
-    {test, is_ge, {f, 237}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 237}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 238}}.
-  {label, 237}.
+    {test, is_ge, {f, 238}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 238}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 239}}.
+  {label, 238}.
     {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at src/io/random.bp:387:36">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 238}.
+  {label, 239}.
     {move, {x, 0}, {x, 1}}.
     {gc_bif, 'div', {f, 0}, 2, [{y, 8}, {integer, 16}], {x, 0}}.
-    {test, is_ge, {f, 239}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 239}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 240}}.
-  {label, 239}.
+    {test, is_ge, {f, 240}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 240}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 241}}.
+  {label, 240}.
     {move, {literal, {integer_overflow, <<"integer overflow: / on i32 at src/io/random.bp:387:46">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 240}.
-    {gc_bif, '+', {f, 0}, 2, [{x, 1}, {x, 0}], {x, 0}}.
-    {test, is_ge, {f, 241}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 241}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 242}}.
   {label, 241}.
+    {gc_bif, '+', {f, 0}, 2, [{x, 1}, {x, 0}], {x, 0}}.
+    {test, is_ge, {f, 242}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 242}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 243}}.
+  {label, 242}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/random.bp:387:41">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 242}.
+  {label, 243}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {call, 2, {f, 179}}.
-    {test, is_ne_exact, {f, 236}, [{x, 0}, {atom, undefined}]}.
+    {call, 2, {f, 180}}.
+    {test, is_ne_exact, {f, 237}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 12}}.
     {move, {y, 12}, {x, 0}}.
-    {jump, {f, 243}}.
-  {label, 236}.
+    {jump, {f, 244}}.
+  {label, 237}.
     {move, {literal, <<"">>}, {x, 0}}.
-  {label, 243}.
+  {label, 244}.
     {move, {y, 11}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {y, 11}}.
     {gc_bif, 'div', {f, 0}, 0, [{y, 6}, {integer, 4}], {x, 0}}.
-    {test, is_ge, {f, 245}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 245}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 246}}.
-  {label, 245}.
+    {test, is_ge, {f, 246}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 246}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 247}}.
+  {label, 246}.
     {move, {literal, {integer_overflow, <<"integer overflow: / on i32 at src/io/random.bp:386:30">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 246}.
+  {label, 247}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {call, 2, {f, 179}}.
-    {test, is_ne_exact, {f, 244}, [{x, 0}, {atom, undefined}]}.
+    {call, 2, {f, 180}}.
+    {test, is_ne_exact, {f, 245}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 12}}.
     {move, {y, 12}, {x, 0}}.
-    {jump, {f, 247}}.
-  {label, 244}.
+    {jump, {f, 248}}.
+  {label, 245}.
     {move, {literal, <<"">>}, {x, 0}}.
-  {label, 247}.
+  {label, 248}.
     {move, {y, 11}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
@@ -4361,49 +4365,49 @@ fn wholeOf(v: f64) -> i32 {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 170}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 171}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
     {move, {x, 0}, {y, 2}}.
-    {test, is_lt, {f, 248}, [{integer, 1}, {y, 4}]}.
+    {test, is_lt, {f, 249}, [{integer, 1}, {y, 4}]}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 12}}.
     {gc_bif, 'rem', {f, 0}, 0, [{y, 8}, {integer, 16}], {x, 0}}.
     {gc_bif, '*', {f, 0}, 1, [{x, 0}, {integer, 4}], {x, 0}}.
-    {test, is_ge, {f, 250}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 250}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 251}}.
-  {label, 250}.
+    {test, is_ge, {f, 251}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 251}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 252}}.
+  {label, 251}.
     {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at src/io/random.bp:388:54">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 251}.
+  {label, 252}.
     {move, {x, 0}, {x, 1}}.
     {gc_bif, 'div', {f, 0}, 2, [{y, 10}, {integer, 64}], {x, 0}}.
-    {test, is_ge, {f, 252}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 252}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 253}}.
-  {label, 252}.
+    {test, is_ge, {f, 253}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 253}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 254}}.
+  {label, 253}.
     {move, {literal, {integer_overflow, <<"integer overflow: / on i32 at src/io/random.bp:388:63">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 253}.
-    {gc_bif, '+', {f, 0}, 2, [{x, 1}, {x, 0}], {x, 0}}.
-    {test, is_ge, {f, 254}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 254}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 255}}.
   {label, 254}.
+    {gc_bif, '+', {f, 0}, 2, [{x, 1}, {x, 0}], {x, 0}}.
+    {test, is_ge, {f, 255}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 255}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 256}}.
+  {label, 255}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/random.bp:388:58">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 255}.
+  {label, 256}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {call, 2, {f, 179}}.
-    {test, is_ne_exact, {f, 249}, [{x, 0}, {atom, undefined}]}.
+    {call, 2, {f, 180}}.
+    {test, is_ne_exact, {f, 250}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 13}}.
     {move, {y, 13}, {x, 0}}.
-    {jump, {f, 256}}.
-  {label, 249}.
+    {jump, {f, 257}}.
+  {label, 250}.
     {move, {literal, <<"">>}, {x, 0}}.
-  {label, 256}.
+  {label, 257}.
     {move, {y, 12}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
@@ -4414,27 +4418,27 @@ fn wholeOf(v: f64) -> i32 {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 170}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 171}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
     {move, {x, 0}, {y, 2}}.
-    {jump, {f, 257}}.
-  {label, 248}.
-  {label, 257}.
-    {test, is_lt, {f, 258}, [{integer, 2}, {y, 4}]}.
+    {jump, {f, 258}}.
+  {label, 249}.
+  {label, 258}.
+    {test, is_lt, {f, 259}, [{integer, 2}, {y, 4}]}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 13}}.
     {gc_bif, 'rem', {f, 0}, 0, [{y, 10}, {integer, 64}], {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {call, 2, {f, 179}}.
-    {test, is_ne_exact, {f, 259}, [{x, 0}, {atom, undefined}]}.
+    {call, 2, {f, 180}}.
+    {test, is_ne_exact, {f, 260}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 14}}.
     {move, {y, 14}, {x, 0}}.
-    {jump, {f, 260}}.
-  {label, 259}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 261}}.
   {label, 260}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 261}.
     {move, {y, 13}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
@@ -4445,24 +4449,24 @@ fn wholeOf(v: f64) -> i32 {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 170}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 171}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
     {move, {x, 0}, {y, 2}}.
-    {jump, {f, 261}}.
-  {label, 258}.
-  {label, 261}.
-    {gc_bif, '+', {f, 0}, 0, [{y, 3}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 262}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 262}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 263}}.
+    {jump, {f, 262}}.
+  {label, 259}.
   {label, 262}.
+    {gc_bif, '+', {f, 0}, 0, [{y, 3}, {integer, 1}], {x, 0}}.
+    {test, is_ge, {f, 263}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 263}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 264}}.
+  {label, 263}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/random.bp:390:15">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 263}.
+  {label, 264}.
     {move, {x, 0}, {y, 3}}.
-    {jump, {f, 208}}.
-  {label, 209}.
+    {jump, {f, 209}}.
+  {label, 210}.
     {move, {y, 2}, {x, 0}}.
     {deallocate, 18}.
     return.
@@ -4485,129 +4489,129 @@ fn wholeOf(v: f64) -> i32 {
     {move, {float, 1073741824.0}, {x, 0}}.
     {move, {x, 0}, {y, 4}}.
     {line, [{location, "std@io@random.erl", 24}]}.
-  {label, 264}.
-    {test, is_lt, {f, 265}, [{integer, 0}, {y, 3}]}.
-    {test, is_ge, {f, 266}, [{y, 2}, {y, 4}]}.
+  {label, 265}.
+    {test, is_lt, {f, 266}, [{integer, 0}, {y, 3}]}.
+    {test, is_ge, {f, 267}, [{y, 2}, {y, 4}]}.
     {gc_bif, '+', {f, 0}, 0, [{y, 1}, {y, 3}], {x, 0}}.
-    {test, is_ge, {f, 267}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 267}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 268}}.
-  {label, 267}.
+    {test, is_ge, {f, 268}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 268}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 269}}.
+  {label, 268}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/random.bp:403:19">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 268}.
+  {label, 269}.
     {move, {x, 0}, {y, 1}}.
     {gc_bif, '-', {f, 0}, 0, [{y, 2}, {y, 4}], {x, 0}}.
     {move, {x, 0}, {y, 2}}.
-    {jump, {f, 269}}.
-  {label, 266}.
-  {label, 269}.
-    {gc_bif, 'div', {f, 0}, 0, [{y, 3}, {integer, 2}], {x, 0}}.
-    {test, is_ge, {f, 270}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 270}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 271}}.
+    {jump, {f, 270}}.
+  {label, 267}.
   {label, 270}.
+    {gc_bif, 'div', {f, 0}, 0, [{y, 3}, {integer, 2}], {x, 0}}.
+    {test, is_ge, {f, 271}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 271}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 272}}.
+  {label, 271}.
     {move, {literal, {integer_overflow, <<"integer overflow: / on i32 at src/io/random.bp:406:19">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 271}.
+  {label, 272}.
     {move, {x, 0}, {y, 3}}.
     {gc_bif, '/', {f, 0}, 0, [{y, 4}, {float, 2.0}], {x, 0}}.
     {move, {x, 0}, {y, 4}}.
-    {jump, {f, 264}}.
-  {label, 265}.
+    {jump, {f, 265}}.
+  {label, 266}.
     {move, {y, 1}, {x, 0}}.
     {deallocate, 5}.
     return.
 
-{function, '__bp_priv__array_range', 2, 274}.
-  {label, 273}.
+{function, '__bp_priv__array_range', 2, 275}.
+  {label, 274}.
     {line, [{location, "std@io@random.erl", 25}]}.
     {func_info, {atom, std@io@random}, {atom, '__bp_priv__array_range'}, 2}.
-  {label, 274}.
+  {label, 275}.
     {call_only, 2, {f, 3}}.
 
-{function, '__bp_priv__array_repeat', 2, 276}.
-  {label, 275}.
+{function, '__bp_priv__array_repeat', 2, 277}.
+  {label, 276}.
     {line, [{location, "std@io@random.erl", 26}]}.
     {func_info, {atom, std@io@random}, {atom, '__bp_priv__array_repeat'}, 2}.
-  {label, 276}.
+  {label, 277}.
     {call_only, 2, {f, 5}}.
 
-{function, '__bp_priv__base64UrlOf', 1, 278}.
-  {label, 277}.
+{function, '__bp_priv__base64UrlOf', 1, 279}.
+  {label, 278}.
     {line, [{location, "std@io@random.erl", 27}]}.
     {func_info, {atom, std@io@random}, {atom, '__bp_priv__base64UrlOf'}, 1}.
-  {label, 278}.
+  {label, 279}.
     {call_only, 1, {f, 31}}.
 
-{function, '__bp_priv__floorWalk', 4, 280}.
-  {label, 279}.
+{function, '__bp_priv__floorWalk', 4, 281}.
+  {label, 280}.
     {line, [{location, "std@io@random.erl", 28}]}.
     {func_info, {atom, std@io@random}, {atom, '__bp_priv__floorWalk'}, 4}.
-  {label, 280}.
+  {label, 281}.
     {call_only, 4, {f, 13}}.
 
-{function, '__bp_priv__hexDigit', 1, 282}.
-  {label, 281}.
+{function, '__bp_priv__hexDigit', 1, 283}.
+  {label, 282}.
     {line, [{location, "std@io@random.erl", 29}]}.
     {func_info, {atom, std@io@random}, {atom, '__bp_priv__hexDigit'}, 1}.
-  {label, 282}.
+  {label, 283}.
     {call_only, 1, {f, 27}}.
 
-{function, '__bp_priv__hexOf', 1, 284}.
-  {label, 283}.
+{function, '__bp_priv__hexOf', 1, 285}.
+  {label, 284}.
     {line, [{location, "std@io@random.erl", 30}]}.
     {func_info, {atom, std@io@random}, {atom, '__bp_priv__hexOf'}, 1}.
-  {label, 284}.
+  {label, 285}.
     {call_only, 1, {f, 29}}.
 
-{function, '__bp_priv__randomByte', 0, 286}.
-  {label, 285}.
+{function, '__bp_priv__randomByte', 0, 287}.
+  {label, 286}.
     {line, [{location, "std@io@random.erl", 31}]}.
     {func_info, {atom, std@io@random}, {atom, '__bp_priv__randomByte'}, 0}.
-  {label, 286}.
+  {label, 287}.
     {call_only, 0, {f, 23}}.
 
-{function, '__bp_priv__randomBytesBody', 1, 288}.
-  {label, 287}.
+{function, '__bp_priv__randomBytesBody', 1, 289}.
+  {label, 288}.
     {line, [{location, "std@io@random.erl", 32}]}.
     {func_info, {atom, std@io@random}, {atom, '__bp_priv__randomBytesBody'}, 1}.
-  {label, 288}.
+  {label, 289}.
     {call_only, 1, {f, 21}}.
 
-{function, '__bp_priv__randomBytesOf', 1, 290}.
-  {label, 289}.
+{function, '__bp_priv__randomBytesOf', 1, 291}.
+  {label, 290}.
     {line, [{location, "std@io@random.erl", 33}]}.
     {func_info, {atom, std@io@random}, {atom, '__bp_priv__randomBytesOf'}, 1}.
-  {label, 290}.
+  {label, 291}.
     {call_only, 1, {f, 25}}.
 
-{function, '__bp_priv__secureTokenBody', 1, 292}.
-  {label, 291}.
+{function, '__bp_priv__secureTokenBody', 1, 293}.
+  {label, 292}.
     {line, [{location, "std@io@random.erl", 34}]}.
     {func_info, {atom, std@io@random}, {atom, '__bp_priv__secureTokenBody'}, 1}.
-  {label, 292}.
+  {label, 293}.
     {call_only, 1, {f, 17}}.
 
-{function, '__bp_priv__shuffleBody', 1, 294}.
-  {label, 293}.
+{function, '__bp_priv__shuffleBody', 1, 295}.
+  {label, 294}.
     {line, [{location, "std@io@random.erl", 35}]}.
     {func_info, {atom, std@io@random}, {atom, '__bp_priv__shuffleBody'}, 1}.
-  {label, 294}.
+  {label, 295}.
     {call_only, 1, {f, 15}}.
 
-{function, '__bp_priv__uuidV4Body', 0, 296}.
-  {label, 295}.
+{function, '__bp_priv__uuidV4Body', 0, 297}.
+  {label, 296}.
     {line, [{location, "std@io@random.erl", 36}]}.
     {func_info, {atom, std@io@random}, {atom, '__bp_priv__uuidV4Body'}, 0}.
-  {label, 296}.
+  {label, 297}.
     {call_only, 0, {f, 19}}.
 
-{function, '__bp_priv__wholeOf', 1, 298}.
-  {label, 297}.
+{function, '__bp_priv__wholeOf', 1, 299}.
+  {label, 298}.
     {line, [{location, "std@io@random.erl", 37}]}.
     {func_info, {atom, std@io@random}, {atom, '__bp_priv__wholeOf'}, 1}.
-  {label, 298}.
+  {label, 299}.
     {call_only, 1, {f, 33}}.
 
 {function, '__bp_tpl_0-t/1-fun-0-', 1, 41}.
@@ -4978,6 +4982,10 @@ fn wholeOf(v: f64) -> i32 {
     {test, is_ne_exact, {f, 157}, [{x, 0}, {atom, true}]}.
     {test, is_ne_exact, {f, 157}, [{x, 0}, {atom, false}]}.
     {test, is_ne_exact, {f, 157}, [{x, 0}, {atom, undefined}]}.
+    {test, is_eq_exact, {f, 165}, [{x, 0}, {atom, '__bp_gen'}]}.
+    {move, {literal, {panic, <<"wasm cannot print a generator value dynamically yet">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 165}.
     {test, is_eq_exact, {f, 163}, [{x, 0}, {atom, ok}]}.
     {move, {literal, <<"Ok(">>}, {y, 1}}.
     {jump, {f, 164}}.
@@ -5061,28 +5069,28 @@ fn wholeOf(v: f64) -> i32 {
     {call_ext, 1, {extfunc, erlang, atom_to_list, 1}}.
     {move, {literal, <<"__v__">>}, {x, 1}}.
     {call_ext, 2, {extfunc, string, split, 2}}.
-    {test, is_nonempty_list, {f, 165}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 166}, [{x, 0}]}.
     {get_list, {x, 0}, {x, 1}, {x, 2}}.
     {move, {x, 1}, {y, 2}}.
-    {test, is_nonempty_list, {f, 165}, [{x, 2}]}.
+    {test, is_nonempty_list, {f, 166}, [{x, 2}]}.
     {move, {y, 2}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, list_to_atom, 1}}.
     {move, {x, 0}, {y, 1}}.
-  {label, 165}.
+  {label, 166}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, code, ensure_loaded, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {atom, '__bp_format'}, {x, 1}}.
     {move, {integer, 1}, {x, 2}}.
     {call_ext, 3, {extfunc, erlang, function_exported, 3}}.
-    {test, is_eq_exact, {f, 166}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 167}, [{x, 0}, {atom, true}]}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, nil, {x, 2}}.
     {move, {y, 1}, {x, 0}}.
     {move, {atom, '__bp_format'}, {x, 1}}.
     {call_ext, 3, {extfunc, erlang, apply, 3}}.
     {call_last, 1, {f, 151}, 3}.
-  {label, 166}.
+  {label, 167}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, nil, {x, 1}}.
     {move, {literal, <<"~p">>}, {x, 0}}.
@@ -5099,20 +5107,20 @@ fn wholeOf(v: f64) -> i32 {
     {move, {integer, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test, is_eq_exact, {f, 167}, [{x, 0}, {atom, text}]}.
-    {move, {integer, 2}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
-  {label, 167}.
-    {move, {integer, 3}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {move, {x, 0}, {y, 1}}.
-    {test, is_eq_exact, {f, 168}, [{x, 0}, nil]}.
+    {test, is_eq_exact, {f, 168}, [{x, 0}, {atom, text}]}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
   {label, 168}.
+    {move, {integer, 3}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {move, {x, 0}, {y, 1}}.
+    {test, is_eq_exact, {f, 169}, [{x, 0}, nil]}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
+  {label, 169}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
     {make_fun3, {f, 153}, 0, 0, {x, 0}, {list, []}}.
     {move, {y, 1}, {x, 1}}.
@@ -5156,26 +5164,26 @@ fn wholeOf(v: f64) -> i32 {
     {deallocate, 2}.
     return.
 
-{function, '-bp_stringify-', 1, 170}.
-  {label, 169}.
+{function, '-bp_stringify-', 1, 171}.
+  {label, 170}.
     {line, [{location, "std@io@random.erl", 17}]}.
     {func_info, {atom, std@io@random}, {atom, '-bp_stringify-'}, 1}.
-  {label, 170}.
+  {label, 171}.
     {allocate, 0, 1}.
-    {test, is_binary, {f, 171}, [{x, 0}]}.
+    {test, is_binary, {f, 172}, [{x, 0}]}.
     {deallocate, 0}.
     return.
-  {label, 171}.
-    {test, is_integer, {f, 172}, [{x, 0}]}.
-    {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 0}.
   {label, 172}.
+    {test, is_integer, {f, 173}, [{x, 0}]}.
+    {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 0}.
+  {label, 173}.
     {call, 1, {f, 145}}.
     {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 0}.
 
-{function, '__bp_tpl_5-t/2-fun-0-', 2, 183}.
-  {label, 182}.
-    {func_info, {atom, std@io@random}, {atom, '__bp_tpl_5-t/2-fun-0-'}, 2}.
+{function, '__bp_tpl_5-t/2-fun-0-', 2, 184}.
   {label, 183}.
+    {func_info, {atom, std@io@random}, {atom, '__bp_tpl_5-t/2-fun-0-'}, 2}.
+  {label, 184}.
     {allocate, 8, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}]}}.
     {move, {x, 0}, {y, 3}}.
@@ -5184,62 +5192,62 @@ fn wholeOf(v: f64) -> i32 {
     {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 5}, {y, 0}}.
-    {jump, {f, 187}}.
-  {label, 187}.
+    {jump, {f, 188}}.
+  {label, 188}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, length, 1}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 5}, {y, 1}}.
-    {jump, {f, 189}}.
-  {label, 189}.
+    {jump, {f, 190}}.
+  {label, 190}.
     {move, {y, 4}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '<', 2}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 191}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 192}, [{x, 0}, {atom, true}]}.
     {move, {y, 4}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '+', 2}}.
     {move, {x, 0}, {y, 7}}.
     {move, {y, 7}, {y, 6}}.
-    {jump, {f, 190}}.
-  {label, 191}.
-    {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 192}, [{x, 0}, {atom, false}]}.
-    {move, {y, 4}, {y, 6}}.
-    {jump, {f, 190}}.
+    {jump, {f, 191}}.
   {label, 192}.
     {move, {y, 5}, {x, 0}}.
+    {test, is_eq_exact, {f, 193}, [{x, 0}, {atom, false}]}.
+    {move, {y, 4}, {y, 6}}.
+    {jump, {f, 191}}.
+  {label, 193}.
+    {move, {y, 5}, {x, 0}}.
     {case_end, {x, 0}}.
-  {label, 190}.
+  {label, 191}.
     {move, {y, 6}, {y, 2}}.
-    {jump, {f, 194}}.
-  {label, 194}.
+    {jump, {f, 195}}.
+  {label, 195}.
     {move, {y, 2}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '>=', 2}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 195}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 196}, [{x, 0}, {atom, true}]}.
     {move, {y, 2}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '<', 2}}.
     {move, {x, 0}, {y, 7}}.
     {move, {y, 7}, {y, 5}}.
-    {jump, {f, 197}}.
-  {label, 195}.
-    {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 196}, [{x, 0}, {atom, false}]}.
-    {move, {atom, false}, {y, 5}}.
-    {jump, {f, 197}}.
+    {jump, {f, 198}}.
   {label, 196}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_eq_exact, {f, 197}, [{x, 0}, {atom, false}]}.
+    {move, {atom, false}, {y, 5}}.
+    {jump, {f, 198}}.
+  {label, 197}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, badarg}, {y, 6}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 197}.
+  {label, 198}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 199}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 200}, [{x, 0}, {atom, true}]}.
     {move, {y, 2}, {x, 0}}.
     {move, {integer, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '+', 2}}.
@@ -5253,26 +5261,26 @@ fn wholeOf(v: f64) -> i32 {
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {x, 0}}.
     {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 8}.
-  {label, 199}.
+  {label, 200}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 200}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 201}, [{x, 0}, {atom, false}]}.
     {move, {atom, undefined}, {x, 0}}.
     {deallocate, 8}.
     return.
-  {label, 200}.
+  {label, 201}.
     {move, {y, 5}, {x, 0}}.
     {case_end, {x, 0}}.
 
-{function, '__bp_tpl_5', 2, 179}.
-  {label, 178}.
-    {func_info, {atom, std@io@random}, {atom, '__bp_tpl_5'}, 2}.
+{function, '__bp_tpl_5', 2, 180}.
   {label, 179}.
+    {func_info, {atom, std@io@random}, {atom, '__bp_tpl_5'}, 2}.
+  {label, 180}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 183}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 184}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -5281,11 +5289,11 @@ fn wholeOf(v: f64) -> i32 {
     {deallocate, 3}.
     return.
 
-{function, '-hexOf/1-fun-0-', 1, 203}.
-  {label, 202}.
+{function, '-hexOf/1-fun-0-', 1, 204}.
+  {label, 203}.
     {line, [{location, "std@io@random.erl", 22}]}.
     {func_info, {atom, std@io@random}, {atom, '-hexOf/1-fun-0-'}, 1}.
-  {label, 203}.
+  {label, 204}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -5298,36 +5306,36 @@ fn wholeOf(v: f64) -> i32 {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {y, 1}}.
     {gc_bif, 'div', {f, 0}, 0, [{y, 0}, {integer, 16}], {x, 0}}.
-    {test, is_ge, {f, 204}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 204}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 205}}.
-  {label, 204}.
+    {test, is_ge, {f, 205}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 205}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 206}}.
+  {label, 205}.
     {move, {literal, {integer_overflow, <<"integer overflow: / on i32 at src/io/random.bp:368:40">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 205}.
+  {label, 206}.
     {call, 1, {f, 27}}.
     {move, {y, 1}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 170}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 171}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
     {deallocate, 2}.
     return.
 
-{function, '-bp_join-', 2, 207}.
-  {label, 206}.
+{function, '-bp_join-', 2, 208}.
+  {label, 207}.
     {line, [{location, "std@io@random.erl", 22}]}.
     {func_info, {atom, std@io@random}, {atom, '-bp_join-'}, 2}.
-  {label, 207}.
+  {label, 208}.
     {allocate, 1, 2}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 1}, {y, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 170}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 171}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
@@ -5344,11 +5352,11 @@ fn wholeOf(v: f64) -> i32 {
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_list, {f, 272}, [{x, 0}]}.
+    {test, is_list, {f, 273}, [{x, 0}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext_last, 2, {extfunc, lists, append, 2}, 2}.
-  {label, 272}.
+  {label, 273}.
     %% unresolved_method: append/2
     {move, {literal, {unresolved_method, append, 2}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
@@ -7404,7 +7412,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 {module, std@io@fs}.
 {exports, [{exists, 1}, {readBytes, 1}, {readText, 1}, {writeBytes, 2}, {writeText, 2}, {appendText, 2}, {stat, 1}, {list, 1}, {mkdir, 1}, {mkdirRecursive, 1}, {rm, 1}, {removeTree, 1}, {copy, 2}, {walk, 1}, {glob, 2}, {open, 1}, {create, 1}, {openAsset, 1}, {liftI64, 2}, {liftBytes, 2}, {decode, 2}, {liftString, 2}, {liftI32, 2}, {'__bp_priv__array_range', 2}, {'__bp_priv__array_repeat', 2}, {'__bp_priv__bytes_slice', 3}, {'__bp_priv__string_slice', 3}, {'__bp_priv__allowAllWasm', 1}, {'__bp_priv__appendTextWasm', 2}, {'__bp_priv__blockOf', 1}, {'__bp_priv__bytesBefore', 2}, {'__bp_priv__classEnd', 2}, {'__bp_priv__classHas', 4}, {'__bp_priv__closeWasm', 1}, {'__bp_priv__copyWasm', 2}, {'__bp_priv__createWasm', 1}, {'__bp_priv__denyAllWasm', 1}, {'__bp_priv__describe', 1}, {'__bp_priv__existsWasm', 1}, {'__bp_priv__expandBraces', 1}, {'__bp_priv__fsError', 2}, {'__bp_priv__globMatch', 4}, {'__bp_priv__globNames', 2}, {'__bp_priv__globWalk', 5}, {'__bp_priv__globWasm', 2}, {'__bp_priv__globbed', 1}, {'__bp_priv__hashWasm', 1}, {'__bp_priv__isMagic', 1}, {'__bp_priv__joinPath', 2}, {'__bp_priv__lift', 2}, {'__bp_priv__liftHandle', 2}, {'__bp_priv__liftStat', 2}, {'__bp_priv__liftStrings', 2}, {'__bp_priv__liftWalked', 2}, {'__bp_priv__linkToWasm', 2}, {'__bp_priv__listWasm', 1}, {'__bp_priv__makeFixtureTree', 1}, {'__bp_priv__makeGlobTree', 1}, {'__bp_priv__memHandleWasm', 1}, {'__bp_priv__mkdirRecursiveWasm', 1}, {'__bp_priv__mkdirWasm', 1}, {'__bp_priv__noFile', 0}, {'__bp_priv__okBytes', 1}, {'__bp_priv__okSize', 1}, {'__bp_priv__okStrings', 1}, {'__bp_priv__openWasm', 1}, {'__bp_priv__readAllWasm', 1}, {'__bp_priv__readBytesWasm', 1}, {'__bp_priv__readLineWasm', 1}, {'__bp_priv__readOnlyWasm', 1}, {'__bp_priv__readWasm', 2}, {'__bp_priv__removeTreeWasm', 1}, {'__bp_priv__resolve', 1}, {'__bp_priv__rmWasm', 1}, {'__bp_priv__scratchDirWasm', 0}, {'__bp_priv__segmentMatches', 2}, {'__bp_priv__sizeWasm', 2}, {'__bp_priv__sortedStrings', 1}, {'__bp_priv__statOr', 1}, {'__bp_priv__statWasm', 1}, {'__bp_priv__stripEolWasm', 1}, {'__bp_priv__utf8OffsetWasm', 1}, {'__bp_priv__variantOf', 1}, {'__bp_priv__walkFixture', 1}, {'__bp_priv__walkFixtureFromCwd', 1}, {'__bp_priv__walkRefusal', 1}, {'__bp_priv__walkWasm', 1}, {'__bp_priv__wasiError', 1}, {'__bp_priv__wasiName', 1}, {'__bp_priv__wasiText', 1}, {'__bp_priv__withoutRoot', 1}, {'__bp_priv__workingDirWasm', 0}, {'__bp_priv__writeBytesWasm', 2}, {'__bp_priv__writeTextWasm', 2}, {'__bp_priv__writeWasm', 2}]}.
 {attributes, []}.
-{labels, 1975}.
+{labels, 1976}.
 
 {function, 'array_range', 2, 3}.
   {label, 2}.
@@ -8634,9 +8642,9 @@ test "fs answers PermissionDenied for an OS permission error" {
     return.
   {label, 627}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 671}, [{x, 0}, 3, {atom, std@io@fs@@Walked}]}.
+    {test, is_tagged_tuple, {f, 672}, [{x, 0}, 3, {atom, std@io@fs@@Walked}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-  {label, 671}.
+  {label, 672}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
@@ -8654,7 +8662,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
-    {call, 2, {f, 673}}.
+    {call, 2, {f, 674}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
@@ -8676,17 +8684,17 @@ test "fs answers PermissionDenied for an OS permission error" {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 1, {f, 816}}.
+    {call, 1, {f, 817}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call, 2, {f, 25}}.
-    {test, is_tagged_tuple, {f, 838}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 839}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 839}}.
-  {label, 838}.
+    {jump, {f, 840}}.
+  {label, 839}.
     {deallocate, 4}.
     return.
-  {label, 839}.
+  {label, 840}.
     {move, {x, 0}, {y, 1}}.
     {test_heap, 4, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, std@io@fs@@File}, {y, 0}, {y, 1}]}}.
@@ -8706,17 +8714,17 @@ test "fs answers PermissionDenied for an OS permission error" {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 1, {f, 841}}.
+    {call, 1, {f, 842}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call, 2, {f, 25}}.
-    {test, is_tagged_tuple, {f, 863}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 864}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 864}}.
-  {label, 863}.
+    {jump, {f, 865}}.
+  {label, 864}.
     {deallocate, 4}.
     return.
-  {label, 864}.
+  {label, 865}.
     {move, {x, 0}, {y, 1}}.
     {test_heap, 4, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, std@io@fs@@File}, {y, 0}, {y, 1}]}}.
@@ -8739,12 +8747,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {move, {atom, path}, {x, 1}}.
-    {call, 2, {f, 866}}.
+    {call, 2, {f, 867}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {atom, bytes}, {x, 1}}.
-    {call, 2, {f, 866}}.
-    {call, 1, {f, 872}}.
+    {call, 2, {f, 867}}.
+    {call, 1, {f, 873}}.
     {test_heap, 4, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, std@io@fs@@File}, {y, 1}, {x, 0}]}}.
     {deallocate, 3}.
@@ -8959,13 +8967,13 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 873}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 874}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
-    {jump, {f, 874}}.
-  {label, 873}.
-    {move, {literal, <<"EIO">>}, {x, 0}}.
+    {jump, {f, 875}}.
   {label, 874}.
+    {move, {literal, <<"EIO">>}, {x, 0}}.
+  {label, 875}.
     {deallocate, 4}.
     return.
 
@@ -9167,13 +9175,13 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 875}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 876}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
-    {jump, {f, 876}}.
-  {label, 875}.
-    {move, {literal, <<"i/o error">>}, {x, 0}}.
+    {jump, {f, 877}}.
   {label, 876}.
+    {move, {literal, <<"i/o error">>}, {x, 0}}.
+  {label, 877}.
     {deallocate, 4}.
     return.
 % The `HostError` of the host's error `code`: `ENOENT: no such file or directory`.
@@ -9206,7 +9214,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 668}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 669}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
     {move, {x, 0}, {x, 1}}.
@@ -9228,7 +9236,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 878}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 879}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
@@ -9237,9 +9245,9 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
     {deallocate, 3}.
     return.
-    {jump, {f, 877}}.
-  {label, 878}.
-    {test, is_tagged_tuple, {f, 879}, [{x, 0}, 2, {atom, error}]}.
+    {jump, {f, 878}}.
+  {label, 879}.
+    {test, is_tagged_tuple, {f, 880}, [{x, 0}, 2, {atom, error}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
@@ -9249,10 +9257,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {deallocate, 3}.
     return.
-    {jump, {f, 877}}.
-  {label, 879}.
+    {jump, {f, 878}}.
+  {label, 880}.
     {case_end, {x, 0}}.
-  {label, 877}.
+  {label, 878}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 3}.
     return.
@@ -9266,7 +9274,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 881}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 882}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
@@ -9275,9 +9283,9 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
     {deallocate, 3}.
     return.
-    {jump, {f, 880}}.
-  {label, 881}.
-    {test, is_tagged_tuple, {f, 882}, [{x, 0}, 2, {atom, error}]}.
+    {jump, {f, 881}}.
+  {label, 882}.
+    {test, is_tagged_tuple, {f, 883}, [{x, 0}, 2, {atom, error}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
@@ -9287,10 +9295,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {deallocate, 3}.
     return.
-    {jump, {f, 880}}.
-  {label, 882}.
+    {jump, {f, 881}}.
+  {label, 883}.
     {case_end, {x, 0}}.
-  {label, 880}.
+  {label, 881}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 3}.
     return.
@@ -9304,7 +9312,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 884}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 885}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
@@ -9313,9 +9321,9 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
     {deallocate, 3}.
     return.
-    {jump, {f, 883}}.
-  {label, 884}.
-    {test, is_tagged_tuple, {f, 885}, [{x, 0}, 2, {atom, error}]}.
+    {jump, {f, 884}}.
+  {label, 885}.
+    {test, is_tagged_tuple, {f, 886}, [{x, 0}, 2, {atom, error}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
@@ -9325,10 +9333,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {deallocate, 3}.
     return.
-    {jump, {f, 883}}.
-  {label, 885}.
+    {jump, {f, 884}}.
+  {label, 886}.
     {case_end, {x, 0}}.
-  {label, 883}.
+  {label, 884}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 3}.
     return.
@@ -9345,25 +9353,25 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 0}, {x, 0}}.
     {move, {x, 0}, {y, 1}}.
     {line, [{location, "std@io@fs.erl", 50}]}.
-  {label, 886}.
+  {label, 887}.
     {move, {literal, <<"/">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 2, {extfunc, string, prefix, 2}}.
-    {test, is_eq, {f, 888}, [{x, 0}, {atom, nomatch}]}.
+    {test, is_eq, {f, 889}, [{x, 0}, {atom, nomatch}]}.
     {move, {atom, false}, {x, 0}}.
-    {jump, {f, 889}}.
-  {label, 888}.
-    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 890}}.
   {label, 889}.
-    {test, is_eq_exact, {f, 887}, [{x, 0}, {atom, true}]}.
+    {move, {atom, true}, {x, 0}}.
+  {label, 890}.
+    {test, is_eq_exact, {f, 888}, [{x, 0}, {atom, true}]}.
     {move, {y, 1}, {x, 0}}.
     {move, {atom, undefined}, {x, 2}}.
     {move, {integer, 1}, {x, 1}}.
-    {call, 3, {f, 891}}.
+    {call, 3, {f, 892}}.
     {move, {x, 0}, {y, 1}}.
-    {jump, {f, 886}}.
-  {label, 887}.
+    {jump, {f, 887}}.
+  {label, 888}.
     {move, {y, 1}, {x, 0}}.
     {deallocate, 2}.
     return.
@@ -9379,11 +9387,11 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {literal, <<"">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 892}, [{y, 0}, {x, 0}]}.
+    {test, is_eq_exact, {f, 893}, [{y, 0}, {x, 0}]}.
     {move, {y, 1}, {x, 0}}.
     {deallocate, 3}.
     return.
-  {label, 892}.
+  {label, 893}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 1}, {x, 0}}.
@@ -9402,7 +9410,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 668}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 669}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
     {deallocate, 3}.
@@ -9419,7 +9427,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {literal, <<"">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 893}, [{y, 0}, {x, 0}]}.
+    {test, is_eq_exact, {f, 894}, [{y, 0}, {x, 0}]}.
     {move, {integer, 20}, {x, 0}}.
     {call, 1, {f, 67}}.
     {move, {x, 0}, {x, 1}}.
@@ -9427,18 +9435,18 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {deallocate, 3}.
     return.
-  {label, 893}.
+  {label, 894}.
     {move, {literal, <<"/">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 2, {extfunc, string, prefix, 2}}.
-    {test, is_eq, {f, 895}, [{x, 0}, {atom, nomatch}]}.
+    {test, is_eq, {f, 896}, [{x, 0}, {atom, nomatch}]}.
     {move, {atom, false}, {x, 0}}.
-    {jump, {f, 896}}.
-  {label, 895}.
-    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 897}}.
   {label, 896}.
-    {test, is_eq, {f, 894}, [{x, 0}, {atom, true}]}.
+    {move, {atom, true}, {x, 0}}.
+  {label, 897}.
+    {test, is_eq, {f, 895}, [{x, 0}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 75}}.
     {move, {x, 0}, {x, 1}}.
@@ -9446,37 +9454,37 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
     {deallocate, 3}.
     return.
-  {label, 894}.
-    {call, 0, {f, 898}}.
+  {label, 895}.
+    {call, 0, {f, 899}}.
     {move, {x, 0}, {y, 1}}.
     {move, {literal, <<"">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 900}, [{y, 1}, {x, 0}]}.
+    {test, is_eq_exact, {f, 901}, [{y, 1}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 901}}.
-  {label, 900}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 902}}.
   {label, 901}.
-    {move, {x, 0}, {x, 1}}.
-    {test, is_ne_exact, {f, 902}, [{x, 1}, {atom, true}]}.
-    {move, {literal, <<"/">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 904}, [{y, 1}, {x, 0}]}.
-    {move, {atom, true}, {x, 0}}.
-    {jump, {f, 905}}.
-  {label, 904}.
     {move, {atom, false}, {x, 0}}.
-  {label, 905}.
-    {jump, {f, 903}}.
   {label, 902}.
+    {move, {x, 0}, {x, 1}}.
+    {test, is_ne_exact, {f, 903}, [{x, 1}, {atom, true}]}.
+    {move, {literal, <<"/">>}, {x, 0}}.
+    {test, is_eq_exact, {f, 905}, [{y, 1}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
+    {jump, {f, 906}}.
+  {label, 905}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 906}.
+    {jump, {f, 904}}.
   {label, 903}.
-    {test, is_eq, {f, 899}, [{x, 0}, {atom, true}]}.
+    {move, {atom, true}, {x, 0}}.
+  {label, 904}.
+    {test, is_eq, {f, 900}, [{x, 0}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
     {deallocate, 3}.
     return.
-  {label, 899}.
+  {label, 900}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
@@ -9495,7 +9503,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 668}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 669}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
     {call, 1, {f, 75}}.
@@ -9517,21 +9525,21 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_integer, {f, 910}, [{x, 0}]}.
-    {jump, {f, 909}}.
-  {label, 910}.
-    {test, is_float, {f, 907}, [{x, 0}]}.
+    {test, is_integer, {f, 911}, [{x, 0}]}.
+    {jump, {f, 910}}.
+  {label, 911}.
+    {test, is_float, {f, 908}, [{x, 0}]}.
     {gc_bif, trunc, {f, 0}, 1, [{x, 0}], {x, 1}}.
-    {test, is_eq, {f, 907}, [{x, 0}, {x, 1}]}.
-  {label, 909}.
-    {test, is_ge, {f, 907}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 907}, [{integer, 2147483647}, {x, 0}]}.
+    {test, is_eq, {f, 908}, [{x, 0}, {x, 1}]}.
+  {label, 910}.
+    {test, is_ge, {f, 908}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 908}, [{integer, 2147483647}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 908}}.
-  {label, 907}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 909}}.
   {label, 908}.
-    {test, is_eq, {f, 906}, [{x, 0}, {atom, true}]}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 909}.
+    {test, is_eq, {f, 907}, [{x, 0}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
     {gc_bif, trunc, {f, 0}, 1, [{x, 0}], {x, 0}}.
     {move, {x, 0}, {y, 2}}.
@@ -9539,9 +9547,9 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
     {move, {x, 0}, {y, 1}}.
-    {jump, {f, 911}}.
-  {label, 906}.
-  {label, 911}.
+    {jump, {f, 912}}.
+  {label, 907}.
+  {label, 912}.
     {move, {y, 1}, {x, 0}}.
     {deallocate, 4}.
     return.
@@ -9557,75 +9565,75 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 1, {f, 913}}.
+    {call, 1, {f, 914}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 1}, {x, 0}}.
-    {call, 1, {f, 913}}.
+    {call, 1, {f, 914}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 2}, {x, 0}}.
-    {call, 1, {f, 915}}.
+    {call, 1, {f, 916}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 3}, {x, 0}}.
-    {call, 1, {f, 915}}.
+    {call, 1, {f, 916}}.
     {move, {x, 0}, {y, 5}}.
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 6}}.
     {line, [{location, "std@io@fs.erl", 54}]}.
-  {label, 916}.
-    {test, is_lt, {f, 918}, [{y, 6}, {y, 4}]}.
+  {label, 917}.
+    {test, is_lt, {f, 919}, [{y, 6}, {y, 4}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 919}}.
-  {label, 918}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 920}}.
   {label, 919}.
-    {move, {x, 0}, {x, 1}}.
-    {test, is_eq, {f, 920}, [{x, 1}, {atom, true}]}.
-    {test, is_lt, {f, 922}, [{y, 6}, {y, 5}]}.
-    {move, {atom, true}, {x, 0}}.
-    {jump, {f, 923}}.
-  {label, 922}.
     {move, {atom, false}, {x, 0}}.
-  {label, 923}.
-    {jump, {f, 921}}.
   {label, 920}.
+    {move, {x, 0}, {x, 1}}.
+    {test, is_eq, {f, 921}, [{x, 1}, {atom, true}]}.
+    {test, is_lt, {f, 923}, [{y, 6}, {y, 5}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 924}}.
+  {label, 923}.
     {move, {atom, false}, {x, 0}}.
+  {label, 924}.
+    {jump, {f, 922}}.
   {label, 921}.
-    {test, is_eq_exact, {f, 917}, [{x, 0}, {atom, true}]}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 922}.
+    {test, is_eq_exact, {f, 918}, [{x, 0}, {atom, true}]}.
     {move, {y, 2}, {x, 0}}.
     {move, {y, 6}, {x, 1}}.
-    {call, 2, {f, 925}}.
+    {call, 2, {f, 926}}.
     {move, {x, 0}, {y, 7}}.
     {move, {y, 3}, {x, 0}}.
     {move, {y, 6}, {x, 1}}.
-    {call, 2, {f, 925}}.
+    {call, 2, {f, 926}}.
     {move, {x, 0}, {y, 8}}.
-    {test, is_ne_exact, {f, 926}, [{y, 7}, {y, 8}]}.
-    {test, is_lt, {f, 927}, [{y, 7}, {y, 8}]}.
+    {test, is_ne_exact, {f, 927}, [{y, 7}, {y, 8}]}.
+    {test, is_lt, {f, 928}, [{y, 7}, {y, 8}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 928}}.
-  {label, 927}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 929}}.
   {label, 928}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 929}.
     {deallocate, 9}.
     return.
-  {label, 926}.
+  {label, 927}.
     {gc_bif, '+', {f, 0}, 0, [{y, 6}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 929}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 929}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 930}}.
-  {label, 929}.
+    {test, is_ge, {f, 930}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 930}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 931}}.
+  {label, 930}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:988:15">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 930}.
-    {move, {x, 0}, {y, 6}}.
-    {jump, {f, 916}}.
-  {label, 917}.
-    {test, is_lt, {f, 931}, [{y, 4}, {y, 5}]}.
-    {move, {atom, true}, {x, 0}}.
-    {jump, {f, 932}}.
   {label, 931}.
-    {move, {atom, false}, {x, 0}}.
+    {move, {x, 0}, {y, 6}}.
+    {jump, {f, 917}}.
+  {label, 918}.
+    {test, is_lt, {f, 932}, [{y, 4}, {y, 5}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 933}}.
   {label, 932}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 933}.
     {deallocate, 9}.
     return.
 % The names sorted by the bytes of their UTF-8, none twice: what `readdirSync` answers on Node.
@@ -9643,118 +9651,118 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
     {line, [{location, "std@io@fs.erl", 55}]}.
-  {label, 933}.
+  {label, 934}.
     {move, {y, 0}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_lt, {f, 934}, [{y, 2}, {x, 0}]}.
+    {test, is_lt, {f, 935}, [{y, 2}, {x, 0}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 2}, {x, 1}}.
     {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 935}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 936}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
-    {jump, {f, 936}}.
-  {label, 935}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 937}}.
   {label, 936}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 937}.
     {move, {x, 0}, {y, 4}}.
     {gc_bif, '+', {f, 0}, 0, [{y, 2}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 937}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 937}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 938}}.
-  {label, 937}.
+    {test, is_ge, {f, 938}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 938}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 939}}.
+  {label, 938}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:999:15">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 938}.
+  {label, 939}.
     {move, {x, 0}, {y, 2}}.
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 5}}.
     {line, [{location, "std@io@fs.erl", 55}]}.
-  {label, 939}.
-    {move, {y, 1}, {x, 0}}.
-    {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_lt, {f, 941}, [{y, 5}, {x, 0}]}.
-    {move, {atom, true}, {x, 0}}.
-    {jump, {f, 942}}.
-  {label, 941}.
-    {move, {atom, false}, {x, 0}}.
-  {label, 942}.
-    {move, {x, 0}, {x, 1}}.
-    {test, is_eq, {f, 943}, [{x, 1}, {atom, true}]}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 5}, {x, 1}}.
-    {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 945}, [{x, 0}, {atom, undefined}]}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {x, 0}}.
-    {jump, {f, 946}}.
-  {label, 945}.
-    {move, {literal, <<"">>}, {x, 0}}.
-  {label, 946}.
-    {move, {y, 4}, {x, 1}}.
-    {call, 2, {f, 83}}.
-    {jump, {f, 944}}.
-  {label, 943}.
-    {move, {atom, false}, {x, 0}}.
-  {label, 944}.
-    {test, is_eq_exact, {f, 940}, [{x, 0}, {atom, true}]}.
-    {gc_bif, '+', {f, 0}, 0, [{y, 5}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 947}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 947}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 948}}.
-  {label, 947}.
-    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1002:19">>}}, {x, 0}}.
-    {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 948}.
-    {move, {x, 0}, {y, 5}}.
-    {jump, {f, 939}}.
   {label, 940}.
     {move, {y, 1}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_lt, {f, 950}, [{y, 5}, {x, 0}]}.
+    {test, is_lt, {f, 942}, [{y, 5}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 951}}.
-  {label, 950}.
+    {jump, {f, 943}}.
+  {label, 942}.
     {move, {atom, false}, {x, 0}}.
-  {label, 951}.
+  {label, 943}.
     {move, {x, 0}, {x, 1}}.
-    {test, is_eq, {f, 952}, [{x, 1}, {atom, true}]}.
+    {test, is_eq, {f, 944}, [{x, 1}, {atom, true}]}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 5}, {x, 1}}.
     {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 954}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 946}, [{x, 0}, {atom, undefined}]}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {x, 0}}.
+    {jump, {f, 947}}.
+  {label, 946}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 947}.
+    {move, {y, 4}, {x, 1}}.
+    {call, 2, {f, 83}}.
+    {jump, {f, 945}}.
+  {label, 944}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 945}.
+    {test, is_eq_exact, {f, 941}, [{x, 0}, {atom, true}]}.
+    {gc_bif, '+', {f, 0}, 0, [{y, 5}, {integer, 1}], {x, 0}}.
+    {test, is_ge, {f, 948}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 948}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 949}}.
+  {label, 948}.
+    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1002:19">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 949}.
+    {move, {x, 0}, {y, 5}}.
+    {jump, {f, 940}}.
+  {label, 941}.
+    {move, {y, 1}, {x, 0}}.
+    {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
+    {test, is_lt, {f, 951}, [{y, 5}, {x, 0}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 952}}.
+  {label, 951}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 952}.
+    {move, {x, 0}, {x, 1}}.
+    {test, is_eq, {f, 953}, [{x, 1}, {atom, true}]}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {y, 5}, {x, 1}}.
+    {call, 2, {f, 632}}.
+    {test, is_ne_exact, {f, 955}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 7}}.
     {move, {y, 7}, {x, 0}}.
-    {jump, {f, 955}}.
-  {label, 954}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 956}}.
   {label, 955}.
-    {test, is_eq_exact, {f, 956}, [{x, 0}, {y, 4}]}.
-    {move, {atom, true}, {x, 0}}.
-    {jump, {f, 957}}.
+    {move, {literal, <<"">>}, {x, 0}}.
   {label, 956}.
-    {move, {atom, false}, {x, 0}}.
+    {test, is_eq_exact, {f, 957}, [{x, 0}, {y, 4}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 958}}.
   {label, 957}.
-    {jump, {f, 953}}.
-  {label, 952}.
     {move, {atom, false}, {x, 0}}.
+  {label, 958}.
+    {jump, {f, 954}}.
   {label, 953}.
-    {test, is_eq, {f, 949}, [{x, 0}, {atom, true}]}.
-    {jump, {f, 933}}.
-  {label, 949}.
-    {test, is_ne_exact, {f, 958}, [{y, 5}, {atom, undefined}]}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 954}.
+    {test, is_eq, {f, 950}, [{x, 0}, {atom, true}]}.
+    {jump, {f, 934}}.
+  {label, 950}.
+    {test, is_ne_exact, {f, 959}, [{y, 5}, {atom, undefined}]}.
     {gc_bif, '+', {f, 0}, 0, [{integer, 0}, {integer, 1}], {x, 0}}.
     {gc_bif, '-', {f, 0}, 1, [{y, 5}, {integer, 0}], {x, 1}}.
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 3, {extfunc, lists, sublist, 3}}.
-    {jump, {f, 959}}.
-  {label, 958}.
+    {jump, {f, 960}}.
+  {label, 959}.
     {move, {integer, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, lists, nthtail, 2}}.
-  {label, 959}.
+  {label, 960}.
     {move, {x, 0}, {x, 1}}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 8}}.
@@ -9774,8 +9782,8 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 9}, {x, 0}}.
     {call_ext, 2, {extfunc, lists, append, 2}}.
     {move, {x, 0}, {y, 1}}.
-    {jump, {f, 933}}.
-  {label, 934}.
+    {jump, {f, 934}}.
+  {label, 935}.
     {move, {y, 1}, {x, 0}}.
     {deallocate, 17}.
     return.
@@ -9790,48 +9798,48 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 79}}.
-    {test, is_tagged_tuple, {f, 960}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 961}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 961}}.
-  {label, 960}.
+    {jump, {f, 962}}.
+  {label, 961}.
     {deallocate, 5}.
     return.
-  {label, 961}.
+  {label, 962}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
-    {call, 2, {f, 925}}.
+    {call, 2, {f, 926}}.
     {move, {x, 0}, {y, 2}}.
-    {test, is_lt, {f, 962}, [{y, 2}, {integer, 0}]}.
+    {test, is_lt, {f, 963}, [{y, 2}, {integer, 0}]}.
     {gc_bif, '-', {f, 0}, 0, [{integer, -1}, {y, 2}], {x, 0}}.
-    {test, is_ge, {f, 963}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 963}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 964}}.
-  {label, 963}.
+    {test, is_ge, {f, 964}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 964}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 965}}.
+  {label, 964}.
     {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/io/fs.bp:1013:35">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 964}.
+  {label, 965}.
     {call, 1, {f, 67}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {deallocate, 5}.
     return.
-  {label, 962}.
+  {label, 963}.
     {move, {y, 2}, {x, 0}}.
-    {call, 1, {f, 966}}.
+    {call, 1, {f, 967}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 2}, {x, 0}}.
-    {call, 1, {f, 966}}.
+    {call, 1, {f, 967}}.
     {move, {y, 3}, {x, 0}}.
     {call, 1, {f, 69}}.
-    {test, is_tagged_tuple, {f, 967}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 968}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 968}}.
-  {label, 967}.
+    {jump, {f, 969}}.
+  {label, 968}.
     {deallocate, 5}.
     return.
-  {label, 968}.
+  {label, 969}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
@@ -9851,56 +9859,56 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 79}}.
-    {test, is_tagged_tuple, {f, 969}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 970}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 970}}.
-  {label, 969}.
-    {deallocate, 5}.
-    return.
+    {jump, {f, 971}}.
   {label, 970}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {y, 2}, {x, 0}}.
-    {move, {integer, 1}, {x, 1}}.
-    {call, 2, {f, 925}}.
-    {move, {x, 0}, {y, 3}}.
-    {test, is_lt, {f, 971}, [{y, 3}, {integer, 0}]}.
-    {gc_bif, '-', {f, 0}, 0, [{integer, -1}, {y, 3}], {x, 0}}.
-    {test, is_ge, {f, 972}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 972}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 973}}.
-  {label, 972}.
-    {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/io/fs.bp:1023:35">>}}, {x, 0}}.
-    {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 973}.
-    {call, 1, {f, 67}}.
-    {move, {x, 0}, {x, 1}}.
-    {test_heap, 3, 2}.
-    {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {deallocate, 5}.
     return.
   {label, 971}.
-    {move, {y, 3}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {call, 2, {f, 925}}.
-    {move, {x, 0}, {y, 4}}.
-    {move, {y, 3}, {x, 0}}.
-    {call, 1, {f, 966}}.
-    {test, is_lt, {f, 974}, [{y, 4}, {integer, 0}]}.
-    {gc_bif, '-', {f, 0}, 0, [{integer, -1}, {y, 4}], {x, 0}}.
-    {test, is_ge, {f, 975}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 975}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 976}}.
-  {label, 975}.
-    {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/io/fs.bp:1026:35">>}}, {x, 0}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 2}, {x, 0}}.
+    {move, {integer, 1}, {x, 1}}.
+    {call, 2, {f, 926}}.
+    {move, {x, 0}, {y, 3}}.
+    {test, is_lt, {f, 972}, [{y, 3}, {integer, 0}]}.
+    {gc_bif, '-', {f, 0}, 0, [{integer, -1}, {y, 3}], {x, 0}}.
+    {test, is_ge, {f, 973}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 973}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 974}}.
+  {label, 973}.
+    {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/io/fs.bp:1023:35">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 976}.
+  {label, 974}.
     {call, 1, {f, 67}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {deallocate, 5}.
     return.
-  {label, 974}.
+  {label, 972}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {call, 2, {f, 926}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 3}, {x, 0}}.
+    {call, 1, {f, 967}}.
+    {test, is_lt, {f, 975}, [{y, 4}, {integer, 0}]}.
+    {gc_bif, '-', {f, 0}, 0, [{integer, -1}, {y, 4}], {x, 0}}.
+    {test, is_ge, {f, 976}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 976}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 977}}.
+  {label, 976}.
+    {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/io/fs.bp:1026:35">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 977}.
+    {call, 1, {f, 67}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
+    {deallocate, 5}.
+    return.
+  {label, 975}.
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
@@ -9918,17 +9926,17 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {call, 1, {f, 913}}.
+    {call, 1, {f, 914}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call, 2, {f, 89}}.
-    {test, is_tagged_tuple, {f, 977}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 978}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 978}}.
-  {label, 977}.
+    {jump, {f, 979}}.
+  {label, 978}.
     {deallocate, 5}.
     return.
-  {label, 978}.
+  {label, 979}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
@@ -9948,40 +9956,40 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 79}}.
-    {test, is_tagged_tuple, {f, 979}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 980}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 980}}.
-  {label, 979}.
+    {jump, {f, 981}}.
+  {label, 980}.
     {deallocate, 8}.
     return.
-  {label, 980}.
+  {label, 981}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
     {move, {integer, 2}, {x, 1}}.
-    {call, 2, {f, 925}}.
+    {call, 2, {f, 926}}.
     {move, {x, 0}, {y, 3}}.
-    {test, is_lt, {f, 981}, [{y, 3}, {integer, 0}]}.
+    {test, is_lt, {f, 982}, [{y, 3}, {integer, 0}]}.
     {gc_bif, '-', {f, 0}, 0, [{integer, -1}, {y, 3}], {x, 0}}.
-    {test, is_ge, {f, 982}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 982}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 983}}.
-  {label, 982}.
+    {test, is_ge, {f, 983}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 983}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 984}}.
+  {label, 983}.
     {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/io/fs.bp:1038:35">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 983}.
+  {label, 984}.
     {call, 1, {f, 67}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {deallocate, 8}.
     return.
-  {label, 981}.
+  {label, 982}.
     {move, {y, 3}, {x, 0}}.
-    {call, 1, {f, 966}}.
+    {call, 1, {f, 967}}.
     {move, {x, 0}, {y, 4}}.
-    {test, is_lt, {f, 984}, [{y, 4}, {integer, 0}]}.
+    {test, is_lt, {f, 985}, [{y, 4}, {integer, 0}]}.
     {move, {y, 3}, {x, 0}}.
-    {call, 1, {f, 966}}.
+    {call, 1, {f, 967}}.
     {move, {integer, 13}, {x, 0}}.
     {call, 1, {f, 67}}.
     {move, {x, 0}, {x, 1}}.
@@ -9989,34 +9997,34 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {deallocate, 8}.
     return.
-  {label, 984}.
+  {label, 985}.
     {move, {y, 3}, {x, 0}}.
     {move, {y, 4}, {x, 1}}.
-    {call, 2, {f, 925}}.
+    {call, 2, {f, 926}}.
     {move, {y, 1}, {x, 0}}.
-    {call, 1, {f, 913}}.
+    {call, 1, {f, 914}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 3}, {x, 0}}.
-    {call, 2, {f, 925}}.
+    {call, 2, {f, 926}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 3}, {x, 0}}.
-    {call, 1, {f, 966}}.
-    {test, is_lt, {f, 985}, [{y, 5}, {integer, 0}]}.
+    {call, 1, {f, 967}}.
+    {test, is_lt, {f, 986}, [{y, 5}, {integer, 0}]}.
     {gc_bif, '-', {f, 0}, 0, [{integer, -1}, {y, 5}], {x, 0}}.
-    {test, is_ge, {f, 986}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 986}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 987}}.
-  {label, 986}.
+    {test, is_ge, {f, 987}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 987}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 988}}.
+  {label, 987}.
     {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/io/fs.bp:1047:35">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 987}.
+  {label, 988}.
     {call, 1, {f, 67}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {deallocate, 8}.
     return.
-  {label, 985}.
+  {label, 986}.
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
@@ -10034,248 +10042,248 @@ test "fs answers PermissionDenied for an OS permission error" {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 1, {f, 915}}.
+    {call, 1, {f, 916}}.
     {move, {x, 0}, {y, 1}}.
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
     {line, [{location, "std@io@fs.erl", 60}]}.
-  {label, 988}.
-    {test, is_lt, {f, 989}, [{y, 2}, {y, 1}]}.
+  {label, 989}.
+    {test, is_lt, {f, 990}, [{y, 2}, {y, 1}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 2}, {x, 1}}.
-    {call, 2, {f, 925}}.
+    {call, 2, {f, 926}}.
     {move, {x, 0}, {y, 3}}.
-    {test, is_lt, {f, 990}, [{y, 3}, {integer, 128}]}.
+    {test, is_lt, {f, 991}, [{y, 3}, {integer, 128}]}.
     {gc_bif, '+', {f, 0}, 0, [{y, 2}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 991}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 991}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 992}}.
-  {label, 991}.
+    {test, is_ge, {f, 992}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 992}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 993}}.
+  {label, 992}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1058:19">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 992}.
+  {label, 993}.
     {move, {x, 0}, {y, 2}}.
-    {jump, {f, 988}}.
-  {label, 990}.
+    {jump, {f, 989}}.
+  {label, 991}.
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 4}}.
-    {test, is_ge, {f, 994}, [{y, 3}, {integer, 194}]}.
+    {test, is_ge, {f, 995}, [{y, 3}, {integer, 194}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 995}}.
-  {label, 994}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 996}}.
   {label, 995}.
-    {move, {x, 0}, {x, 1}}.
-    {test, is_eq, {f, 996}, [{x, 1}, {atom, true}]}.
-    {test, is_ge, {f, 998}, [{integer, 223}, {y, 3}]}.
-    {move, {atom, true}, {x, 0}}.
-    {jump, {f, 999}}.
-  {label, 998}.
     {move, {atom, false}, {x, 0}}.
-  {label, 999}.
-    {jump, {f, 997}}.
   {label, 996}.
+    {move, {x, 0}, {x, 1}}.
+    {test, is_eq, {f, 997}, [{x, 1}, {atom, true}]}.
+    {test, is_ge, {f, 999}, [{integer, 223}, {y, 3}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 1000}}.
+  {label, 999}.
     {move, {atom, false}, {x, 0}}.
+  {label, 1000}.
+    {jump, {f, 998}}.
   {label, 997}.
-    {test, is_eq, {f, 993}, [{x, 0}, {atom, true}]}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 998}.
+    {test, is_eq, {f, 994}, [{x, 0}, {atom, true}]}.
     {move, {integer, 1}, {x, 0}}.
     {move, {x, 0}, {y, 4}}.
-    {jump, {f, 1000}}.
-  {label, 993}.
-    {test, is_ge, {f, 1002}, [{y, 3}, {integer, 224}]}.
+    {jump, {f, 1001}}.
+  {label, 994}.
+    {test, is_ge, {f, 1003}, [{y, 3}, {integer, 224}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1003}}.
-  {label, 1002}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 1004}}.
   {label, 1003}.
-    {move, {x, 0}, {x, 1}}.
-    {test, is_eq, {f, 1004}, [{x, 1}, {atom, true}]}.
-    {test, is_ge, {f, 1006}, [{integer, 239}, {y, 3}]}.
-    {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1007}}.
-  {label, 1006}.
     {move, {atom, false}, {x, 0}}.
-  {label, 1007}.
-    {jump, {f, 1005}}.
   {label, 1004}.
+    {move, {x, 0}, {x, 1}}.
+    {test, is_eq, {f, 1005}, [{x, 1}, {atom, true}]}.
+    {test, is_ge, {f, 1007}, [{integer, 239}, {y, 3}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 1008}}.
+  {label, 1007}.
     {move, {atom, false}, {x, 0}}.
+  {label, 1008}.
+    {jump, {f, 1006}}.
   {label, 1005}.
-    {test, is_eq, {f, 1001}, [{x, 0}, {atom, true}]}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1006}.
+    {test, is_eq, {f, 1002}, [{x, 0}, {atom, true}]}.
     {move, {integer, 2}, {x, 0}}.
     {move, {x, 0}, {y, 4}}.
-    {jump, {f, 1008}}.
-  {label, 1001}.
-    {test, is_ge, {f, 1010}, [{y, 3}, {integer, 240}]}.
+    {jump, {f, 1009}}.
+  {label, 1002}.
+    {test, is_ge, {f, 1011}, [{y, 3}, {integer, 240}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1011}}.
-  {label, 1010}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 1012}}.
   {label, 1011}.
-    {move, {x, 0}, {x, 1}}.
-    {test, is_eq, {f, 1012}, [{x, 1}, {atom, true}]}.
-    {test, is_ge, {f, 1014}, [{integer, 244}, {y, 3}]}.
-    {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1015}}.
-  {label, 1014}.
     {move, {atom, false}, {x, 0}}.
-  {label, 1015}.
-    {jump, {f, 1013}}.
   {label, 1012}.
+    {move, {x, 0}, {x, 1}}.
+    {test, is_eq, {f, 1013}, [{x, 1}, {atom, true}]}.
+    {test, is_ge, {f, 1015}, [{integer, 244}, {y, 3}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 1016}}.
+  {label, 1015}.
     {move, {atom, false}, {x, 0}}.
+  {label, 1016}.
+    {jump, {f, 1014}}.
   {label, 1013}.
-    {test, is_eq, {f, 1009}, [{x, 0}, {atom, true}]}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1014}.
+    {test, is_eq, {f, 1010}, [{x, 0}, {atom, true}]}.
     {move, {integer, 3}, {x, 0}}.
     {move, {x, 0}, {y, 4}}.
-    {jump, {f, 1016}}.
-  {label, 1009}.
+    {jump, {f, 1017}}.
+  {label, 1010}.
     {move, {y, 2}, {x, 0}}.
-    {call_last, 1, {f, 1018}, 10}.
-  {label, 1016}.
-  {label, 1008}.
-  {label, 1000}.
+    {call_last, 1, {f, 1019}, 10}.
+  {label, 1017}.
+  {label, 1009}.
+  {label, 1001}.
     {gc_bif, '+', {f, 0}, 0, [{y, 2}, {y, 4}], {x, 0}}.
-    {test, is_ge, {f, 1030}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1030}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1031}}.
-  {label, 1030}.
+    {test, is_ge, {f, 1031}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1031}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1032}}.
+  {label, 1031}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1071:15">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1031}.
-    {test, is_ge, {f, 1029}, [{x, 0}, {y, 1}]}.
+  {label, 1032}.
+    {test, is_ge, {f, 1030}, [{x, 0}, {y, 1}]}.
     {move, {y, 2}, {x, 0}}.
-    {call_last, 1, {f, 1018}, 10}.
-  {label, 1029}.
+    {call_last, 1, {f, 1019}, 10}.
+  {label, 1030}.
     {move, {integer, 128}, {x, 0}}.
     {move, {x, 0}, {y, 5}}.
     {move, {integer, 191}, {x, 0}}.
     {move, {x, 0}, {y, 6}}.
-    {test, is_eq_exact, {f, 1032}, [{y, 3}, {integer, 224}]}.
+    {test, is_eq_exact, {f, 1033}, [{y, 3}, {integer, 224}]}.
     {move, {integer, 160}, {x, 0}}.
     {move, {x, 0}, {y, 5}}.
-    {jump, {f, 1033}}.
-  {label, 1032}.
-    {test, is_eq_exact, {f, 1034}, [{y, 3}, {integer, 237}]}.
+    {jump, {f, 1034}}.
+  {label, 1033}.
+    {test, is_eq_exact, {f, 1035}, [{y, 3}, {integer, 237}]}.
     {move, {integer, 159}, {x, 0}}.
     {move, {x, 0}, {y, 6}}.
-    {jump, {f, 1035}}.
-  {label, 1034}.
-    {test, is_eq_exact, {f, 1036}, [{y, 3}, {integer, 240}]}.
+    {jump, {f, 1036}}.
+  {label, 1035}.
+    {test, is_eq_exact, {f, 1037}, [{y, 3}, {integer, 240}]}.
     {move, {integer, 144}, {x, 0}}.
     {move, {x, 0}, {y, 5}}.
-    {jump, {f, 1037}}.
-  {label, 1036}.
-    {test, is_eq_exact, {f, 1038}, [{y, 3}, {integer, 244}]}.
+    {jump, {f, 1038}}.
+  {label, 1037}.
+    {test, is_eq_exact, {f, 1039}, [{y, 3}, {integer, 244}]}.
     {move, {integer, 143}, {x, 0}}.
     {move, {x, 0}, {y, 6}}.
-    {jump, {f, 1039}}.
-  {label, 1038}.
+    {jump, {f, 1040}}.
   {label, 1039}.
-  {label, 1037}.
-  {label, 1035}.
-  {label, 1033}.
-    {gc_bif, '+', {f, 0}, 0, [{y, 2}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1040}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1040}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1041}}.
   {label, 1040}.
+  {label, 1038}.
+  {label, 1036}.
+  {label, 1034}.
+    {gc_bif, '+', {f, 0}, 0, [{y, 2}, {integer, 1}], {x, 0}}.
+    {test, is_ge, {f, 1041}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1041}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1042}}.
+  {label, 1041}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1083:36">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1041}.
+  {label, 1042}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 2, {f, 925}}.
+    {call, 2, {f, 926}}.
     {move, {x, 0}, {y, 7}}.
-    {test, is_lt, {f, 1043}, [{y, 7}, {y, 5}]}.
+    {test, is_lt, {f, 1044}, [{y, 7}, {y, 5}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1044}}.
-  {label, 1043}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 1045}}.
   {label, 1044}.
-    {move, {x, 0}, {x, 1}}.
-    {test, is_ne_exact, {f, 1045}, [{x, 1}, {atom, true}]}.
-    {test, is_lt, {f, 1047}, [{y, 6}, {y, 7}]}.
-    {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1048}}.
-  {label, 1047}.
     {move, {atom, false}, {x, 0}}.
-  {label, 1048}.
-    {jump, {f, 1046}}.
   {label, 1045}.
+    {move, {x, 0}, {x, 1}}.
+    {test, is_ne_exact, {f, 1046}, [{x, 1}, {atom, true}]}.
+    {test, is_lt, {f, 1048}, [{y, 6}, {y, 7}]}.
     {move, {atom, true}, {x, 0}}.
+    {jump, {f, 1049}}.
+  {label, 1048}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1049}.
+    {jump, {f, 1047}}.
   {label, 1046}.
-    {test, is_eq, {f, 1042}, [{x, 0}, {atom, true}]}.
+    {move, {atom, true}, {x, 0}}.
+  {label, 1047}.
+    {test, is_eq, {f, 1043}, [{x, 0}, {atom, true}]}.
     {move, {y, 2}, {x, 0}}.
-    {call_last, 1, {f, 1018}, 10}.
-  {label, 1042}.
+    {call_last, 1, {f, 1019}, 10}.
+  {label, 1043}.
     {move, {integer, 2}, {x, 0}}.
     {move, {x, 0}, {y, 8}}.
     {line, [{location, "std@io@fs.erl", 60}]}.
-  {label, 1049}.
-    {test, is_ge, {f, 1050}, [{y, 4}, {y, 8}]}.
+  {label, 1050}.
+    {test, is_ge, {f, 1051}, [{y, 4}, {y, 8}]}.
     {gc_bif, '+', {f, 0}, 0, [{y, 2}, {y, 8}], {x, 0}}.
-    {test, is_ge, {f, 1051}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1051}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1052}}.
-  {label, 1051}.
+    {test, is_ge, {f, 1052}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1052}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1053}}.
+  {label, 1052}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1087:40">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1052}.
+  {label, 1053}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 2, {f, 925}}.
+    {call, 2, {f, 926}}.
     {move, {x, 0}, {y, 9}}.
-    {test, is_lt, {f, 1054}, [{y, 9}, {integer, 128}]}.
+    {test, is_lt, {f, 1055}, [{y, 9}, {integer, 128}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1055}}.
-  {label, 1054}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 1056}}.
   {label, 1055}.
-    {move, {x, 0}, {x, 1}}.
-    {test, is_ne_exact, {f, 1056}, [{x, 1}, {atom, true}]}.
-    {test, is_lt, {f, 1058}, [{integer, 191}, {y, 9}]}.
-    {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1059}}.
-  {label, 1058}.
     {move, {atom, false}, {x, 0}}.
-  {label, 1059}.
-    {jump, {f, 1057}}.
   {label, 1056}.
+    {move, {x, 0}, {x, 1}}.
+    {test, is_ne_exact, {f, 1057}, [{x, 1}, {atom, true}]}.
+    {test, is_lt, {f, 1059}, [{integer, 191}, {y, 9}]}.
     {move, {atom, true}, {x, 0}}.
-  {label, 1057}.
-    {test, is_eq, {f, 1053}, [{x, 0}, {atom, true}]}.
-    {move, {y, 2}, {x, 0}}.
-    {call_last, 1, {f, 1018}, 10}.
-  {label, 1053}.
-    {gc_bif, '+', {f, 0}, 0, [{y, 8}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1060}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1060}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1061}}.
+    {jump, {f, 1060}}.
+  {label, 1059}.
+    {move, {atom, false}, {x, 0}}.
   {label, 1060}.
+    {jump, {f, 1058}}.
+  {label, 1057}.
+    {move, {atom, true}, {x, 0}}.
+  {label, 1058}.
+    {test, is_eq, {f, 1054}, [{x, 0}, {atom, true}]}.
+    {move, {y, 2}, {x, 0}}.
+    {call_last, 1, {f, 1019}, 10}.
+  {label, 1054}.
+    {gc_bif, '+', {f, 0}, 0, [{y, 8}, {integer, 1}], {x, 0}}.
+    {test, is_ge, {f, 1061}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1061}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1062}}.
+  {label, 1061}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1089:19">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1061}.
-    {move, {x, 0}, {y, 8}}.
-    {jump, {f, 1049}}.
-  {label, 1050}.
-    {gc_bif, '+', {f, 0}, 0, [{y, 2}, {y, 4}], {x, 0}}.
-    {test, is_ge, {f, 1062}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1062}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1063}}.
   {label, 1062}.
+    {move, {x, 0}, {y, 8}}.
+    {jump, {f, 1050}}.
+  {label, 1051}.
+    {gc_bif, '+', {f, 0}, 0, [{y, 2}, {y, 4}], {x, 0}}.
+    {test, is_ge, {f, 1063}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1063}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1064}}.
+  {label, 1063}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1091:15">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1063}.
-    {gc_bif, '+', {f, 0}, 1, [{x, 0}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1064}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1064}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1065}}.
   {label, 1064}.
+    {gc_bif, '+', {f, 0}, 1, [{x, 0}, {integer, 1}], {x, 0}}.
+    {test, is_ge, {f, 1065}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1065}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1066}}.
+  {label, 1065}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1091:19">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1065}.
+  {label, 1066}.
     {move, {x, 0}, {y, 2}}.
-    {jump, {f, 988}}.
-  {label, 989}.
+    {jump, {f, 989}}.
+  {label, 990}.
     {move, {integer, -1}, {x, 0}}.
     {deallocate, 10}.
     return.
@@ -10289,96 +10297,96 @@ test "fs answers PermissionDenied for an OS permission error" {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 1, {f, 915}}.
+    {call, 1, {f, 916}}.
     {move, {x, 0}, {y, 1}}.
-    {test, is_lt, {f, 1067}, [{integer, 0}, {y, 1}]}.
+    {test, is_lt, {f, 1068}, [{integer, 0}, {y, 1}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1068}}.
-  {label, 1067}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 1069}}.
   {label, 1068}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1069}.
     {move, {x, 0}, {x, 1}}.
-    {test, is_eq, {f, 1069}, [{x, 1}, {atom, true}]}.
+    {test, is_eq, {f, 1070}, [{x, 1}, {atom, true}]}.
     {gc_bif, '-', {f, 0}, 0, [{y, 1}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1071}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1071}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1072}}.
-  {label, 1071}.
+    {test, is_ge, {f, 1072}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1072}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1073}}.
+  {label, 1072}.
     {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/io/fs.bp:1098:37">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1072}.
+  {label, 1073}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 2, {f, 925}}.
-    {test, is_eq_exact, {f, 1073}, [{x, 0}, {integer, 10}]}.
+    {call, 2, {f, 926}}.
+    {test, is_eq_exact, {f, 1074}, [{x, 0}, {integer, 10}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1074}}.
-  {label, 1073}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 1075}}.
   {label, 1074}.
-    {jump, {f, 1070}}.
-  {label, 1069}.
     {move, {atom, false}, {x, 0}}.
-  {label, 1070}.
-    {test, is_eq, {f, 1066}, [{x, 0}, {atom, true}]}.
-    {gc_bif, '-', {f, 0}, 0, [{y, 1}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1075}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1075}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1076}}.
   {label, 1075}.
+    {jump, {f, 1071}}.
+  {label, 1070}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1071}.
+    {test, is_eq, {f, 1067}, [{x, 0}, {atom, true}]}.
+    {gc_bif, '-', {f, 0}, 0, [{y, 1}, {integer, 1}], {x, 0}}.
+    {test, is_ge, {f, 1076}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1076}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1077}}.
+  {label, 1076}.
     {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/io/fs.bp:1099:15">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1076}.
+  {label, 1077}.
     {move, {x, 0}, {y, 1}}.
-    {test, is_lt, {f, 1078}, [{integer, 0}, {y, 1}]}.
+    {test, is_lt, {f, 1079}, [{integer, 0}, {y, 1}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1079}}.
-  {label, 1078}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 1080}}.
   {label, 1079}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1080}.
     {move, {x, 0}, {x, 1}}.
-    {test, is_eq, {f, 1080}, [{x, 1}, {atom, true}]}.
+    {test, is_eq, {f, 1081}, [{x, 1}, {atom, true}]}.
     {gc_bif, '-', {f, 0}, 0, [{y, 1}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1082}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1082}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1083}}.
-  {label, 1082}.
+    {test, is_ge, {f, 1083}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1083}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1084}}.
+  {label, 1083}.
     {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/io/fs.bp:1100:41">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1083}.
+  {label, 1084}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 2, {f, 925}}.
-    {test, is_eq_exact, {f, 1084}, [{x, 0}, {integer, 13}]}.
+    {call, 2, {f, 926}}.
+    {test, is_eq_exact, {f, 1085}, [{x, 0}, {integer, 13}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1085}}.
-  {label, 1084}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 1086}}.
   {label, 1085}.
-    {jump, {f, 1081}}.
-  {label, 1080}.
     {move, {atom, false}, {x, 0}}.
-  {label, 1081}.
-    {test, is_eq, {f, 1077}, [{x, 0}, {atom, true}]}.
-    {gc_bif, '-', {f, 0}, 0, [{y, 1}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1086}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1086}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1087}}.
   {label, 1086}.
+    {jump, {f, 1082}}.
+  {label, 1081}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1082}.
+    {test, is_eq, {f, 1078}, [{x, 0}, {atom, true}]}.
+    {gc_bif, '-', {f, 0}, 0, [{y, 1}, {integer, 1}], {x, 0}}.
+    {test, is_ge, {f, 1087}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1087}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1088}}.
+  {label, 1087}.
     {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/io/fs.bp:1100:59">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1087}.
-    {move, {x, 0}, {y, 1}}.
-    {jump, {f, 1088}}.
-  {label, 1077}.
   {label, 1088}.
+    {move, {x, 0}, {y, 1}}.
     {jump, {f, 1089}}.
-  {label, 1066}.
+  {label, 1078}.
   {label, 1089}.
+    {jump, {f, 1090}}.
+  {label, 1067}.
+  {label, 1090}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 2}}.
     {move, {integer, 0}, {x, 1}}.
-    {call_last, 3, {f, 1091}, 6}.
+    {call_last, 3, {f, 1092}, 6}.
 
 {function, openWasm, 1, 99}.
   {label, 98}.
@@ -10390,34 +10398,34 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 79}}.
-    {test, is_tagged_tuple, {f, 1092}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 1093}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 1093}}.
-  {label, 1092}.
+    {jump, {f, 1094}}.
+  {label, 1093}.
     {deallocate, 4}.
     return.
-  {label, 1093}.
+  {label, 1094}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
-    {call, 2, {f, 925}}.
+    {call, 2, {f, 926}}.
     {move, {x, 0}, {y, 2}}.
-    {test, is_lt, {f, 1094}, [{y, 2}, {integer, 0}]}.
+    {test, is_lt, {f, 1095}, [{y, 2}, {integer, 0}]}.
     {gc_bif, '-', {f, 0}, 0, [{integer, -1}, {y, 2}], {x, 0}}.
-    {test, is_ge, {f, 1095}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1095}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1096}}.
-  {label, 1095}.
+    {test, is_ge, {f, 1096}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1096}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1097}}.
+  {label, 1096}.
     {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/io/fs.bp:1108:35">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1096}.
+  {label, 1097}.
     {call, 1, {f, 67}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {deallocate, 4}.
     return.
-  {label, 1094}.
+  {label, 1095}.
     {move, {y, 2}, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
@@ -10437,34 +10445,34 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 79}}.
-    {test, is_tagged_tuple, {f, 1097}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 1098}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 1098}}.
-  {label, 1097}.
+    {jump, {f, 1099}}.
+  {label, 1098}.
     {deallocate, 4}.
     return.
-  {label, 1098}.
+  {label, 1099}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {integer, 1}, {x, 1}}.
-    {call, 2, {f, 925}}.
+    {call, 2, {f, 926}}.
     {move, {x, 0}, {y, 2}}.
-    {test, is_lt, {f, 1099}, [{y, 2}, {integer, 0}]}.
+    {test, is_lt, {f, 1100}, [{y, 2}, {integer, 0}]}.
     {gc_bif, '-', {f, 0}, 0, [{integer, -1}, {y, 2}], {x, 0}}.
-    {test, is_ge, {f, 1100}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1100}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1101}}.
-  {label, 1100}.
+    {test, is_ge, {f, 1101}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1101}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1102}}.
+  {label, 1101}.
     {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/io/fs.bp:1116:35">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1101}.
+  {label, 1102}.
     {call, 1, {f, 67}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {deallocate, 4}.
     return.
-  {label, 1099}.
+  {label, 1100}.
     {move, {y, 2}, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
@@ -10483,7 +10491,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 1, {f, 966}}.
+    {call, 1, {f, 967}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {deallocate, 2}.
@@ -10500,15 +10508,15 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 81}}.
-    {call, 1, {f, 966}}.
+    {call, 1, {f, 967}}.
     {call, 1, {f, 73}}.
-    {test, is_tagged_tuple, {f, 1102}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 1103}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 1103}}.
-  {label, 1102}.
+    {jump, {f, 1104}}.
+  {label, 1103}.
     {deallocate, 3}.
     return.
-  {label, 1103}.
+  {label, 1104}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
@@ -10529,15 +10537,15 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 81}}.
     {move, {y, 1}, {x, 1}}.
-    {call, 2, {f, 925}}.
+    {call, 2, {f, 926}}.
     {call, 1, {f, 69}}.
-    {test, is_tagged_tuple, {f, 1104}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 1105}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 1105}}.
-  {label, 1104}.
+    {jump, {f, 1106}}.
+  {label, 1105}.
     {deallocate, 3}.
     return.
-  {label, 1105}.
+  {label, 1106}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
@@ -10556,15 +10564,15 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 81}}.
-    {call, 1, {f, 966}}.
+    {call, 1, {f, 967}}.
     {call, 1, {f, 69}}.
-    {test, is_tagged_tuple, {f, 1106}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 1107}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 1107}}.
-  {label, 1106}.
+    {jump, {f, 1108}}.
+  {label, 1107}.
     {deallocate, 2}.
     return.
-  {label, 1107}.
+  {label, 1108}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
@@ -10583,15 +10591,15 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 81}}.
-    {call, 1, {f, 966}}.
+    {call, 1, {f, 967}}.
     {call, 1, {f, 69}}.
-    {test, is_tagged_tuple, {f, 1108}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 1109}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 1109}}.
-  {label, 1108}.
+    {jump, {f, 1110}}.
+  {label, 1109}.
     {deallocate, 2}.
     return.
-  {label, 1109}.
+  {label, 1110}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
@@ -10613,29 +10621,29 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call, 1, {f, 81}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {call, 1, {f, 966}}.
+    {call, 1, {f, 967}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 1}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
-    {call, 2, {f, 925}}.
+    {call, 2, {f, 926}}.
     {move, {y, 1}, {x, 0}}.
-    {call, 1, {f, 966}}.
+    {call, 1, {f, 967}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 2}, {x, 1}}.
-    {call, 2, {f, 925}}.
+    {call, 2, {f, 926}}.
     {move, {y, 3}, {x, 0}}.
     {call, 1, {f, 69}}.
-    {test, is_tagged_tuple, {f, 1110}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 1111}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 1111}}.
-  {label, 1110}.
+    {jump, {f, 1112}}.
+  {label, 1111}.
     {deallocate, 5}.
     return.
-  {label, 1111}.
+  {label, 1112}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {x, 0}}.
-    {call, 1, {f, 966}}.
+    {call, 1, {f, 967}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
@@ -10654,24 +10662,24 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 81}}.
     {move, {y, 1}, {x, 1}}.
-    {call, 2, {f, 925}}.
+    {call, 2, {f, 926}}.
     {move, {x, 0}, {y, 2}}.
-    {test, is_lt, {f, 1112}, [{y, 2}, {integer, 0}]}.
+    {test, is_lt, {f, 1113}, [{y, 2}, {integer, 0}]}.
     {gc_bif, '-', {f, 0}, 0, [{integer, -1}, {y, 2}], {x, 0}}.
-    {test, is_ge, {f, 1113}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1113}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1114}}.
-  {label, 1113}.
+    {test, is_ge, {f, 1114}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1114}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1115}}.
+  {label, 1114}.
     {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/io/fs.bp:1159:35">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1114}.
+  {label, 1115}.
     {call, 1, {f, 67}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {deallocate, 3}.
     return.
-  {label, 1112}.
+  {label, 1113}.
     {move, {y, 2}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
@@ -10689,7 +10697,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 81}}.
-    {call, 1, {f, 966}}.
+    {call, 1, {f, 967}}.
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
@@ -10707,7 +10715,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 81}}.
-    {call_last, 1, {f, 966}, 1}.
+    {call_last, 1, {f, 967}, 1}.
 
 {function, existsWasm, 1, 121}.
   {label, 120}.
@@ -10719,26 +10727,26 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 79}}.
-    {test, is_tagged_tuple, {f, 1116}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 1117}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {integer, 1}, {x, 1}}.
-    {call, 2, {f, 925}}.
-    {test, is_ge, {f, 1117}, [{x, 0}, {integer, 0}]}.
+    {call, 2, {f, 926}}.
+    {test, is_ge, {f, 1118}, [{x, 0}, {integer, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1118}}.
-  {label, 1117}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 1119}}.
   {label, 1118}.
-    {jump, {f, 1115}}.
-  {label, 1116}.
-    {test, is_tagged_tuple, {f, 1119}, [{x, 0}, 2, {atom, error}]}.
     {move, {atom, false}, {x, 0}}.
-    {jump, {f, 1115}}.
   {label, 1119}.
+    {jump, {f, 1116}}.
+  {label, 1117}.
+    {test, is_tagged_tuple, {f, 1120}, [{x, 0}, 2, {atom, error}]}.
+    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 1116}}.
+  {label, 1120}.
     {case_end, {x, 0}}.
-  {label, 1115}.
+  {label, 1116}.
     {deallocate, 2}.
     return.
 
@@ -10752,24 +10760,24 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 79}}.
-    {test, is_tagged_tuple, {f, 1120}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 1121}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 1121}}.
-  {label, 1120}.
+    {jump, {f, 1122}}.
+  {label, 1121}.
     {deallocate, 3}.
     return.
-  {label, 1121}.
+  {label, 1122}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {call, 1, {f, 966}}.
+    {call, 1, {f, 967}}.
     {call, 1, {f, 71}}.
-    {test, is_tagged_tuple, {f, 1122}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 1123}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 1123}}.
-  {label, 1122}.
+    {jump, {f, 1124}}.
+  {label, 1123}.
     {deallocate, 3}.
     return.
-  {label, 1123}.
+  {label, 1124}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
     {call, 1, {f, 85}}.
@@ -10789,33 +10797,33 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 79}}.
-    {test, is_tagged_tuple, {f, 1124}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 1125}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 1125}}.
-  {label, 1124}.
+    {jump, {f, 1126}}.
+  {label, 1125}.
     {deallocate, 3}.
     return.
-  {label, 1125}.
+  {label, 1126}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {call, 1, {f, 966}}.
+    {call, 1, {f, 967}}.
     {move, {x, 0}, {y, 2}}.
-    {test, is_lt, {f, 1126}, [{y, 2}, {integer, 0}]}.
+    {test, is_lt, {f, 1127}, [{y, 2}, {integer, 0}]}.
     {gc_bif, '-', {f, 0}, 0, [{integer, -1}, {y, 2}], {x, 0}}.
-    {test, is_ge, {f, 1127}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1127}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1128}}.
-  {label, 1127}.
+    {test, is_ge, {f, 1128}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1128}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1129}}.
+  {label, 1128}.
     {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/io/fs.bp:1188:35">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1128}.
+  {label, 1129}.
     {call, 1, {f, 67}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {deallocate, 3}.
     return.
-  {label, 1126}.
+  {label, 1127}.
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
@@ -10835,69 +10843,69 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 79}}.
-    {test, is_tagged_tuple, {f, 1129}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 1130}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 1130}}.
-  {label, 1129}.
+    {jump, {f, 1131}}.
+  {label, 1130}.
     {deallocate, 15}.
     return.
-  {label, 1130}.
+  {label, 1131}.
     {move, {x, 0}, {y, 1}}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
     {move, {literal, <<"/">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {call, 2, {f, 1132}}.
+    {call, 2, {f, 1133}}.
     {move, {x, 0}, {y, 3}}.
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 4}}.
     {line, [{location, "std@io@fs.erl", 76}]}.
-  {label, 1148}.
+  {label, 1149}.
     {move, {y, 3}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_lt, {f, 1149}, [{y, 4}, {x, 0}]}.
+    {test, is_lt, {f, 1150}, [{y, 4}, {x, 0}]}.
     {move, {y, 3}, {x, 0}}.
     {move, {y, 4}, {x, 1}}.
     {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 1150}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 1151}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 5}, {x, 0}}.
-    {jump, {f, 1151}}.
-  {label, 1150}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 1152}}.
   {label, 1151}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 1152}.
     {move, {x, 0}, {y, 6}}.
     {gc_bif, '+', {f, 0}, 0, [{y, 4}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1152}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1152}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1153}}.
-  {label, 1152}.
+    {test, is_ge, {f, 1153}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1153}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1154}}.
+  {label, 1153}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1201:15">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1153}.
+  {label, 1154}.
     {move, {x, 0}, {y, 4}}.
     {move, {literal, <<"">>}, {x, 0}}.
-    {test, is_ne_exact, {f, 1155}, [{y, 6}, {x, 0}]}.
+    {test, is_ne_exact, {f, 1156}, [{y, 6}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1156}}.
-  {label, 1155}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 1157}}.
   {label, 1156}.
-    {move, {x, 0}, {x, 1}}.
-    {test, is_eq, {f, 1157}, [{x, 1}, {atom, true}]}.
-    {move, {literal, <<".">>}, {x, 0}}.
-    {test, is_ne_exact, {f, 1159}, [{y, 6}, {x, 0}]}.
-    {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1160}}.
-  {label, 1159}.
     {move, {atom, false}, {x, 0}}.
-  {label, 1160}.
-    {jump, {f, 1158}}.
   {label, 1157}.
+    {move, {x, 0}, {x, 1}}.
+    {test, is_eq, {f, 1158}, [{x, 1}, {atom, true}]}.
+    {move, {literal, <<".">>}, {x, 0}}.
+    {test, is_ne_exact, {f, 1160}, [{y, 6}, {x, 0}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 1161}}.
+  {label, 1160}.
     {move, {atom, false}, {x, 0}}.
+  {label, 1161}.
+    {jump, {f, 1159}}.
   {label, 1158}.
-    {test, is_eq, {f, 1154}, [{x, 0}, {atom, true}]}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1159}.
+    {test, is_eq, {f, 1155}, [{x, 0}, {atom, true}]}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 7}}.
     {move, {y, 6}, {x, 0}}.
@@ -10908,54 +10916,54 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 2}, {x, 0}}.
     {call_ext, 2, {extfunc, lists, append, 2}}.
     {move, {x, 0}, {y, 2}}.
-    {jump, {f, 1161}}.
-  {label, 1154}.
-  {label, 1161}.
-    {jump, {f, 1148}}.
-  {label, 1149}.
+    {jump, {f, 1162}}.
+  {label, 1155}.
+  {label, 1162}.
+    {jump, {f, 1149}}.
+  {label, 1150}.
     {move, {literal, <<"">>}, {x, 0}}.
     {move, {x, 0}, {y, 8}}.
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 9}}.
     {line, [{location, "std@io@fs.erl", 76}]}.
-  {label, 1162}.
+  {label, 1163}.
     {move, {y, 2}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_lt, {f, 1163}, [{y, 9}, {x, 0}]}.
+    {test, is_lt, {f, 1164}, [{y, 9}, {x, 0}]}.
     {move, {y, 2}, {x, 0}}.
     {move, {y, 9}, {x, 1}}.
     {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 1164}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 1165}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 10}}.
     {move, {y, 10}, {x, 0}}.
-    {jump, {f, 1165}}.
-  {label, 1164}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 1166}}.
   {label, 1165}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 1166}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 8}, {x, 0}}.
     {call, 2, {f, 77}}.
     {move, {x, 0}, {y, 8}}.
     {gc_bif, '+', {f, 0}, 0, [{y, 9}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1166}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1166}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1167}}.
-  {label, 1166}.
+    {test, is_ge, {f, 1167}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1167}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1168}}.
+  {label, 1167}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1208:15">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1167}.
+  {label, 1168}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 8}, {x, 0}}.
     {move, {integer, 1}, {x, 1}}.
-    {call, 2, {f, 925}}.
+    {call, 2, {f, 926}}.
     {move, {x, 0}, {y, 11}}.
-    {test, is_eq_exact, {f, 1168}, [{y, 11}, {integer, 3}]}.
-    {jump, {f, 1162}}.
-  {label, 1168}.
-    {test, is_ge, {f, 1169}, [{y, 11}, {integer, 0}]}.
+    {test, is_eq_exact, {f, 1169}, [{y, 11}, {integer, 3}]}.
+    {jump, {f, 1163}}.
+  {label, 1169}.
+    {test, is_ge, {f, 1170}, [{y, 11}, {integer, 0}]}.
     {move, {y, 2}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_eq_exact, {f, 1170}, [{y, 9}, {x, 0}]}.
+    {test, is_eq_exact, {f, 1171}, [{y, 9}, {x, 0}]}.
     {move, {integer, 7}, {x, 0}}.
     {call, 1, {f, 67}}.
     {move, {x, 0}, {x, 1}}.
@@ -10963,7 +10971,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {deallocate, 15}.
     return.
-  {label, 1170}.
+  {label, 1171}.
     {move, {integer, 24}, {x, 0}}.
     {call, 1, {f, 67}}.
     {move, {x, 0}, {x, 1}}.
@@ -10971,28 +10979,28 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {deallocate, 15}.
     return.
-  {label, 1169}.
+  {label, 1170}.
     {move, {y, 8}, {x, 0}}.
-    {call, 1, {f, 966}}.
+    {call, 1, {f, 967}}.
     {move, {x, 0}, {y, 12}}.
-    {test, is_lt, {f, 1171}, [{y, 12}, {integer, 0}]}.
+    {test, is_lt, {f, 1172}, [{y, 12}, {integer, 0}]}.
     {gc_bif, '-', {f, 0}, 0, [{integer, -1}, {y, 12}], {x, 0}}.
-    {test, is_ge, {f, 1172}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1172}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1173}}.
-  {label, 1172}.
+    {test, is_ge, {f, 1173}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1173}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1174}}.
+  {label, 1173}.
     {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/io/fs.bp:1216:42">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1173}.
+  {label, 1174}.
     {call, 1, {f, 67}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {deallocate, 15}.
     return.
-  {label, 1171}.
-    {jump, {f, 1162}}.
-  {label, 1163}.
+  {label, 1172}.
+    {jump, {f, 1163}}.
+  {label, 1164}.
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
@@ -11011,35 +11019,35 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 79}}.
-    {test, is_tagged_tuple, {f, 1174}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 1175}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 1175}}.
-  {label, 1174}.
+    {jump, {f, 1176}}.
+  {label, 1175}.
     {deallocate, 4}.
     return.
-  {label, 1175}.
+  {label, 1176}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
-    {call, 2, {f, 925}}.
+    {call, 2, {f, 926}}.
     {move, {x, 0}, {y, 2}}.
-    {test, is_lt, {f, 1176}, [{y, 2}, {integer, 0}]}.
+    {test, is_lt, {f, 1177}, [{y, 2}, {integer, 0}]}.
     {gc_bif, '-', {f, 0}, 0, [{integer, -1}, {y, 2}], {x, 0}}.
-    {test, is_ge, {f, 1177}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1177}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1178}}.
-  {label, 1177}.
+    {test, is_ge, {f, 1178}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1178}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1179}}.
+  {label, 1178}.
     {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/io/fs.bp:1225:38">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1178}.
+  {label, 1179}.
     {call, 1, {f, 67}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {deallocate, 4}.
     return.
-  {label, 1176}.
-    {test, is_eq_exact, {f, 1179}, [{y, 2}, {integer, 3}]}.
+  {label, 1177}.
+    {test, is_eq_exact, {f, 1180}, [{y, 2}, {integer, 3}]}.
     {move, {integer, 14}, {x, 0}}.
     {call, 1, {f, 67}}.
     {move, {x, 0}, {x, 1}}.
@@ -11047,26 +11055,26 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {deallocate, 4}.
     return.
-  {label, 1179}.
+  {label, 1180}.
     {move, {y, 1}, {x, 0}}.
-    {call, 1, {f, 966}}.
+    {call, 1, {f, 967}}.
     {move, {x, 0}, {y, 3}}.
-    {test, is_lt, {f, 1180}, [{y, 3}, {integer, 0}]}.
+    {test, is_lt, {f, 1181}, [{y, 3}, {integer, 0}]}.
     {gc_bif, '-', {f, 0}, 0, [{integer, -1}, {y, 3}], {x, 0}}.
-    {test, is_ge, {f, 1181}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1181}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1182}}.
-  {label, 1181}.
+    {test, is_ge, {f, 1182}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1182}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1183}}.
+  {label, 1182}.
     {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/io/fs.bp:1228:35">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1182}.
+  {label, 1183}.
     {call, 1, {f, 67}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {deallocate, 4}.
     return.
-  {label, 1180}.
+  {label, 1181}.
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
@@ -11085,24 +11093,24 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 87}}.
-    {test, is_tagged_tuple, {f, 1183}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 1184}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 1184}}.
-  {label, 1183}.
+    {jump, {f, 1185}}.
+  {label, 1184}.
     {deallocate, 4}.
     return.
-  {label, 1184}.
+  {label, 1185}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 2}, {x, 1}}.
     {call, 2, {f, 89}}.
-    {test, is_tagged_tuple, {f, 1185}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 1186}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 1186}}.
-  {label, 1185}.
+    {jump, {f, 1187}}.
+  {label, 1186}.
     {deallocate, 4}.
     return.
-  {label, 1186}.
+  {label, 1187}.
     {move, {x, 0}, {y, 3}}.
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
@@ -11121,71 +11129,71 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 79}}.
-    {test, is_tagged_tuple, {f, 1187}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 1188}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 1188}}.
-  {label, 1187}.
+    {jump, {f, 1189}}.
+  {label, 1188}.
     {deallocate, 5}.
     return.
-  {label, 1188}.
+  {label, 1189}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {integer, 1}, {x, 1}}.
-    {call, 2, {f, 925}}.
+    {call, 2, {f, 926}}.
     {move, {x, 0}, {y, 2}}.
-    {test, is_lt, {f, 1189}, [{y, 2}, {integer, 0}]}.
+    {test, is_lt, {f, 1190}, [{y, 2}, {integer, 0}]}.
     {gc_bif, '-', {f, 0}, 0, [{integer, -1}, {y, 2}], {x, 0}}.
-    {test, is_ge, {f, 1190}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1190}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1191}}.
-  {label, 1190}.
+    {test, is_ge, {f, 1191}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1191}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1192}}.
+  {label, 1191}.
     {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/io/fs.bp:1241:38">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1191}.
+  {label, 1192}.
     {call, 1, {f, 67}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {deallocate, 5}.
     return.
-  {label, 1189}.
+  {label, 1190}.
     {move, {y, 1}, {x, 0}}.
-    {call, 1, {f, 966}}.
+    {call, 1, {f, 967}}.
     {call, 1, {f, 73}}.
-    {test, is_tagged_tuple, {f, 1192}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 1193}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 1193}}.
-  {label, 1192}.
+    {jump, {f, 1194}}.
+  {label, 1193}.
     {deallocate, 5}.
     return.
-  {label, 1193}.
+  {label, 1194}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 1}, {x, 0}}.
-    {call, 1, {f, 966}}.
+    {call, 1, {f, 967}}.
     {call, 1, {f, 73}}.
-    {test, is_tagged_tuple, {f, 1194}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 1195}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 1195}}.
-  {label, 1194}.
+    {jump, {f, 1196}}.
+  {label, 1195}.
     {deallocate, 5}.
     return.
-  {label, 1195}.
+  {label, 1196}.
     {move, {x, 0}, {y, 4}}.
     {gc_bif, '*', {f, 0}, 0, [{y, 4}, {integer, 1000}], {x, 0}}.
-    {test, is_ge, {f, 1196}, [{x, 0}, {integer, -9223372036854775808}]}.
-    {test, is_ge, {f, 1196}, [{integer, 9223372036854775807}, {x, 0}]}.
-    {jump, {f, 1197}}.
-  {label, 1196}.
+    {test, is_ge, {f, 1197}, [{x, 0}, {integer, -9223372036854775808}]}.
+    {test, is_ge, {f, 1197}, [{integer, 9223372036854775807}, {x, 0}]}.
+    {jump, {f, 1198}}.
+  {label, 1197}.
     {move, {literal, {integer_overflow, <<"integer overflow: * on i64 at src/io/fs.bp:1244:48">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1197}.
-    {move, {x, 0}, {x, 1}}.
-    {test, is_eq_exact, {f, 1198}, [{y, 2}, {integer, 3}]}.
-    {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1199}}.
   {label, 1198}.
-    {move, {atom, false}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test, is_eq_exact, {f, 1199}, [{y, 2}, {integer, 3}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 1200}}.
   {label, 1199}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1200}.
     {test_heap, 5, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, std@io@fs@@FileStat}, {y, 3}, {x, 1}, {x, 0}]}}.
     {move, {x, 0}, {x, 1}}.
@@ -11206,35 +11214,35 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 79}}.
-    {test, is_tagged_tuple, {f, 1200}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 1201}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 1201}}.
-  {label, 1200}.
+    {jump, {f, 1202}}.
+  {label, 1201}.
     {deallocate, 27}.
     return.
-  {label, 1201}.
+  {label, 1202}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {integer, 1}, {x, 1}}.
-    {call, 2, {f, 925}}.
+    {call, 2, {f, 926}}.
     {move, {x, 0}, {y, 2}}.
-    {test, is_lt, {f, 1202}, [{y, 2}, {integer, 0}]}.
+    {test, is_lt, {f, 1203}, [{y, 2}, {integer, 0}]}.
     {gc_bif, '-', {f, 0}, 0, [{integer, -1}, {y, 2}], {x, 0}}.
-    {test, is_ge, {f, 1203}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1203}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1204}}.
-  {label, 1203}.
+    {test, is_ge, {f, 1204}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1204}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1205}}.
+  {label, 1204}.
     {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/io/fs.bp:1252:38">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1204}.
+  {label, 1205}.
     {call, 1, {f, 67}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {deallocate, 27}.
     return.
-  {label, 1202}.
-    {test, is_ne_exact, {f, 1205}, [{y, 2}, {integer, 3}]}.
+  {label, 1203}.
+    {test, is_ne_exact, {f, 1206}, [{y, 2}, {integer, 3}]}.
     {move, {integer, 24}, {x, 0}}.
     {call, 1, {f, 67}}.
     {move, {x, 0}, {x, 1}}.
@@ -11242,7 +11250,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {deallocate, 27}.
     return.
-  {label, 1205}.
+  {label, 1206}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 1}, {x, 0}}.
@@ -11264,78 +11272,78 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 9}}.
     {line, [{location, "std@io@fs.erl", 80}]}.
-  {label, 1206}.
+  {label, 1207}.
     {move, {y, 4}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_lt, {f, 1207}, [{y, 9}, {x, 0}]}.
+    {test, is_lt, {f, 1208}, [{y, 9}, {x, 0}]}.
     {move, {y, 4}, {x, 0}}.
     {move, {y, 9}, {x, 1}}.
     {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 1208}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 1209}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 10}}.
     {move, {y, 10}, {x, 0}}.
-    {jump, {f, 1209}}.
-  {label, 1208}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 1210}}.
   {label, 1209}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 1210}.
     {move, {x, 0}, {y, 11}}.
     {move, {y, 6}, {x, 0}}.
     {move, {y, 9}, {x, 1}}.
     {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 1210}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 1211}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 12}}.
     {move, {y, 12}, {x, 0}}.
-    {jump, {f, 1211}}.
-  {label, 1210}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 1212}}.
   {label, 1211}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 1212}.
     {move, {x, 0}, {y, 13}}.
     {gc_bif, '+', {f, 0}, 0, [{y, 9}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1212}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1212}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1213}}.
-  {label, 1212}.
+    {test, is_ge, {f, 1213}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1213}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1214}}.
+  {label, 1213}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1262:21">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1213}.
+  {label, 1214}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 11}, {x, 0}}.
-    {call, 1, {f, 966}}.
+    {call, 1, {f, 967}}.
     {call, 1, {f, 71}}.
-    {test, is_tagged_tuple, {f, 1214}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 1215}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 1215}}.
-  {label, 1214}.
+    {jump, {f, 1216}}.
+  {label, 1215}.
     {deallocate, 27}.
     return.
-  {label, 1215}.
+  {label, 1216}.
     {move, {x, 0}, {y, 14}}.
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 15}}.
     {line, [{location, "std@io@fs.erl", 80}]}.
-  {label, 1216}.
+  {label, 1217}.
     {move, {y, 14}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_lt, {f, 1217}, [{y, 15}, {x, 0}]}.
+    {test, is_lt, {f, 1218}, [{y, 15}, {x, 0}]}.
     {move, {y, 14}, {x, 0}}.
     {move, {y, 15}, {x, 1}}.
     {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 1218}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 1219}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 16}}.
     {move, {y, 16}, {x, 0}}.
-    {jump, {f, 1219}}.
-  {label, 1218}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 1220}}.
   {label, 1219}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 1220}.
     {move, {x, 0}, {y, 17}}.
     {gc_bif, '+', {f, 0}, 0, [{y, 15}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1220}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1220}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1221}}.
-  {label, 1220}.
+    {test, is_ge, {f, 1221}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1221}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1222}}.
+  {label, 1221}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1267:19">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1221}.
+  {label, 1222}.
     {move, {x, 0}, {y, 15}}.
     {move, {y, 11}, {x, 0}}.
     {move, {y, 17}, {x, 1}}.
@@ -11347,43 +11355,43 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 19}}.
     {move, {y, 18}, {x, 0}}.
     {move, {integer, 1}, {x, 1}}.
-    {call, 2, {f, 925}}.
+    {call, 2, {f, 926}}.
     {move, {x, 0}, {y, 20}}.
-    {test, is_lt, {f, 1223}, [{y, 20}, {integer, 0}]}.
+    {test, is_lt, {f, 1224}, [{y, 20}, {integer, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1224}}.
-  {label, 1223}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 1225}}.
   {label, 1224}.
-    {move, {x, 0}, {x, 1}}.
-    {test, is_eq, {f, 1225}, [{x, 1}, {atom, true}]}.
-    {test, is_ne_exact, {f, 1227}, [{y, 20}, {integer, -21}]}.
-    {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1228}}.
-  {label, 1227}.
     {move, {atom, false}, {x, 0}}.
-  {label, 1228}.
-    {jump, {f, 1226}}.
   {label, 1225}.
+    {move, {x, 0}, {x, 1}}.
+    {test, is_eq, {f, 1226}, [{x, 1}, {atom, true}]}.
+    {test, is_ne_exact, {f, 1228}, [{y, 20}, {integer, -21}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 1229}}.
+  {label, 1228}.
     {move, {atom, false}, {x, 0}}.
-  {label, 1226}.
-    {test, is_eq, {f, 1222}, [{x, 0}, {atom, true}]}.
-    {gc_bif, '-', {f, 0}, 0, [{integer, -1}, {y, 20}], {x, 0}}.
-    {test, is_ge, {f, 1229}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1229}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1230}}.
   {label, 1229}.
+    {jump, {f, 1227}}.
+  {label, 1226}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1227}.
+    {test, is_eq, {f, 1223}, [{x, 0}, {atom, true}]}.
+    {gc_bif, '-', {f, 0}, 0, [{integer, -1}, {y, 20}], {x, 0}}.
+    {test, is_ge, {f, 1230}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1230}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1231}}.
+  {label, 1230}.
     {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/io/fs.bp:1271:63">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1230}.
+  {label, 1231}.
     {call, 1, {f, 67}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {deallocate, 27}.
     return.
-  {label, 1222}.
-    {test, is_eq_exact, {f, 1231}, [{y, 20}, {integer, 3}]}.
+  {label, 1223}.
+    {test, is_eq_exact, {f, 1232}, [{y, 20}, {integer, 3}]}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 21}}.
     {move, {y, 18}, {x, 0}}.
@@ -11404,10 +11412,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 6}, {x, 0}}.
     {call_ext, 2, {extfunc, lists, append, 2}}.
     {move, {x, 0}, {y, 6}}.
-    {jump, {f, 1232}}.
-  {label, 1231}.
+    {jump, {f, 1233}}.
   {label, 1232}.
-    {test, is_eq_exact, {f, 1233}, [{y, 20}, {integer, 6}]}.
+  {label, 1233}.
+    {test, is_eq_exact, {f, 1234}, [{y, 20}, {integer, 6}]}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 23}}.
     {move, {y, 19}, {x, 0}}.
@@ -11418,10 +11426,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 7}, {x, 0}}.
     {call_ext, 2, {extfunc, lists, append, 2}}.
     {move, {x, 0}, {y, 7}}.
-    {jump, {f, 1234}}.
-  {label, 1233}.
+    {jump, {f, 1235}}.
   {label, 1234}.
-    {test, is_eq_exact, {f, 1235}, [{y, 20}, {integer, -21}]}.
+  {label, 1235}.
+    {test, is_eq_exact, {f, 1236}, [{y, 20}, {integer, -21}]}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 24}}.
     {move, {y, 19}, {x, 0}}.
@@ -11432,13 +11440,13 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 8}, {x, 0}}.
     {call_ext, 2, {extfunc, lists, append, 2}}.
     {move, {x, 0}, {y, 8}}.
-    {jump, {f, 1236}}.
-  {label, 1235}.
+    {jump, {f, 1237}}.
   {label, 1236}.
-    {jump, {f, 1216}}.
-  {label, 1217}.
-    {jump, {f, 1206}}.
-  {label, 1207}.
+  {label, 1237}.
+    {jump, {f, 1217}}.
+  {label, 1218}.
+    {jump, {f, 1207}}.
+  {label, 1208}.
     {move, {y, 7}, {x, 0}}.
     {call, 1, {f, 85}}.
     {move, {x, 0}, {y, 25}}.
@@ -11465,60 +11473,60 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 2, {extfunc, binary, match, 2}}.
-    {test, is_eq, {f, 1237}, [{x, 0}, {atom, nomatch}]}.
+    {test, is_eq, {f, 1238}, [{x, 0}, {atom, nomatch}]}.
     {move, {atom, false}, {x, 0}}.
-    {jump, {f, 1238}}.
-  {label, 1237}.
-    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 1239}}.
   {label, 1238}.
+    {move, {atom, true}, {x, 0}}.
+  {label, 1239}.
     {move, {x, 0}, {x, 1}}.
-    {test, is_ne_exact, {f, 1239}, [{x, 1}, {atom, true}]}.
+    {test, is_ne_exact, {f, 1240}, [{x, 1}, {atom, true}]}.
     {move, {literal, <<"?">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 2, {extfunc, binary, match, 2}}.
-    {test, is_eq, {f, 1241}, [{x, 0}, {atom, nomatch}]}.
+    {test, is_eq, {f, 1242}, [{x, 0}, {atom, nomatch}]}.
     {move, {atom, false}, {x, 0}}.
-    {jump, {f, 1242}}.
-  {label, 1241}.
-    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 1243}}.
   {label, 1242}.
-    {jump, {f, 1240}}.
-  {label, 1239}.
     {move, {atom, true}, {x, 0}}.
+  {label, 1243}.
+    {jump, {f, 1241}}.
   {label, 1240}.
+    {move, {atom, true}, {x, 0}}.
+  {label, 1241}.
     {move, {x, 0}, {x, 1}}.
-    {test, is_ne_exact, {f, 1243}, [{x, 1}, {atom, true}]}.
+    {test, is_ne_exact, {f, 1244}, [{x, 1}, {atom, true}]}.
     {move, {literal, <<"[">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 2, {extfunc, binary, match, 2}}.
-    {test, is_eq, {f, 1245}, [{x, 0}, {atom, nomatch}]}.
+    {test, is_eq, {f, 1246}, [{x, 0}, {atom, nomatch}]}.
     {move, {atom, false}, {x, 0}}.
-    {jump, {f, 1246}}.
-  {label, 1245}.
-    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 1247}}.
   {label, 1246}.
-    {jump, {f, 1244}}.
-  {label, 1243}.
     {move, {atom, true}, {x, 0}}.
+  {label, 1247}.
+    {jump, {f, 1245}}.
   {label, 1244}.
+    {move, {atom, true}, {x, 0}}.
+  {label, 1245}.
     {move, {x, 0}, {x, 1}}.
-    {test, is_ne_exact, {f, 1247}, [{x, 1}, {atom, true}]}.
+    {test, is_ne_exact, {f, 1248}, [{x, 1}, {atom, true}]}.
     {move, {literal, <<"{">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 2, {extfunc, binary, match, 2}}.
-    {test, is_eq, {f, 1249}, [{x, 0}, {atom, nomatch}]}.
+    {test, is_eq, {f, 1250}, [{x, 0}, {atom, nomatch}]}.
     {move, {atom, false}, {x, 0}}.
-    {jump, {f, 1250}}.
-  {label, 1249}.
-    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 1251}}.
   {label, 1250}.
-    {jump, {f, 1248}}.
-  {label, 1247}.
     {move, {atom, true}, {x, 0}}.
+  {label, 1251}.
+    {jump, {f, 1249}}.
   {label, 1248}.
+    {move, {atom, true}, {x, 0}}.
+  {label, 1249}.
     {deallocate, 7}.
     return.
 % A segment with its `{a,b}` alternatives written out, nested ones too; one that is never closed is a name.
@@ -11532,46 +11540,46 @@ test "fs answers PermissionDenied for an OS permission error" {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}, {y, 14}, {y, 15}, {y, 16}, {y, 17}, {y, 18}, {y, 19}, {y, 20}, {y, 21}, {y, 22}, {y, 23}, {y, 24}, {y, 25}, {y, 26}, {y, 27}, {y, 28}, {y, 29}, {y, 30}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 1, {f, 1252}}.
+    {call, 1, {f, 1253}}.
     {move, {x, 0}, {y, 1}}.
     {move, {integer, -1}, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
     {line, [{location, "std@io@fs.erl", 82}]}.
-  {label, 1261}.
+  {label, 1262}.
     {move, {y, 1}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_lt, {f, 1262}, [{y, 3}, {x, 0}]}.
+    {test, is_lt, {f, 1263}, [{y, 3}, {x, 0}]}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 3}, {x, 1}}.
     {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 1264}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 1265}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {x, 0}}.
-    {jump, {f, 1265}}.
-  {label, 1264}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 1266}}.
   {label, 1265}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 1266}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"{">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 1263}, [{x, 1}, {x, 0}]}.
+    {test, is_eq_exact, {f, 1264}, [{x, 1}, {x, 0}]}.
     {move, {y, 3}, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
-    {jump, {f, 1262}}.
-  {label, 1263}.
+    {jump, {f, 1263}}.
+  {label, 1264}.
     {gc_bif, '+', {f, 0}, 0, [{y, 3}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1266}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1266}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1267}}.
-  {label, 1266}.
+    {test, is_ge, {f, 1267}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1267}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1268}}.
+  {label, 1267}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1298:15">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1267}.
+  {label, 1268}.
     {move, {x, 0}, {y, 3}}.
-    {jump, {f, 1261}}.
-  {label, 1262}.
-    {test, is_lt, {f, 1268}, [{y, 2}, {integer, 0}]}.
+    {jump, {f, 1262}}.
+  {label, 1263}.
+    {test, is_lt, {f, 1269}, [{y, 2}, {integer, 0}]}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 0}, {x, 0}}.
@@ -11580,7 +11588,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {deallocate, 31}.
     return.
-  {label, 1268}.
+  {label, 1269}.
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 6}}.
     {move, {integer, -1}, {x, 0}}.
@@ -11592,115 +11600,115 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {atom, false}, {x, 0}}.
     {move, {x, 0}, {y, 10}}.
     {line, [{location, "std@io@fs.erl", 82}]}.
-  {label, 1269}.
+  {label, 1270}.
     {move, {y, 1}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_lt, {f, 1271}, [{y, 9}, {x, 0}]}.
+    {test, is_lt, {f, 1272}, [{y, 9}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1272}}.
-  {label, 1271}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 1273}}.
   {label, 1272}.
-    {move, {x, 0}, {x, 1}}.
-    {test, is_eq, {f, 1273}, [{x, 1}, {atom, true}]}.
-    {move, {y, 10}, {x, 0}}.
-    {test, is_eq, {f, 1275}, [{x, 0}, {atom, true}]}.
     {move, {atom, false}, {x, 0}}.
-    {jump, {f, 1276}}.
-  {label, 1275}.
-    {move, {atom, true}, {x, 0}}.
-  {label, 1276}.
-    {jump, {f, 1274}}.
   {label, 1273}.
+    {move, {x, 0}, {x, 1}}.
+    {test, is_eq, {f, 1274}, [{x, 1}, {atom, true}]}.
+    {move, {y, 10}, {x, 0}}.
+    {test, is_eq, {f, 1276}, [{x, 0}, {atom, true}]}.
     {move, {atom, false}, {x, 0}}.
+    {jump, {f, 1277}}.
+  {label, 1276}.
+    {move, {atom, true}, {x, 0}}.
+  {label, 1277}.
+    {jump, {f, 1275}}.
   {label, 1274}.
-    {test, is_eq_exact, {f, 1270}, [{x, 0}, {atom, true}]}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1275}.
+    {test, is_eq_exact, {f, 1271}, [{x, 0}, {atom, true}]}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 9}, {x, 1}}.
     {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 1277}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 1278}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 11}}.
     {move, {y, 11}, {x, 0}}.
-    {jump, {f, 1278}}.
-  {label, 1277}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 1279}}.
   {label, 1278}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 1279}.
     {move, {x, 0}, {y, 12}}.
     {move, {literal, <<"{">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 1279}, [{y, 12}, {x, 0}]}.
+    {test, is_eq_exact, {f, 1280}, [{y, 12}, {x, 0}]}.
     {gc_bif, '+', {f, 0}, 0, [{y, 6}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1280}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1280}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1281}}.
-  {label, 1280}.
+    {test, is_ge, {f, 1281}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1281}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1282}}.
+  {label, 1281}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1310:37">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1281}.
-    {move, {x, 0}, {y, 6}}.
-    {jump, {f, 1282}}.
-  {label, 1279}.
   {label, 1282}.
+    {move, {x, 0}, {y, 6}}.
+    {jump, {f, 1283}}.
+  {label, 1280}.
+  {label, 1283}.
     {move, {literal, <<"}">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 1283}, [{y, 12}, {x, 0}]}.
+    {test, is_eq_exact, {f, 1284}, [{y, 12}, {x, 0}]}.
     {gc_bif, '-', {f, 0}, 0, [{y, 6}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1284}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1284}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1285}}.
-  {label, 1284}.
+    {test, is_ge, {f, 1285}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1285}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1286}}.
+  {label, 1285}.
     {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/io/fs.bp:1311:37">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1285}.
-    {move, {x, 0}, {y, 6}}.
-    {jump, {f, 1286}}.
-  {label, 1283}.
   {label, 1286}.
+    {move, {x, 0}, {y, 6}}.
+    {jump, {f, 1287}}.
+  {label, 1284}.
+  {label, 1287}.
     {move, {literal, <<"}">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 1288}, [{y, 12}, {x, 0}]}.
+    {test, is_eq_exact, {f, 1289}, [{y, 12}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1289}}.
-  {label, 1288}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 1290}}.
   {label, 1289}.
-    {move, {x, 0}, {x, 1}}.
-    {test, is_eq, {f, 1290}, [{x, 1}, {atom, true}]}.
-    {test, is_eq_exact, {f, 1292}, [{y, 6}, {integer, 0}]}.
-    {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1293}}.
-  {label, 1292}.
     {move, {atom, false}, {x, 0}}.
-  {label, 1293}.
-    {jump, {f, 1291}}.
   {label, 1290}.
+    {move, {x, 0}, {x, 1}}.
+    {test, is_eq, {f, 1291}, [{x, 1}, {atom, true}]}.
+    {test, is_eq_exact, {f, 1293}, [{y, 6}, {integer, 0}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 1294}}.
+  {label, 1293}.
     {move, {atom, false}, {x, 0}}.
+  {label, 1294}.
+    {jump, {f, 1292}}.
   {label, 1291}.
-    {test, is_eq, {f, 1287}, [{x, 0}, {atom, true}]}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1292}.
+    {test, is_eq, {f, 1288}, [{x, 0}, {atom, true}]}.
     {move, {y, 9}, {x, 0}}.
     {move, {x, 0}, {y, 7}}.
     {move, {atom, true}, {x, 0}}.
     {move, {x, 0}, {y, 10}}.
-    {jump, {f, 1294}}.
-  {label, 1287}.
-  {label, 1294}.
+    {jump, {f, 1295}}.
+  {label, 1288}.
+  {label, 1295}.
     {move, {literal, <<",">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 1296}, [{y, 12}, {x, 0}]}.
+    {test, is_eq_exact, {f, 1297}, [{y, 12}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1297}}.
-  {label, 1296}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 1298}}.
   {label, 1297}.
-    {move, {x, 0}, {x, 1}}.
-    {test, is_eq, {f, 1298}, [{x, 1}, {atom, true}]}.
-    {test, is_eq_exact, {f, 1300}, [{y, 6}, {integer, 1}]}.
-    {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1301}}.
-  {label, 1300}.
     {move, {atom, false}, {x, 0}}.
-  {label, 1301}.
-    {jump, {f, 1299}}.
   {label, 1298}.
+    {move, {x, 0}, {x, 1}}.
+    {test, is_eq, {f, 1299}, [{x, 1}, {atom, true}]}.
+    {test, is_eq_exact, {f, 1301}, [{y, 6}, {integer, 1}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 1302}}.
+  {label, 1301}.
     {move, {atom, false}, {x, 0}}.
+  {label, 1302}.
+    {jump, {f, 1300}}.
   {label, 1299}.
-    {test, is_eq, {f, 1295}, [{x, 0}, {atom, true}]}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1300}.
+    {test, is_eq, {f, 1296}, [{x, 0}, {atom, true}]}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 13}}.
     {move, {y, 9}, {x, 0}}.
@@ -11711,21 +11719,21 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 8}, {x, 0}}.
     {call_ext, 2, {extfunc, lists, append, 2}}.
     {move, {x, 0}, {y, 8}}.
-    {jump, {f, 1302}}.
-  {label, 1295}.
-  {label, 1302}.
-    {gc_bif, '+', {f, 0}, 0, [{y, 9}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1303}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1303}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1304}}.
+    {jump, {f, 1303}}.
+  {label, 1296}.
   {label, 1303}.
+    {gc_bif, '+', {f, 0}, 0, [{y, 9}, {integer, 1}], {x, 0}}.
+    {test, is_ge, {f, 1304}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1304}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1305}}.
+  {label, 1304}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1317:15">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1304}.
+  {label, 1305}.
     {move, {x, 0}, {y, 9}}.
-    {jump, {f, 1269}}.
-  {label, 1270}.
-    {test, is_lt, {f, 1305}, [{y, 7}, {integer, 0}]}.
+    {jump, {f, 1270}}.
+  {label, 1271}.
+    {test, is_lt, {f, 1306}, [{y, 7}, {integer, 0}]}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 14}}.
     {move, {y, 0}, {x, 0}}.
@@ -11734,20 +11742,20 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {deallocate, 31}.
     return.
-  {label, 1305}.
-    {test, is_ne_exact, {f, 1306}, [{y, 2}, {atom, undefined}]}.
+  {label, 1306}.
+    {test, is_ne_exact, {f, 1307}, [{y, 2}, {atom, undefined}]}.
     {gc_bif, '+', {f, 0}, 0, [{integer, 0}, {integer, 1}], {x, 0}}.
     {gc_bif, '-', {f, 0}, 1, [{y, 2}, {integer, 0}], {x, 1}}.
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 3, {extfunc, lists, sublist, 3}}.
-    {jump, {f, 1307}}.
-  {label, 1306}.
+    {jump, {f, 1308}}.
+  {label, 1307}.
     {move, {integer, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, lists, nthtail, 2}}.
-  {label, 1307}.
+  {label, 1308}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"">>}, {x, 0}}.
     {move, {x, 1}, {x, 2}}.
@@ -11756,13 +11764,13 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call, 2, {f, 637}}.
     {move, {x, 0}, {y, 15}}.
     {gc_bif, '+', {f, 0}, 0, [{y, 7}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1308}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1308}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1309}}.
-  {label, 1308}.
+    {test, is_ge, {f, 1309}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1309}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1310}}.
+  {label, 1309}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1321:31">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1309}.
+  {label, 1310}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, lists, nthtail, 2}}.
     {move, {x, 0}, {x, 1}}.
@@ -11775,53 +11783,53 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 17}}.
     {gc_bif, '+', {f, 0}, 0, [{y, 2}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1310}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1310}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1311}}.
-  {label, 1310}.
+    {test, is_ge, {f, 1311}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1311}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1312}}.
+  {label, 1311}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1323:22">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1311}.
+  {label, 1312}.
     {move, {x, 0}, {y, 18}}.
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 19}}.
     {line, [{location, "std@io@fs.erl", 82}]}.
-  {label, 1312}.
+  {label, 1313}.
     {move, {y, 8}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_ge, {f, 1313}, [{x, 0}, {y, 19}]}.
+    {test, is_ge, {f, 1314}, [{x, 0}, {y, 19}]}.
     {move, {y, 7}, {x, 0}}.
     {move, {x, 0}, {y, 20}}.
     {move, {y, 8}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_lt, {f, 1314}, [{y, 19}, {x, 0}]}.
+    {test, is_lt, {f, 1315}, [{y, 19}, {x, 0}]}.
     {move, {y, 8}, {x, 0}}.
     {move, {y, 19}, {x, 1}}.
     {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 1315}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 1316}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 21}}.
     {move, {y, 21}, {x, 0}}.
-    {jump, {f, 1316}}.
-  {label, 1315}.
-    {move, {y, 7}, {x, 0}}.
-  {label, 1316}.
-    {move, {x, 0}, {y, 20}}.
     {jump, {f, 1317}}.
-  {label, 1314}.
+  {label, 1316}.
+    {move, {y, 7}, {x, 0}}.
   {label, 1317}.
-    {test, is_ne_exact, {f, 1318}, [{y, 20}, {atom, undefined}]}.
+    {move, {x, 0}, {y, 20}}.
+    {jump, {f, 1318}}.
+  {label, 1315}.
+  {label, 1318}.
+    {test, is_ne_exact, {f, 1319}, [{y, 20}, {atom, undefined}]}.
     {gc_bif, '+', {f, 0}, 0, [{y, 18}, {integer, 1}], {x, 0}}.
     {gc_bif, '-', {f, 0}, 1, [{y, 20}, {y, 18}], {x, 1}}.
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 3, {extfunc, lists, sublist, 3}}.
-    {jump, {f, 1319}}.
-  {label, 1318}.
+    {jump, {f, 1320}}.
+  {label, 1319}.
     {move, {y, 18}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, lists, nthtail, 2}}.
-  {label, 1319}.
+  {label, 1320}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"">>}, {x, 0}}.
     {move, {x, 1}, {x, 2}}.
@@ -11831,34 +11839,34 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 22}}.
     {move, {y, 15}, {x, 0}}.
     {move, {y, 22}, {x, 1}}.
-    {call, 2, {f, 1321}}.
+    {call, 2, {f, 1322}}.
     {move, {y, 16}, {x, 1}}.
-    {call, 2, {f, 1321}}.
+    {call, 2, {f, 1322}}.
     {call, 1, {f, 139}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 17}, {x, 0}}.
     {call_ext, 2, {extfunc, lists, append, 2}}.
     {move, {x, 0}, {y, 17}}.
     {gc_bif, '+', {f, 0}, 0, [{y, 20}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1323}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1323}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1324}}.
-  {label, 1323}.
+    {test, is_ge, {f, 1324}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1324}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1325}}.
+  {label, 1324}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1330:22">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1324}.
+  {label, 1325}.
     {move, {x, 0}, {y, 18}}.
     {gc_bif, '+', {f, 0}, 0, [{y, 19}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1325}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1325}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1326}}.
-  {label, 1325}.
+    {test, is_ge, {f, 1326}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1326}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1327}}.
+  {label, 1326}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1331:15">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1326}.
+  {label, 1327}.
     {move, {x, 0}, {y, 19}}.
-    {jump, {f, 1312}}.
-  {label, 1313}.
+    {jump, {f, 1313}}.
+  {label, 1314}.
     {move, {y, 17}, {x, 0}}.
     {deallocate, 31}.
     return.
@@ -11874,161 +11882,161 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {gc_bif, '+', {f, 0}, 0, [{y, 1}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1327}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1327}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1328}}.
-  {label, 1327}.
+    {test, is_ge, {f, 1328}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1328}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1329}}.
+  {label, 1328}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1338:16">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1328}.
+  {label, 1329}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_lt, {f, 1330}, [{y, 2}, {x, 0}]}.
+    {test, is_lt, {f, 1331}, [{y, 2}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1331}}.
-  {label, 1330}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 1332}}.
   {label, 1331}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1332}.
     {move, {x, 0}, {x, 1}}.
-    {test, is_eq, {f, 1332}, [{x, 1}, {atom, true}]}.
+    {test, is_eq, {f, 1333}, [{x, 1}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 2}, {x, 1}}.
     {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 1334}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 1335}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
-    {jump, {f, 1335}}.
-  {label, 1334}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 1336}}.
   {label, 1335}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 1336}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"!">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 1336}, [{x, 1}, {x, 0}]}.
+    {test, is_eq_exact, {f, 1337}, [{x, 1}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1337}}.
-  {label, 1336}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 1338}}.
   {label, 1337}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1338}.
     {move, {x, 0}, {x, 1}}.
-    {test, is_ne_exact, {f, 1338}, [{x, 1}, {atom, true}]}.
+    {test, is_ne_exact, {f, 1339}, [{x, 1}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 2}, {x, 1}}.
     {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 1340}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 1341}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {x, 0}}.
-    {jump, {f, 1341}}.
-  {label, 1340}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 1342}}.
   {label, 1341}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 1342}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"^">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 1342}, [{x, 1}, {x, 0}]}.
+    {test, is_eq_exact, {f, 1343}, [{x, 1}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1343}}.
-  {label, 1342}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 1344}}.
   {label, 1343}.
-    {jump, {f, 1339}}.
-  {label, 1338}.
-    {move, {atom, true}, {x, 0}}.
-  {label, 1339}.
-    {jump, {f, 1333}}.
-  {label, 1332}.
     {move, {atom, false}, {x, 0}}.
-  {label, 1333}.
-    {test, is_eq, {f, 1329}, [{x, 0}, {atom, true}]}.
-    {gc_bif, '+', {f, 0}, 0, [{y, 2}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1344}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1344}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1345}}.
   {label, 1344}.
+    {jump, {f, 1340}}.
+  {label, 1339}.
+    {move, {atom, true}, {x, 0}}.
+  {label, 1340}.
+    {jump, {f, 1334}}.
+  {label, 1333}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1334}.
+    {test, is_eq, {f, 1330}, [{x, 0}, {atom, true}]}.
+    {gc_bif, '+', {f, 0}, 0, [{y, 2}, {integer, 1}], {x, 0}}.
+    {test, is_ge, {f, 1345}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1345}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1346}}.
+  {label, 1345}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1339:89">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1345}.
-    {move, {x, 0}, {y, 2}}.
-    {jump, {f, 1346}}.
-  {label, 1329}.
   {label, 1346}.
+    {move, {x, 0}, {y, 2}}.
+    {jump, {f, 1347}}.
+  {label, 1330}.
+  {label, 1347}.
     {move, {y, 0}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_lt, {f, 1348}, [{y, 2}, {x, 0}]}.
+    {test, is_lt, {f, 1349}, [{y, 2}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1349}}.
-  {label, 1348}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 1350}}.
   {label, 1349}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1350}.
     {move, {x, 0}, {x, 1}}.
-    {test, is_eq, {f, 1350}, [{x, 1}, {atom, true}]}.
+    {test, is_eq, {f, 1351}, [{x, 1}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 2}, {x, 1}}.
     {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 1352}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 1353}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 5}, {x, 0}}.
-    {jump, {f, 1353}}.
-  {label, 1352}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 1354}}.
   {label, 1353}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 1354}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"]">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 1354}, [{x, 1}, {x, 0}]}.
+    {test, is_eq_exact, {f, 1355}, [{x, 1}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1355}}.
-  {label, 1354}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 1356}}.
   {label, 1355}.
-    {jump, {f, 1351}}.
-  {label, 1350}.
     {move, {atom, false}, {x, 0}}.
-  {label, 1351}.
-    {test, is_eq, {f, 1347}, [{x, 0}, {atom, true}]}.
-    {gc_bif, '+', {f, 0}, 0, [{y, 2}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1356}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1356}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1357}}.
   {label, 1356}.
+    {jump, {f, 1352}}.
+  {label, 1351}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1352}.
+    {test, is_eq, {f, 1348}, [{x, 0}, {atom, true}]}.
+    {gc_bif, '+', {f, 0}, 0, [{y, 2}, {integer, 1}], {x, 0}}.
+    {test, is_ge, {f, 1357}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1357}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1358}}.
+  {label, 1357}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1340:59">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1357}.
-    {move, {x, 0}, {y, 2}}.
-    {jump, {f, 1358}}.
-  {label, 1347}.
   {label, 1358}.
-    {line, [{location, "std@io@fs.erl", 83}]}.
+    {move, {x, 0}, {y, 2}}.
+    {jump, {f, 1359}}.
+  {label, 1348}.
   {label, 1359}.
+    {line, [{location, "std@io@fs.erl", 83}]}.
+  {label, 1360}.
     {move, {y, 0}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_lt, {f, 1360}, [{y, 2}, {x, 0}]}.
+    {test, is_lt, {f, 1361}, [{y, 2}, {x, 0}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 2}, {x, 1}}.
     {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 1362}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 1363}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {x, 0}}.
-    {jump, {f, 1363}}.
-  {label, 1362}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 1364}}.
   {label, 1363}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 1364}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"]">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 1361}, [{x, 1}, {x, 0}]}.
+    {test, is_eq_exact, {f, 1362}, [{x, 1}, {x, 0}]}.
     {move, {y, 2}, {x, 0}}.
     {deallocate, 13}.
     return.
-  {label, 1361}.
+  {label, 1362}.
     {gc_bif, '+', {f, 0}, 0, [{y, 2}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1364}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1364}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1365}}.
-  {label, 1364}.
+    {test, is_ge, {f, 1365}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1365}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1366}}.
+  {label, 1365}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1343:15">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1365}.
+  {label, 1366}.
     {move, {x, 0}, {y, 2}}.
-    {jump, {f, 1359}}.
-  {label, 1360}.
+    {jump, {f, 1360}}.
+  {label, 1361}.
     {move, {integer, -1}, {x, 0}}.
     {deallocate, 13}.
     return.
@@ -12049,226 +12057,226 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 4}}.
     {move, {atom, false}, {x, 0}}.
     {move, {x, 0}, {y, 5}}.
-    {test, is_lt, {f, 1367}, [{y, 4}, {y, 2}]}.
+    {test, is_lt, {f, 1368}, [{y, 4}, {y, 2}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1368}}.
-  {label, 1367}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 1369}}.
   {label, 1368}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1369}.
     {move, {x, 0}, {x, 1}}.
-    {test, is_eq, {f, 1369}, [{x, 1}, {atom, true}]}.
+    {test, is_eq, {f, 1370}, [{x, 1}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 4}, {x, 1}}.
     {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 1371}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 1372}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {x, 0}}.
-    {jump, {f, 1372}}.
-  {label, 1371}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 1373}}.
   {label, 1372}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 1373}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"!">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 1373}, [{x, 1}, {x, 0}]}.
+    {test, is_eq_exact, {f, 1374}, [{x, 1}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1374}}.
-  {label, 1373}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 1375}}.
   {label, 1374}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1375}.
     {move, {x, 0}, {x, 1}}.
-    {test, is_ne_exact, {f, 1375}, [{x, 1}, {atom, true}]}.
+    {test, is_ne_exact, {f, 1376}, [{x, 1}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 4}, {x, 1}}.
     {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 1377}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 1378}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 7}}.
     {move, {y, 7}, {x, 0}}.
-    {jump, {f, 1378}}.
-  {label, 1377}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 1379}}.
   {label, 1378}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 1379}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"^">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 1379}, [{x, 1}, {x, 0}]}.
+    {test, is_eq_exact, {f, 1380}, [{x, 1}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1380}}.
-  {label, 1379}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 1381}}.
   {label, 1380}.
-    {jump, {f, 1376}}.
-  {label, 1375}.
-    {move, {atom, true}, {x, 0}}.
-  {label, 1376}.
-    {jump, {f, 1370}}.
-  {label, 1369}.
     {move, {atom, false}, {x, 0}}.
+  {label, 1381}.
+    {jump, {f, 1377}}.
+  {label, 1376}.
+    {move, {atom, true}, {x, 0}}.
+  {label, 1377}.
+    {jump, {f, 1371}}.
   {label, 1370}.
-    {test, is_eq, {f, 1366}, [{x, 0}, {atom, true}]}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1371}.
+    {test, is_eq, {f, 1367}, [{x, 0}, {atom, true}]}.
     {move, {atom, true}, {x, 0}}.
     {move, {x, 0}, {y, 5}}.
     {gc_bif, '+', {f, 0}, 0, [{y, 4}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1381}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1381}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1382}}.
-  {label, 1381}.
+    {test, is_ge, {f, 1382}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1382}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1383}}.
+  {label, 1382}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1354:15">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1382}.
-    {move, {x, 0}, {y, 4}}.
-    {jump, {f, 1383}}.
-  {label, 1366}.
   {label, 1383}.
+    {move, {x, 0}, {y, 4}}.
+    {jump, {f, 1384}}.
+  {label, 1367}.
+  {label, 1384}.
     {move, {atom, false}, {x, 0}}.
     {move, {x, 0}, {y, 8}}.
     {line, [{location, "std@io@fs.erl", 84}]}.
-  {label, 1384}.
-    {test, is_lt, {f, 1385}, [{y, 4}, {y, 2}]}.
+  {label, 1385}.
+    {test, is_lt, {f, 1386}, [{y, 4}, {y, 2}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 4}, {x, 1}}.
     {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 1386}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 1387}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {x, 0}}.
-    {jump, {f, 1387}}.
-  {label, 1386}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 1388}}.
   {label, 1387}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 1388}.
     {move, {x, 0}, {y, 10}}.
     {gc_bif, '+', {f, 0}, 0, [{y, 4}, {integer, 2}], {x, 0}}.
-    {test, is_ge, {f, 1389}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1389}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1390}}.
-  {label, 1389}.
+    {test, is_ge, {f, 1390}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1390}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1391}}.
+  {label, 1390}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1359:15">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1390}.
-    {test, is_lt, {f, 1391}, [{x, 0}, {y, 2}]}.
-    {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1392}}.
   {label, 1391}.
-    {move, {atom, false}, {x, 0}}.
+    {test, is_lt, {f, 1392}, [{x, 0}, {y, 2}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 1393}}.
   {label, 1392}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1393}.
     {move, {x, 0}, {x, 1}}.
-    {test, is_eq, {f, 1393}, [{x, 1}, {atom, true}]}.
+    {test, is_eq, {f, 1394}, [{x, 1}, {atom, true}]}.
     {gc_bif, '+', {f, 0}, 0, [{y, 4}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1396}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1396}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1397}}.
-  {label, 1396}.
+    {test, is_ge, {f, 1397}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1397}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1398}}.
+  {label, 1397}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1359:39">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1397}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {y, 0}, {x, 0}}.
-    {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 1395}, [{x, 0}, {atom, undefined}]}.
-    {move, {x, 0}, {y, 11}}.
-    {move, {y, 11}, {x, 0}}.
-    {jump, {f, 1398}}.
-  {label, 1395}.
-    {move, {literal, <<"">>}, {x, 0}}.
   {label, 1398}.
     {move, {x, 0}, {x, 1}}.
-    {move, {literal, <<"-">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 1399}, [{x, 1}, {x, 0}]}.
-    {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1400}}.
+    {move, {y, 0}, {x, 0}}.
+    {call, 2, {f, 632}}.
+    {test, is_ne_exact, {f, 1396}, [{x, 0}, {atom, undefined}]}.
+    {move, {x, 0}, {y, 11}}.
+    {move, {y, 11}, {x, 0}}.
+    {jump, {f, 1399}}.
+  {label, 1396}.
+    {move, {literal, <<"">>}, {x, 0}}.
   {label, 1399}.
-    {move, {atom, false}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {literal, <<"-">>}, {x, 0}}.
+    {test, is_eq_exact, {f, 1400}, [{x, 1}, {x, 0}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 1401}}.
   {label, 1400}.
-    {jump, {f, 1394}}.
-  {label, 1393}.
     {move, {atom, false}, {x, 0}}.
+  {label, 1401}.
+    {jump, {f, 1395}}.
   {label, 1394}.
-    {test, is_eq, {f, 1388}, [{x, 0}, {atom, true}]}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1395}.
+    {test, is_eq, {f, 1389}, [{x, 0}, {atom, true}]}.
     {gc_bif, '+', {f, 0}, 0, [{y, 4}, {integer, 2}], {x, 0}}.
-    {test, is_ge, {f, 1402}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1402}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1403}}.
-  {label, 1402}.
+    {test, is_ge, {f, 1403}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1403}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1404}}.
+  {label, 1403}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1360:31">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1403}.
+  {label, 1404}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 1401}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 1402}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 12}}.
     {move, {y, 12}, {x, 0}}.
-    {jump, {f, 1404}}.
-  {label, 1401}.
+    {jump, {f, 1405}}.
+  {label, 1402}.
     {move, {literal, <<"">>}, {x, 0}}.
-  {label, 1404}.
+  {label, 1405}.
     {move, {x, 0}, {y, 13}}.
     {move, {y, 3}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
-    {call, 2, {f, 1406}}.
+    {call, 2, {f, 1407}}.
     {move, {x, 0}, {y, 14}}.
     {move, {y, 10}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
-    {call, 2, {f, 1406}}.
-    {test, is_ge, {f, 1417}, [{y, 14}, {x, 0}]}.
+    {call, 2, {f, 1407}}.
+    {test, is_ge, {f, 1418}, [{y, 14}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1418}}.
-  {label, 1417}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 1419}}.
   {label, 1418}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1419}.
     {move, {x, 0}, {x, 1}}.
-    {test, is_eq, {f, 1419}, [{x, 1}, {atom, true}]}.
+    {test, is_eq, {f, 1420}, [{x, 1}, {atom, true}]}.
     {move, {y, 13}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
-    {call, 2, {f, 1406}}.
-    {test, is_ge, {f, 1421}, [{x, 0}, {y, 14}]}.
+    {call, 2, {f, 1407}}.
+    {test, is_ge, {f, 1422}, [{x, 0}, {y, 14}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1422}}.
-  {label, 1421}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 1423}}.
   {label, 1422}.
-    {jump, {f, 1420}}.
-  {label, 1419}.
     {move, {atom, false}, {x, 0}}.
+  {label, 1423}.
+    {jump, {f, 1421}}.
   {label, 1420}.
-    {test, is_eq, {f, 1416}, [{x, 0}, {atom, true}]}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1421}.
+    {test, is_eq, {f, 1417}, [{x, 0}, {atom, true}]}.
     {move, {atom, true}, {x, 0}}.
     {move, {x, 0}, {y, 8}}.
-    {jump, {f, 1423}}.
-  {label, 1416}.
-  {label, 1423}.
-    {gc_bif, '+', {f, 0}, 0, [{y, 4}, {integer, 3}], {x, 0}}.
-    {test, is_ge, {f, 1424}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1424}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1425}}.
+    {jump, {f, 1424}}.
+  {label, 1417}.
   {label, 1424}.
+    {gc_bif, '+', {f, 0}, 0, [{y, 4}, {integer, 3}], {x, 0}}.
+    {test, is_ge, {f, 1425}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1425}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1426}}.
+  {label, 1425}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1365:19">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1425}.
+  {label, 1426}.
     {move, {x, 0}, {y, 4}}.
-    {jump, {f, 1426}}.
-  {label, 1388}.
-    {test, is_eq_exact, {f, 1427}, [{y, 10}, {y, 3}]}.
+    {jump, {f, 1427}}.
+  {label, 1389}.
+    {test, is_eq_exact, {f, 1428}, [{y, 10}, {y, 3}]}.
     {move, {atom, true}, {x, 0}}.
     {move, {x, 0}, {y, 8}}.
-    {jump, {f, 1428}}.
-  {label, 1427}.
+    {jump, {f, 1429}}.
   {label, 1428}.
-    {gc_bif, '+', {f, 0}, 0, [{y, 4}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1429}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1429}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1430}}.
   {label, 1429}.
+    {gc_bif, '+', {f, 0}, 0, [{y, 4}, {integer, 1}], {x, 0}}.
+    {test, is_ge, {f, 1430}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1430}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1431}}.
+  {label, 1430}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1368:19">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1430}.
-    {move, {x, 0}, {y, 4}}.
-  {label, 1426}.
-    {jump, {f, 1384}}.
-  {label, 1385}.
-    {test, is_ne_exact, {f, 1431}, [{y, 8}, {y, 5}]}.
-    {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1432}}.
   {label, 1431}.
-    {move, {atom, false}, {x, 0}}.
+    {move, {x, 0}, {y, 4}}.
+  {label, 1427}.
+    {jump, {f, 1385}}.
+  {label, 1386}.
+    {test, is_ne_exact, {f, 1432}, [{y, 8}, {y, 5}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 1433}}.
   {label, 1432}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1433}.
     {deallocate, 25}.
     return.
 % `name` against one pattern without braces: `*`, `?`, `[…]`.
@@ -12289,261 +12297,261 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 3}, {x, 0}}.
     {move, {x, 0}, {y, 5}}.
     {line, [{location, "std@io@fs.erl", 85}]}.
-  {label, 1433}.
+  {label, 1434}.
     {move, {y, 0}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_lt, {f, 1434}, [{y, 4}, {x, 0}]}.
+    {test, is_lt, {f, 1435}, [{y, 4}, {x, 0}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 4}, {x, 1}}.
     {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 1435}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 1436}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {x, 0}}.
-    {jump, {f, 1436}}.
-  {label, 1435}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 1437}}.
   {label, 1436}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 1437}.
     {move, {x, 0}, {y, 7}}.
     {move, {literal, <<"*">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 1437}, [{y, 7}, {x, 0}]}.
+    {test, is_eq_exact, {f, 1438}, [{y, 7}, {x, 0}]}.
     {line, [{location, "std@io@fs.erl", 85}]}.
-  {label, 1438}.
-    {move, {y, 0}, {x, 0}}.
-    {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_lt, {f, 1440}, [{y, 4}, {x, 0}]}.
-    {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1441}}.
-  {label, 1440}.
-    {move, {atom, false}, {x, 0}}.
-  {label, 1441}.
-    {move, {x, 0}, {x, 1}}.
-    {test, is_eq, {f, 1442}, [{x, 1}, {atom, true}]}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {y, 4}, {x, 1}}.
-    {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 1444}, [{x, 0}, {atom, undefined}]}.
-    {move, {x, 0}, {y, 8}}.
-    {move, {y, 8}, {x, 0}}.
-    {jump, {f, 1445}}.
-  {label, 1444}.
-    {move, {literal, <<"">>}, {x, 0}}.
-  {label, 1445}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {literal, <<"*">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 1446}, [{x, 1}, {x, 0}]}.
-    {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1447}}.
-  {label, 1446}.
-    {move, {atom, false}, {x, 0}}.
-  {label, 1447}.
-    {jump, {f, 1443}}.
-  {label, 1442}.
-    {move, {atom, false}, {x, 0}}.
-  {label, 1443}.
-    {test, is_eq_exact, {f, 1439}, [{x, 0}, {atom, true}]}.
-    {gc_bif, '+', {f, 0}, 0, [{y, 4}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1448}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1448}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1449}}.
-  {label, 1448}.
-    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1382:23">>}}, {x, 0}}.
-    {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1449}.
-    {move, {x, 0}, {y, 4}}.
-    {jump, {f, 1438}}.
   {label, 1439}.
     {move, {y, 0}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_eq_exact, {f, 1450}, [{y, 4}, {x, 0}]}.
+    {test, is_lt, {f, 1441}, [{y, 4}, {x, 0}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 1442}}.
+  {label, 1441}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1442}.
+    {move, {x, 0}, {x, 1}}.
+    {test, is_eq, {f, 1443}, [{x, 1}, {atom, true}]}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 4}, {x, 1}}.
+    {call, 2, {f, 632}}.
+    {test, is_ne_exact, {f, 1445}, [{x, 0}, {atom, undefined}]}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {x, 0}}.
+    {jump, {f, 1446}}.
+  {label, 1445}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 1446}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {literal, <<"*">>}, {x, 0}}.
+    {test, is_eq_exact, {f, 1447}, [{x, 1}, {x, 0}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 1448}}.
+  {label, 1447}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1448}.
+    {jump, {f, 1444}}.
+  {label, 1443}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1444}.
+    {test, is_eq_exact, {f, 1440}, [{x, 0}, {atom, true}]}.
+    {gc_bif, '+', {f, 0}, 0, [{y, 4}, {integer, 1}], {x, 0}}.
+    {test, is_ge, {f, 1449}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1449}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1450}}.
+  {label, 1449}.
+    {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1382:23">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 1450}.
+    {move, {x, 0}, {y, 4}}.
+    {jump, {f, 1439}}.
+  {label, 1440}.
+    {move, {y, 0}, {x, 0}}.
+    {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
+    {test, is_eq_exact, {f, 1451}, [{y, 4}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
     {deallocate, 15}.
     return.
-  {label, 1450}.
+  {label, 1451}.
     {move, {y, 5}, {x, 0}}.
     {move, {x, 0}, {y, 9}}.
     {line, [{location, "std@io@fs.erl", 85}]}.
-  {label, 1451}.
+  {label, 1452}.
     {move, {y, 2}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_ge, {f, 1452}, [{x, 0}, {y, 9}]}.
+    {test, is_ge, {f, 1453}, [{x, 0}, {y, 9}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 9}, {x, 3}}.
     {move, {y, 2}, {x, 2}}.
     {move, {y, 4}, {x, 1}}.
     {call, 4, {f, 145}}.
-    {test, is_eq, {f, 1453}, [{x, 0}, {atom, true}]}.
+    {test, is_eq, {f, 1454}, [{x, 0}, {atom, true}]}.
     {move, {atom, true}, {x, 0}}.
     {deallocate, 15}.
     return.
-  {label, 1453}.
-    {gc_bif, '+', {f, 0}, 0, [{y, 9}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1454}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1454}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1455}}.
   {label, 1454}.
+    {gc_bif, '+', {f, 0}, 0, [{y, 9}, {integer, 1}], {x, 0}}.
+    {test, is_ge, {f, 1455}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1455}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1456}}.
+  {label, 1455}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1388:23">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1455}.
+  {label, 1456}.
     {move, {x, 0}, {y, 9}}.
-    {jump, {f, 1451}}.
-  {label, 1452}.
+    {jump, {f, 1452}}.
+  {label, 1453}.
     {move, {atom, false}, {x, 0}}.
     {deallocate, 15}.
     return.
-  {label, 1437}.
+  {label, 1438}.
     {move, {y, 2}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_ge, {f, 1456}, [{y, 5}, {x, 0}]}.
+    {test, is_ge, {f, 1457}, [{y, 5}, {x, 0}]}.
     {move, {atom, false}, {x, 0}}.
     {deallocate, 15}.
     return.
-  {label, 1456}.
+  {label, 1457}.
     {move, {y, 2}, {x, 0}}.
     {move, {y, 5}, {x, 1}}.
     {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 1457}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 1458}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 10}}.
     {move, {y, 10}, {x, 0}}.
-    {jump, {f, 1458}}.
-  {label, 1457}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 1459}}.
   {label, 1458}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 1459}.
     {move, {x, 0}, {y, 11}}.
     {move, {literal, <<"?">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 1459}, [{y, 7}, {x, 0}]}.
+    {test, is_eq_exact, {f, 1460}, [{y, 7}, {x, 0}]}.
     {gc_bif, '+', {f, 0}, 0, [{y, 4}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1460}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1460}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1461}}.
-  {label, 1460}.
+    {test, is_ge, {f, 1461}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1461}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1462}}.
+  {label, 1461}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1395:19">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1461}.
+  {label, 1462}.
     {move, {x, 0}, {y, 4}}.
     {gc_bif, '+', {f, 0}, 0, [{y, 5}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1462}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1462}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1463}}.
-  {label, 1462}.
+    {test, is_ge, {f, 1463}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1463}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1464}}.
+  {label, 1463}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1396:19">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1463}.
+  {label, 1464}.
     {move, {x, 0}, {y, 5}}.
-    {jump, {f, 1464}}.
-  {label, 1459}.
+    {jump, {f, 1465}}.
+  {label, 1460}.
     {move, {literal, <<"[">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 1465}, [{y, 7}, {x, 0}]}.
+    {test, is_eq_exact, {f, 1466}, [{y, 7}, {x, 0}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 4}, {x, 1}}.
     {call, 2, {f, 141}}.
     {move, {x, 0}, {y, 12}}.
-    {test, is_lt, {f, 1466}, [{y, 12}, {integer, 0}]}.
+    {test, is_lt, {f, 1467}, [{y, 12}, {integer, 0}]}.
     {move, {literal, <<"[">>}, {x, 0}}.
-    {test, is_ne_exact, {f, 1467}, [{y, 11}, {x, 0}]}.
+    {test, is_ne_exact, {f, 1468}, [{y, 11}, {x, 0}]}.
     {move, {atom, false}, {x, 0}}.
     {deallocate, 15}.
     return.
-  {label, 1467}.
-    {gc_bif, '+', {f, 0}, 0, [{y, 4}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1468}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1468}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1469}}.
   {label, 1468}.
+    {gc_bif, '+', {f, 0}, 0, [{y, 4}, {integer, 1}], {x, 0}}.
+    {test, is_ge, {f, 1469}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1469}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1470}}.
+  {label, 1469}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1401:23">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1469}.
+  {label, 1470}.
     {move, {x, 0}, {y, 4}}.
     {gc_bif, '+', {f, 0}, 0, [{y, 5}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1470}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1470}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1471}}.
-  {label, 1470}.
+    {test, is_ge, {f, 1471}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1471}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1472}}.
+  {label, 1471}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1402:23">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1471}.
+  {label, 1472}.
     {move, {x, 0}, {y, 5}}.
-    {jump, {f, 1472}}.
-  {label, 1466}.
+    {jump, {f, 1473}}.
+  {label, 1467}.
     {gc_bif, '+', {f, 0}, 0, [{y, 4}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1474}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1474}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1475}}.
-  {label, 1474}.
+    {test, is_ge, {f, 1475}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1475}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1476}}.
+  {label, 1475}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1404:38">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1475}.
+  {label, 1476}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 11}, {x, 3}}.
     {move, {y, 12}, {x, 2}}.
     {move, {y, 0}, {x, 0}}.
     {call, 4, {f, 143}}.
-    {test, is_eq, {f, 1476}, [{x, 0}, {atom, true}]}.
+    {test, is_eq, {f, 1477}, [{x, 0}, {atom, true}]}.
     {move, {atom, false}, {x, 0}}.
-    {jump, {f, 1477}}.
-  {label, 1476}.
-    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 1478}}.
   {label, 1477}.
-    {test, is_eq, {f, 1473}, [{x, 0}, {atom, true}]}.
+    {move, {atom, true}, {x, 0}}.
+  {label, 1478}.
+    {test, is_eq, {f, 1474}, [{x, 0}, {atom, true}]}.
     {move, {atom, false}, {x, 0}}.
     {deallocate, 15}.
     return.
-  {label, 1473}.
+  {label, 1474}.
     {gc_bif, '+', {f, 0}, 0, [{y, 12}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1478}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1478}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1479}}.
-  {label, 1478}.
+    {test, is_ge, {f, 1479}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1479}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1480}}.
+  {label, 1479}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1405:25">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1479}.
+  {label, 1480}.
     {move, {x, 0}, {y, 4}}.
     {gc_bif, '+', {f, 0}, 0, [{y, 5}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1480}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1480}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1481}}.
-  {label, 1480}.
+    {test, is_ge, {f, 1481}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1481}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1482}}.
+  {label, 1481}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1406:23">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1481}.
+  {label, 1482}.
     {move, {x, 0}, {y, 5}}.
-  {label, 1472}.
-    {jump, {f, 1482}}.
-  {label, 1465}.
-    {test, is_ne_exact, {f, 1483}, [{y, 7}, {y, 11}]}.
+  {label, 1473}.
+    {jump, {f, 1483}}.
+  {label, 1466}.
+    {test, is_ne_exact, {f, 1484}, [{y, 7}, {y, 11}]}.
     {move, {atom, false}, {x, 0}}.
     {deallocate, 15}.
     return.
-  {label, 1483}.
-    {gc_bif, '+', {f, 0}, 0, [{y, 4}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1484}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1484}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1485}}.
   {label, 1484}.
+    {gc_bif, '+', {f, 0}, 0, [{y, 4}, {integer, 1}], {x, 0}}.
+    {test, is_ge, {f, 1485}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1485}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1486}}.
+  {label, 1485}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1410:19">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1485}.
+  {label, 1486}.
     {move, {x, 0}, {y, 4}}.
     {gc_bif, '+', {f, 0}, 0, [{y, 5}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1486}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1486}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1487}}.
-  {label, 1486}.
+    {test, is_ge, {f, 1487}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1487}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1488}}.
+  {label, 1487}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1411:19">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1487}.
+  {label, 1488}.
     {move, {x, 0}, {y, 5}}.
-  {label, 1482}.
-  {label, 1464}.
-    {jump, {f, 1433}}.
-  {label, 1434}.
+  {label, 1483}.
+  {label, 1465}.
+    {jump, {f, 1434}}.
+  {label, 1435}.
     {move, {y, 2}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_eq_exact, {f, 1488}, [{y, 5}, {x, 0}]}.
+    {test, is_eq_exact, {f, 1489}, [{y, 5}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1489}}.
-  {label, 1488}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 1490}}.
   {label, 1489}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1490}.
     {deallocate, 15}.
     return.
 
@@ -12560,46 +12568,46 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call, 1, {f, 139}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 1}, {x, 0}}.
-    {call, 1, {f, 1252}}.
+    {call, 1, {f, 1253}}.
     {move, {x, 0}, {y, 3}}.
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 4}}.
     {line, [{location, "std@io@fs.erl", 86}]}.
-  {label, 1490}.
+  {label, 1491}.
     {move, {y, 2}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_lt, {f, 1491}, [{y, 4}, {x, 0}]}.
+    {test, is_lt, {f, 1492}, [{y, 4}, {x, 0}]}.
     {move, {y, 2}, {x, 0}}.
     {move, {y, 4}, {x, 1}}.
     {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 1493}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 1494}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 5}, {x, 0}}.
-    {jump, {f, 1494}}.
-  {label, 1493}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 1495}}.
   {label, 1494}.
-    {call, 1, {f, 1252}}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 1495}.
+    {call, 1, {f, 1253}}.
     {move, {integer, 0}, {x, 1}}.
     {move, {integer, 0}, {x, 3}}.
     {move, {y, 3}, {x, 2}}.
     {call, 4, {f, 145}}.
-    {test, is_eq, {f, 1492}, [{x, 0}, {atom, true}]}.
+    {test, is_eq, {f, 1493}, [{x, 0}, {atom, true}]}.
     {move, {atom, true}, {x, 0}}.
     {deallocate, 7}.
     return.
-  {label, 1492}.
+  {label, 1493}.
     {gc_bif, '+', {f, 0}, 0, [{y, 4}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1495}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1495}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1496}}.
-  {label, 1495}.
+    {test, is_ge, {f, 1496}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1496}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1497}}.
+  {label, 1496}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1423:15">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1496}.
+  {label, 1497}.
     {move, {x, 0}, {y, 4}}.
-    {jump, {f, 1490}}.
-  {label, 1491}.
+    {jump, {f, 1491}}.
+  {label, 1492}.
     {move, {atom, false}, {x, 0}}.
     {deallocate, 7}.
     return.
@@ -12615,101 +12623,101 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 1, {f, 966}}.
-    {test, is_tagged_tuple, {f, 1498}, [{x, 0}, 2, {atom, ok}]}.
+    {call, 1, {f, 967}}.
+    {test, is_tagged_tuple, {f, 1499}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
-    {jump, {f, 1497}}.
-  {label, 1498}.
-    {test, is_tagged_tuple, {f, 1499}, [{x, 0}, 2, {atom, error}]}.
-    {move, nil, {x, 0}}.
-    {jump, {f, 1497}}.
+    {jump, {f, 1498}}.
   {label, 1499}.
+    {test, is_tagged_tuple, {f, 1500}, [{x, 0}, 2, {atom, error}]}.
+    {move, nil, {x, 0}}.
+    {jump, {f, 1498}}.
+  {label, 1500}.
     {case_end, {x, 0}}.
-  {label, 1497}.
+  {label, 1498}.
     {move, {x, 0}, {y, 3}}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 4}}.
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 5}}.
     {line, [{location, "std@io@fs.erl", 87}]}.
-  {label, 1500}.
+  {label, 1501}.
     {move, {y, 3}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_lt, {f, 1501}, [{y, 5}, {x, 0}]}.
+    {test, is_lt, {f, 1502}, [{y, 5}, {x, 0}]}.
     {move, {y, 3}, {x, 0}}.
     {move, {y, 5}, {x, 1}}.
     {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 1502}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 1503}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {x, 0}}.
-    {jump, {f, 1503}}.
-  {label, 1502}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 1504}}.
   {label, 1503}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 1504}.
     {move, {x, 0}, {y, 7}}.
     {gc_bif, '+', {f, 0}, 0, [{y, 5}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1504}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1504}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1505}}.
-  {label, 1504}.
+    {test, is_ge, {f, 1505}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1505}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1506}}.
+  {label, 1505}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1438:15">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1505}.
+  {label, 1506}.
     {move, {x, 0}, {y, 5}}.
     {move, {literal, <<".">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 7}, {x, 0}}.
     {call_ext, 2, {extfunc, string, prefix, 2}}.
-    {test, is_eq, {f, 1507}, [{x, 0}, {atom, nomatch}]}.
+    {test, is_eq, {f, 1508}, [{x, 0}, {atom, nomatch}]}.
     {move, {atom, false}, {x, 0}}.
-    {jump, {f, 1508}}.
-  {label, 1507}.
-    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 1509}}.
   {label, 1508}.
+    {move, {atom, true}, {x, 0}}.
+  {label, 1509}.
     {move, {x, 0}, {x, 1}}.
-    {test, is_eq, {f, 1509}, [{x, 1}, {atom, true}]}.
+    {test, is_eq, {f, 1510}, [{x, 1}, {atom, true}]}.
     {move, {literal, <<".">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 2, {extfunc, string, prefix, 2}}.
-    {test, is_eq, {f, 1511}, [{x, 0}, {atom, nomatch}]}.
+    {test, is_eq, {f, 1512}, [{x, 0}, {atom, nomatch}]}.
     {move, {atom, false}, {x, 0}}.
-    {jump, {f, 1512}}.
-  {label, 1511}.
-    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 1513}}.
   {label, 1512}.
-    {test, is_eq, {f, 1513}, [{x, 0}, {atom, true}]}.
-    {move, {atom, false}, {x, 0}}.
-    {jump, {f, 1514}}.
+    {move, {atom, true}, {x, 0}}.
   {label, 1513}.
-    {move, {atom, true}, {x, 0}}.
+    {test, is_eq, {f, 1514}, [{x, 0}, {atom, true}]}.
+    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 1515}}.
   {label, 1514}.
-    {jump, {f, 1510}}.
-  {label, 1509}.
-    {move, {atom, false}, {x, 0}}.
-  {label, 1510}.
-    {test, is_eq, {f, 1506}, [{x, 0}, {atom, true}]}.
-    {jump, {f, 1500}}.
-  {label, 1506}.
-    {move, {literal, <<"*">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 1516}, [{y, 1}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1517}}.
-  {label, 1516}.
+  {label, 1515}.
+    {jump, {f, 1511}}.
+  {label, 1510}.
     {move, {atom, false}, {x, 0}}.
+  {label, 1511}.
+    {test, is_eq, {f, 1507}, [{x, 0}, {atom, true}]}.
+    {jump, {f, 1501}}.
+  {label, 1507}.
+    {move, {literal, <<"*">>}, {x, 0}}.
+    {test, is_eq_exact, {f, 1517}, [{y, 1}, {x, 0}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 1518}}.
   {label, 1517}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1518}.
     {move, {x, 0}, {x, 1}}.
-    {test, is_ne_exact, {f, 1518}, [{x, 1}, {atom, true}]}.
+    {test, is_ne_exact, {f, 1519}, [{x, 1}, {atom, true}]}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 7}, {x, 1}}.
     {call, 2, {f, 147}}.
-    {jump, {f, 1519}}.
-  {label, 1518}.
-    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 1520}}.
   {label, 1519}.
-    {test, is_eq, {f, 1515}, [{x, 0}, {atom, true}]}.
+    {move, {atom, true}, {x, 0}}.
+  {label, 1520}.
+    {test, is_eq, {f, 1516}, [{x, 0}, {atom, true}]}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 7}, {x, 0}}.
@@ -12720,11 +12728,11 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 4}, {x, 0}}.
     {call_ext, 2, {extfunc, lists, append, 2}}.
     {move, {x, 0}, {y, 4}}.
-    {jump, {f, 1520}}.
-  {label, 1515}.
-  {label, 1520}.
-    {jump, {f, 1500}}.
-  {label, 1501}.
+    {jump, {f, 1521}}.
+  {label, 1516}.
+  {label, 1521}.
+    {jump, {f, 1501}}.
+  {label, 1502}.
     {move, {y, 4}, {x, 0}}.
     {deallocate, 13}.
     return.
@@ -12747,9 +12755,9 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 5}}.
     {move, {y, 0}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_eq_exact, {f, 1521}, [{y, 1}, {x, 0}]}.
+    {test, is_eq_exact, {f, 1522}, [{y, 1}, {x, 0}]}.
     {move, {literal, <<"">>}, {x, 0}}.
-    {test, is_ne_exact, {f, 1522}, [{y, 3}, {x, 0}]}.
+    {test, is_ne_exact, {f, 1523}, [{y, 3}, {x, 0}]}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 3}, {x, 0}}.
@@ -12760,59 +12768,59 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 5}, {x, 0}}.
     {call_ext, 2, {extfunc, lists, append, 2}}.
     {move, {x, 0}, {y, 5}}.
-    {jump, {f, 1523}}.
-  {label, 1522}.
+    {jump, {f, 1524}}.
   {label, 1523}.
+  {label, 1524}.
     {move, {y, 5}, {x, 0}}.
     {deallocate, 27}.
     return.
-  {label, 1521}.
+  {label, 1522}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 1524}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 1525}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 7}}.
     {move, {y, 7}, {x, 0}}.
-    {jump, {f, 1525}}.
-  {label, 1524}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 1526}}.
   {label, 1525}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 1526}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 0}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
     {gc_bif, '-', {f, 0}, 1, [{x, 0}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1526}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1526}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1527}}.
-  {label, 1526}.
+    {test, is_ge, {f, 1527}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1527}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1528}}.
+  {label, 1527}.
     {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/io/fs.bp:1454:33">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1527}.
-    {test, is_eq_exact, {f, 1528}, [{y, 1}, {x, 0}]}.
-    {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1529}}.
   {label, 1528}.
-    {move, {atom, false}, {x, 0}}.
+    {test, is_eq_exact, {f, 1529}, [{y, 1}, {x, 0}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 1530}}.
   {label, 1529}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1530}.
     {move, {x, 0}, {y, 9}}.
     {move, {literal, <<"**">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 1530}, [{y, 8}, {x, 0}]}.
+    {test, is_eq_exact, {f, 1531}, [{y, 8}, {x, 0}]}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_eq, {f, 1532}, [{x, 0}, {atom, true}]}.
+    {test, is_eq, {f, 1533}, [{x, 0}, {atom, true}]}.
     {move, {atom, false}, {x, 0}}.
-    {jump, {f, 1533}}.
-  {label, 1532}.
-    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 1534}}.
   {label, 1533}.
-    {test, is_eq, {f, 1531}, [{x, 0}, {atom, true}]}.
-    {gc_bif, '+', {f, 0}, 0, [{y, 1}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1534}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1534}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1535}}.
+    {move, {atom, true}, {x, 0}}.
   {label, 1534}.
+    {test, is_eq, {f, 1532}, [{x, 0}, {atom, true}]}.
+    {gc_bif, '+', {f, 0}, 0, [{y, 1}, {integer, 1}], {x, 0}}.
+    {test, is_ge, {f, 1535}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1535}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1536}}.
+  {label, 1535}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1456:43">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1535}.
+  {label, 1536}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 5}, {x, 4}}.
     {move, {y, 3}, {x, 3}}.
@@ -12820,9 +12828,9 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 0}, {x, 0}}.
     {call, 5, {f, 151}}.
     {move, {x, 0}, {y, 5}}.
-    {jump, {f, 1536}}.
-  {label, 1531}.
-  {label, 1536}.
+    {jump, {f, 1537}}.
+  {label, 1532}.
+  {label, 1537}.
     {move, {literal, <<"*">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 2}, {x, 0}}.
@@ -12831,29 +12839,29 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 11}}.
     {line, [{location, "std@io@fs.erl", 88}]}.
-  {label, 1537}.
+  {label, 1538}.
     {move, {y, 10}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_lt, {f, 1538}, [{y, 11}, {x, 0}]}.
+    {test, is_lt, {f, 1539}, [{y, 11}, {x, 0}]}.
     {move, {y, 10}, {x, 0}}.
     {move, {y, 11}, {x, 1}}.
     {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 1539}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 1540}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 12}}.
     {move, {y, 12}, {x, 0}}.
-    {jump, {f, 1540}}.
-  {label, 1539}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 1541}}.
   {label, 1540}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 1541}.
     {move, {x, 0}, {y, 13}}.
     {gc_bif, '+', {f, 0}, 0, [{y, 11}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1541}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1541}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1542}}.
-  {label, 1541}.
+    {test, is_ge, {f, 1542}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1542}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1543}}.
+  {label, 1542}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1461:19">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1542}.
+  {label, 1543}.
     {move, {x, 0}, {y, 11}}.
     {move, {y, 2}, {x, 0}}.
     {move, {y, 13}, {x, 1}}.
@@ -12864,7 +12872,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call, 2, {f, 77}}.
     {move, {x, 0}, {y, 15}}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_eq, {f, 1543}, [{x, 0}, {atom, true}]}.
+    {test, is_eq, {f, 1544}, [{x, 0}, {atom, true}]}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 16}}.
     {move, {y, 15}, {x, 0}}.
@@ -12875,13 +12883,13 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 5}, {x, 0}}.
     {call_ext, 2, {extfunc, lists, append, 2}}.
     {move, {x, 0}, {y, 5}}.
-    {jump, {f, 1544}}.
-  {label, 1543}.
+    {jump, {f, 1545}}.
   {label, 1544}.
+  {label, 1545}.
     {move, {y, 14}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
-    {call, 2, {f, 925}}.
-    {test, is_eq_exact, {f, 1545}, [{x, 0}, {integer, 3}]}.
+    {call, 2, {f, 926}}.
+    {test, is_eq_exact, {f, 1546}, [{x, 0}, {integer, 3}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 5}, {x, 4}}.
     {move, {y, 15}, {x, 3}}.
@@ -12889,24 +12897,24 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 1}, {x, 1}}.
     {call, 5, {f, 151}}.
     {move, {x, 0}, {y, 5}}.
-    {jump, {f, 1546}}.
-  {label, 1545}.
+    {jump, {f, 1547}}.
   {label, 1546}.
-    {jump, {f, 1537}}.
-  {label, 1538}.
+  {label, 1547}.
+    {jump, {f, 1538}}.
+  {label, 1539}.
     {move, {y, 5}, {x, 0}}.
     {deallocate, 27}.
     return.
-  {label, 1530}.
+  {label, 1531}.
     {move, {y, 8}, {x, 0}}.
     {call, 1, {f, 137}}.
-    {test, is_eq, {f, 1548}, [{x, 0}, {atom, true}]}.
+    {test, is_eq, {f, 1549}, [{x, 0}, {atom, true}]}.
     {move, {atom, false}, {x, 0}}.
-    {jump, {f, 1549}}.
-  {label, 1548}.
-    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 1550}}.
   {label, 1549}.
-    {test, is_eq, {f, 1547}, [{x, 0}, {atom, true}]}.
+    {move, {atom, true}, {x, 0}}.
+  {label, 1550}.
+    {test, is_eq, {f, 1548}, [{x, 0}, {atom, true}]}.
     {move, {y, 2}, {x, 0}}.
     {move, {y, 8}, {x, 1}}.
     {call, 2, {f, 77}}.
@@ -12916,11 +12924,11 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call, 2, {f, 77}}.
     {move, {x, 0}, {y, 18}}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_eq, {f, 1550}, [{x, 0}, {atom, true}]}.
+    {test, is_eq, {f, 1551}, [{x, 0}, {atom, true}]}.
     {move, {y, 17}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
-    {call, 2, {f, 925}}.
-    {test, is_ge, {f, 1551}, [{x, 0}, {integer, 0}]}.
+    {call, 2, {f, 926}}.
+    {test, is_ge, {f, 1552}, [{x, 0}, {integer, 0}]}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 19}}.
     {move, {y, 18}, {x, 0}}.
@@ -12931,23 +12939,23 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 5}, {x, 0}}.
     {call_ext, 2, {extfunc, lists, append, 2}}.
     {move, {x, 0}, {y, 5}}.
-    {jump, {f, 1552}}.
-  {label, 1551}.
-  {label, 1552}.
     {jump, {f, 1553}}.
-  {label, 1550}.
+  {label, 1552}.
+  {label, 1553}.
+    {jump, {f, 1554}}.
+  {label, 1551}.
     {move, {y, 17}, {x, 0}}.
     {move, {integer, 1}, {x, 1}}.
-    {call, 2, {f, 925}}.
-    {test, is_eq_exact, {f, 1554}, [{x, 0}, {integer, 3}]}.
+    {call, 2, {f, 926}}.
+    {test, is_eq_exact, {f, 1555}, [{x, 0}, {integer, 3}]}.
     {gc_bif, '+', {f, 0}, 0, [{y, 1}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1555}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1555}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1556}}.
-  {label, 1555}.
+    {test, is_ge, {f, 1556}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1556}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1557}}.
+  {label, 1556}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1475:36">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1556}.
+  {label, 1557}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 5}, {x, 4}}.
     {move, {y, 18}, {x, 3}}.
@@ -12955,14 +12963,14 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 0}, {x, 0}}.
     {call, 5, {f, 151}}.
     {move, {x, 0}, {y, 5}}.
-    {jump, {f, 1557}}.
+    {jump, {f, 1558}}.
+  {label, 1555}.
+  {label, 1558}.
   {label, 1554}.
-  {label, 1557}.
-  {label, 1553}.
     {move, {y, 5}, {x, 0}}.
     {deallocate, 27}.
     return.
-  {label, 1547}.
+  {label, 1548}.
     {move, {y, 2}, {x, 0}}.
     {move, {y, 8}, {x, 1}}.
     {call, 2, {f, 149}}.
@@ -12970,29 +12978,29 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 21}}.
     {line, [{location, "std@io@fs.erl", 88}]}.
-  {label, 1558}.
+  {label, 1559}.
     {move, {y, 20}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_lt, {f, 1559}, [{y, 21}, {x, 0}]}.
+    {test, is_lt, {f, 1560}, [{y, 21}, {x, 0}]}.
     {move, {y, 20}, {x, 0}}.
     {move, {y, 21}, {x, 1}}.
     {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 1560}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 1561}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 22}}.
     {move, {y, 22}, {x, 0}}.
-    {jump, {f, 1561}}.
-  {label, 1560}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 1562}}.
   {label, 1561}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 1562}.
     {move, {x, 0}, {y, 23}}.
     {gc_bif, '+', {f, 0}, 0, [{y, 21}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1562}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1562}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1563}}.
-  {label, 1562}.
+    {test, is_ge, {f, 1563}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1563}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1564}}.
+  {label, 1563}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1483:15">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1563}.
+  {label, 1564}.
     {move, {x, 0}, {y, 21}}.
     {move, {y, 2}, {x, 0}}.
     {move, {y, 23}, {x, 1}}.
@@ -13003,7 +13011,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call, 2, {f, 77}}.
     {move, {x, 0}, {y, 25}}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_eq, {f, 1564}, [{x, 0}, {atom, true}]}.
+    {test, is_eq, {f, 1565}, [{x, 0}, {atom, true}]}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 26}}.
     {move, {y, 25}, {x, 0}}.
@@ -13014,20 +13022,20 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 5}, {x, 0}}.
     {call_ext, 2, {extfunc, lists, append, 2}}.
     {move, {x, 0}, {y, 5}}.
-    {jump, {f, 1565}}.
-  {label, 1564}.
+    {jump, {f, 1566}}.
+  {label, 1565}.
     {move, {y, 24}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
-    {call, 2, {f, 925}}.
-    {test, is_eq_exact, {f, 1566}, [{x, 0}, {integer, 3}]}.
+    {call, 2, {f, 926}}.
+    {test, is_eq_exact, {f, 1567}, [{x, 0}, {integer, 3}]}.
     {gc_bif, '+', {f, 0}, 0, [{y, 1}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1567}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1567}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1568}}.
-  {label, 1567}.
+    {test, is_ge, {f, 1568}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1568}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1569}}.
+  {label, 1568}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1489:36">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1568}.
+  {label, 1569}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 5}, {x, 4}}.
     {move, {y, 25}, {x, 3}}.
@@ -13035,12 +13043,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 0}, {x, 0}}.
     {call, 5, {f, 151}}.
     {move, {x, 0}, {y, 5}}.
-    {jump, {f, 1569}}.
+    {jump, {f, 1570}}.
+  {label, 1567}.
+  {label, 1570}.
   {label, 1566}.
-  {label, 1569}.
-  {label, 1565}.
-    {jump, {f, 1558}}.
-  {label, 1559}.
+    {jump, {f, 1559}}.
+  {label, 1560}.
     {move, {y, 5}, {x, 0}}.
     {deallocate, 27}.
     return.
@@ -13058,80 +13066,80 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call, 1, {f, 79}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 1571}, [{x, 0}, 2, {atom, error}]}.
+    {test, is_tagged_tuple, {f, 1572}, [{x, 0}, 2, {atom, error}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1572}}.
-  {label, 1571}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 1573}}.
   {label, 1572}.
-    {test, is_eq, {f, 1570}, [{x, 0}, {atom, true}]}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1573}.
+    {test, is_eq, {f, 1571}, [{x, 0}, {atom, true}]}.
     {move, nil, {x, 0}}.
     {deallocate, 18}.
     return.
-  {label, 1570}.
+  {label, 1571}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 1573}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 1574}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 1574}}.
-  {label, 1573}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 1575}}.
   {label, 1574}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 1575}.
     {move, {x, 0}, {y, 3}}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 4}}.
     {move, {literal, <<"/">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 2, {f, 1132}}.
+    {call, 2, {f, 1133}}.
     {move, {x, 0}, {y, 5}}.
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 6}}.
     {line, [{location, "std@io@fs.erl", 89}]}.
-  {label, 1575}.
+  {label, 1576}.
     {move, {y, 5}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_lt, {f, 1576}, [{y, 6}, {x, 0}]}.
+    {test, is_lt, {f, 1577}, [{y, 6}, {x, 0}]}.
     {move, {y, 5}, {x, 0}}.
     {move, {y, 6}, {x, 1}}.
     {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 1577}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 1578}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 7}}.
     {move, {y, 7}, {x, 0}}.
-    {jump, {f, 1578}}.
-  {label, 1577}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 1579}}.
   {label, 1578}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 1579}.
     {move, {x, 0}, {y, 8}}.
     {gc_bif, '+', {f, 0}, 0, [{y, 6}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1579}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1579}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1580}}.
-  {label, 1579}.
+    {test, is_ge, {f, 1580}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1580}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1581}}.
+  {label, 1580}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1504:15">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1580}.
+  {label, 1581}.
     {move, {x, 0}, {y, 6}}.
     {move, {literal, <<"">>}, {x, 0}}.
-    {test, is_ne_exact, {f, 1582}, [{y, 8}, {x, 0}]}.
+    {test, is_ne_exact, {f, 1583}, [{y, 8}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1583}}.
-  {label, 1582}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 1584}}.
   {label, 1583}.
-    {move, {x, 0}, {x, 1}}.
-    {test, is_eq, {f, 1584}, [{x, 1}, {atom, true}]}.
-    {move, {literal, <<".">>}, {x, 0}}.
-    {test, is_ne_exact, {f, 1586}, [{y, 8}, {x, 0}]}.
-    {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1587}}.
-  {label, 1586}.
     {move, {atom, false}, {x, 0}}.
-  {label, 1587}.
-    {jump, {f, 1585}}.
   {label, 1584}.
+    {move, {x, 0}, {x, 1}}.
+    {test, is_eq, {f, 1585}, [{x, 1}, {atom, true}]}.
+    {move, {literal, <<".">>}, {x, 0}}.
+    {test, is_ne_exact, {f, 1587}, [{y, 8}, {x, 0}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 1588}}.
+  {label, 1587}.
     {move, {atom, false}, {x, 0}}.
+  {label, 1588}.
+    {jump, {f, 1586}}.
   {label, 1585}.
-    {test, is_eq, {f, 1581}, [{x, 0}, {atom, true}]}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1586}.
+    {test, is_eq, {f, 1582}, [{x, 0}, {atom, true}]}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 8}, {x, 0}}.
@@ -13142,11 +13150,11 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 4}, {x, 0}}.
     {call_ext, 2, {extfunc, lists, append, 2}}.
     {move, {x, 0}, {y, 4}}.
-    {jump, {f, 1588}}.
-  {label, 1581}.
-  {label, 1588}.
-    {jump, {f, 1575}}.
-  {label, 1576}.
+    {jump, {f, 1589}}.
+  {label, 1582}.
+  {label, 1589}.
+    {jump, {f, 1576}}.
+  {label, 1577}.
     {move, {literal, <<"">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, nil, {x, 0}}.
@@ -13162,58 +13170,58 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 12}}.
     {line, [{location, "std@io@fs.erl", 89}]}.
-  {label, 1589}.
+  {label, 1590}.
     {move, {y, 10}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_lt, {f, 1590}, [{y, 12}, {x, 0}]}.
+    {test, is_lt, {f, 1591}, [{y, 12}, {x, 0}]}.
     {move, {y, 10}, {x, 0}}.
     {move, {y, 12}, {x, 1}}.
     {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 1591}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 1592}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 13}}.
     {move, {y, 13}, {x, 0}}.
-    {jump, {f, 1592}}.
-  {label, 1591}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 1593}}.
   {label, 1592}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 1593}.
     {move, {x, 0}, {y, 14}}.
     {gc_bif, '+', {f, 0}, 0, [{y, 12}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1593}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1593}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1594}}.
-  {label, 1593}.
+    {test, is_ge, {f, 1594}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1594}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1595}}.
+  {label, 1594}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1512:15">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1594}.
+  {label, 1595}.
     {move, {x, 0}, {y, 12}}.
     {move, {literal, <<"/">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 2, {f, 1597}}.
-    {test, is_eq, {f, 1611}, [{x, 0}, {atom, true}]}.
+    {call, 2, {f, 1598}}.
+    {test, is_eq, {f, 1612}, [{x, 0}, {atom, true}]}.
     {move, {atom, false}, {x, 0}}.
-    {jump, {f, 1612}}.
-  {label, 1611}.
-    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 1613}}.
   {label, 1612}.
+    {move, {atom, true}, {x, 0}}.
+  {label, 1613}.
     {move, {x, 0}, {x, 1}}.
-    {test, is_ne_exact, {f, 1613}, [{x, 1}, {atom, true}]}.
+    {test, is_ne_exact, {f, 1614}, [{x, 1}, {atom, true}]}.
     {move, {y, 3}, {x, 0}}.
     {move, {y, 14}, {x, 1}}.
     {call, 2, {f, 77}}.
     {move, {integer, 0}, {x, 1}}.
-    {call, 2, {f, 925}}.
-    {test, is_eq_exact, {f, 1615}, [{x, 0}, {integer, 3}]}.
+    {call, 2, {f, 926}}.
+    {test, is_eq_exact, {f, 1616}, [{x, 0}, {integer, 3}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1616}}.
-  {label, 1615}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 1617}}.
   {label, 1616}.
-    {jump, {f, 1614}}.
-  {label, 1613}.
-    {move, {atom, true}, {x, 0}}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1617}.
+    {jump, {f, 1615}}.
   {label, 1614}.
-    {test, is_eq, {f, 1595}, [{x, 0}, {atom, true}]}.
+    {move, {atom, true}, {x, 0}}.
+  {label, 1615}.
+    {test, is_eq, {f, 1596}, [{x, 0}, {atom, true}]}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 15}}.
     {move, {y, 14}, {x, 0}}.
@@ -13224,11 +13232,11 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 11}, {x, 0}}.
     {call_ext, 2, {extfunc, lists, append, 2}}.
     {move, {x, 0}, {y, 11}}.
-    {jump, {f, 1617}}.
-  {label, 1595}.
-  {label, 1617}.
-    {jump, {f, 1589}}.
-  {label, 1590}.
+    {jump, {f, 1618}}.
+  {label, 1596}.
+  {label, 1618}.
+    {jump, {f, 1590}}.
+  {label, 1591}.
     {move, {y, 11}, {x, 0}}.
     {call_last, 1, {f, 85}, 18}.
 % A path that is not there is `Ok`: the caller wanted it gone. A link is removed, never followed. The
@@ -13244,69 +13252,69 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 79}}.
-    {test, is_tagged_tuple, {f, 1618}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 1619}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 1619}}.
-  {label, 1618}.
-    {deallocate, 21}.
-    return.
+    {jump, {f, 1620}}.
   {label, 1619}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {integer, 0}, {x, 1}}.
-    {call, 2, {f, 925}}.
-    {move, {x, 0}, {y, 2}}.
-    {test, is_eq_exact, {f, 1620}, [{y, 2}, {integer, -21}]}.
-    {move, {integer, 0}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {test_heap, 3, 2}.
-    {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
     {deallocate, 21}.
     return.
   {label, 1620}.
-    {test, is_lt, {f, 1621}, [{y, 2}, {integer, 0}]}.
-    {gc_bif, '-', {f, 0}, 0, [{integer, -1}, {y, 2}], {x, 0}}.
-    {test, is_ge, {f, 1622}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1622}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1623}}.
-  {label, 1622}.
-    {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/io/fs.bp:1524:37">>}}, {x, 0}}.
-    {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1623}.
-    {call, 1, {f, 67}}.
-    {move, {x, 0}, {x, 1}}.
-    {test_heap, 3, 2}.
-    {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
-    {deallocate, 21}.
-    return.
-  {label, 1621}.
-    {test, is_ne_exact, {f, 1624}, [{y, 2}, {integer, 3}]}.
+    {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {call, 1, {f, 966}}.
-    {move, {x, 0}, {y, 3}}.
-    {test, is_lt, {f, 1625}, [{y, 3}, {integer, 0}]}.
-    {gc_bif, '-', {f, 0}, 0, [{integer, -1}, {y, 3}], {x, 0}}.
-    {test, is_ge, {f, 1626}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1626}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1627}}.
-  {label, 1626}.
-    {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/io/fs.bp:1527:39">>}}, {x, 0}}.
-    {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1627}.
-    {call, 1, {f, 67}}.
-    {move, {x, 0}, {x, 1}}.
-    {test_heap, 3, 2}.
-    {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
-    {deallocate, 21}.
-    return.
-  {label, 1625}.
+    {move, {integer, 0}, {x, 1}}.
+    {call, 2, {f, 926}}.
+    {move, {x, 0}, {y, 2}}.
+    {test, is_eq_exact, {f, 1621}, [{y, 2}, {integer, -21}]}.
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
     {deallocate, 21}.
     return.
+  {label, 1621}.
+    {test, is_lt, {f, 1622}, [{y, 2}, {integer, 0}]}.
+    {gc_bif, '-', {f, 0}, 0, [{integer, -1}, {y, 2}], {x, 0}}.
+    {test, is_ge, {f, 1623}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1623}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1624}}.
+  {label, 1623}.
+    {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/io/fs.bp:1524:37">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
   {label, 1624}.
+    {call, 1, {f, 67}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
+    {deallocate, 21}.
+    return.
+  {label, 1622}.
+    {test, is_ne_exact, {f, 1625}, [{y, 2}, {integer, 3}]}.
+    {move, {y, 1}, {x, 0}}.
+    {call, 1, {f, 967}}.
+    {move, {x, 0}, {y, 3}}.
+    {test, is_lt, {f, 1626}, [{y, 3}, {integer, 0}]}.
+    {gc_bif, '-', {f, 0}, 0, [{integer, -1}, {y, 3}], {x, 0}}.
+    {test, is_ge, {f, 1627}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1627}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1628}}.
+  {label, 1627}.
+    {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/io/fs.bp:1527:39">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 1628}.
+    {call, 1, {f, 67}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
+    {deallocate, 21}.
+    return.
+  {label, 1626}.
+    {move, {integer, 0}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
+    {deallocate, 21}.
+    return.
+  {label, 1625}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 1}, {x, 0}}.
@@ -13317,110 +13325,110 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 6}}.
     {line, [{location, "std@io@fs.erl", 90}]}.
-  {label, 1628}.
+  {label, 1629}.
     {move, {y, 5}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_lt, {f, 1629}, [{y, 6}, {x, 0}]}.
+    {test, is_lt, {f, 1630}, [{y, 6}, {x, 0}]}.
     {move, {y, 5}, {x, 0}}.
     {move, {y, 6}, {x, 1}}.
     {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 1630}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 1631}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 7}}.
     {move, {y, 7}, {x, 0}}.
-    {jump, {f, 1631}}.
-  {label, 1630}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 1632}}.
   {label, 1631}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 1632}.
     {move, {x, 0}, {y, 8}}.
     {gc_bif, '+', {f, 0}, 0, [{y, 6}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1632}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1632}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1633}}.
-  {label, 1632}.
+    {test, is_ge, {f, 1633}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1633}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1634}}.
+  {label, 1633}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1534:21">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1633}.
+  {label, 1634}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 8}, {x, 0}}.
-    {call, 1, {f, 966}}.
+    {call, 1, {f, 967}}.
     {call, 1, {f, 71}}.
-    {test, is_tagged_tuple, {f, 1634}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 1635}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 1635}}.
-  {label, 1634}.
+    {jump, {f, 1636}}.
+  {label, 1635}.
     {deallocate, 21}.
     return.
-  {label, 1635}.
+  {label, 1636}.
     {move, {x, 0}, {y, 9}}.
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 10}}.
     {line, [{location, "std@io@fs.erl", 90}]}.
-  {label, 1636}.
+  {label, 1637}.
     {move, {y, 9}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_lt, {f, 1637}, [{y, 10}, {x, 0}]}.
+    {test, is_lt, {f, 1638}, [{y, 10}, {x, 0}]}.
     {move, {y, 9}, {x, 0}}.
     {move, {y, 10}, {x, 1}}.
     {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 1638}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 1639}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 11}}.
     {move, {y, 11}, {x, 0}}.
-    {jump, {f, 1639}}.
-  {label, 1638}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 1640}}.
   {label, 1639}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 1640}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 8}, {x, 0}}.
     {call, 2, {f, 77}}.
     {move, {x, 0}, {y, 12}}.
     {gc_bif, '+', {f, 0}, 0, [{y, 10}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1640}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1640}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1641}}.
-  {label, 1640}.
+    {test, is_ge, {f, 1641}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1641}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1642}}.
+  {label, 1641}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1539:19">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1641}.
+  {label, 1642}.
     {move, {x, 0}, {y, 10}}.
     {move, {y, 12}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
-    {call, 2, {f, 925}}.
+    {call, 2, {f, 926}}.
     {move, {x, 0}, {y, 13}}.
-    {test, is_lt, {f, 1643}, [{y, 13}, {integer, 0}]}.
+    {test, is_lt, {f, 1644}, [{y, 13}, {integer, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1644}}.
-  {label, 1643}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 1645}}.
   {label, 1644}.
-    {move, {x, 0}, {x, 1}}.
-    {test, is_eq, {f, 1645}, [{x, 1}, {atom, true}]}.
-    {test, is_ne_exact, {f, 1647}, [{y, 13}, {integer, -21}]}.
-    {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1648}}.
-  {label, 1647}.
     {move, {atom, false}, {x, 0}}.
-  {label, 1648}.
-    {jump, {f, 1646}}.
   {label, 1645}.
+    {move, {x, 0}, {x, 1}}.
+    {test, is_eq, {f, 1646}, [{x, 1}, {atom, true}]}.
+    {test, is_ne_exact, {f, 1648}, [{y, 13}, {integer, -21}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 1649}}.
+  {label, 1648}.
     {move, {atom, false}, {x, 0}}.
-  {label, 1646}.
-    {test, is_eq, {f, 1642}, [{x, 0}, {atom, true}]}.
-    {gc_bif, '-', {f, 0}, 0, [{integer, -1}, {y, 13}], {x, 0}}.
-    {test, is_ge, {f, 1649}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1649}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1650}}.
   {label, 1649}.
+    {jump, {f, 1647}}.
+  {label, 1646}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1647}.
+    {test, is_eq, {f, 1643}, [{x, 0}, {atom, true}]}.
+    {gc_bif, '-', {f, 0}, 0, [{integer, -1}, {y, 13}], {x, 0}}.
+    {test, is_ge, {f, 1650}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1650}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1651}}.
+  {label, 1650}.
     {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/io/fs.bp:1541:61">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1650}.
+  {label, 1651}.
     {call, 1, {f, 67}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {deallocate, 21}.
     return.
-  {label, 1642}.
-    {test, is_eq_exact, {f, 1651}, [{y, 13}, {integer, 3}]}.
+  {label, 1643}.
+    {test, is_eq_exact, {f, 1652}, [{y, 13}, {integer, 3}]}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 14}}.
     {move, {y, 12}, {x, 0}}.
@@ -13431,99 +13439,99 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 5}, {x, 0}}.
     {call_ext, 2, {extfunc, lists, append, 2}}.
     {move, {x, 0}, {y, 5}}.
-    {jump, {f, 1652}}.
-  {label, 1651}.
+    {jump, {f, 1653}}.
   {label, 1652}.
-    {test, is_ge, {f, 1654}, [{y, 13}, {integer, 0}]}.
+  {label, 1653}.
+    {test, is_ge, {f, 1655}, [{y, 13}, {integer, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1655}}.
-  {label, 1654}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 1656}}.
   {label, 1655}.
-    {move, {x, 0}, {x, 1}}.
-    {test, is_eq, {f, 1656}, [{x, 1}, {atom, true}]}.
-    {test, is_ne_exact, {f, 1658}, [{y, 13}, {integer, 3}]}.
-    {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1659}}.
-  {label, 1658}.
     {move, {atom, false}, {x, 0}}.
-  {label, 1659}.
-    {jump, {f, 1657}}.
   {label, 1656}.
+    {move, {x, 0}, {x, 1}}.
+    {test, is_eq, {f, 1657}, [{x, 1}, {atom, true}]}.
+    {test, is_ne_exact, {f, 1659}, [{y, 13}, {integer, 3}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 1660}}.
+  {label, 1659}.
     {move, {atom, false}, {x, 0}}.
+  {label, 1660}.
+    {jump, {f, 1658}}.
   {label, 1657}.
-    {test, is_eq, {f, 1653}, [{x, 0}, {atom, true}]}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 1658}.
+    {test, is_eq, {f, 1654}, [{x, 0}, {atom, true}]}.
     {move, {y, 12}, {x, 0}}.
-    {call, 1, {f, 966}}.
+    {call, 1, {f, 967}}.
     {move, {x, 0}, {y, 15}}.
-    {test, is_lt, {f, 1660}, [{y, 15}, {integer, 0}]}.
+    {test, is_lt, {f, 1661}, [{y, 15}, {integer, 0}]}.
     {gc_bif, '-', {f, 0}, 0, [{integer, -1}, {y, 15}], {x, 0}}.
-    {test, is_ge, {f, 1661}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1661}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1662}}.
-  {label, 1661}.
+    {test, is_ge, {f, 1662}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1662}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1663}}.
+  {label, 1662}.
     {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/io/fs.bp:1545:47">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1662}.
+  {label, 1663}.
     {call, 1, {f, 67}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {deallocate, 21}.
     return.
-  {label, 1660}.
-    {jump, {f, 1663}}.
-  {label, 1653}.
-  {label, 1663}.
-    {jump, {f, 1636}}.
-  {label, 1637}.
-    {jump, {f, 1628}}.
-  {label, 1629}.
+  {label, 1661}.
+    {jump, {f, 1664}}.
+  {label, 1654}.
+  {label, 1664}.
+    {jump, {f, 1637}}.
+  {label, 1638}.
+    {jump, {f, 1629}}.
+  {label, 1630}.
     {move, {y, 5}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
     {move, {x, 0}, {y, 16}}.
     {line, [{location, "std@io@fs.erl", 90}]}.
-  {label, 1664}.
-    {test, is_lt, {f, 1665}, [{integer, 0}, {y, 16}]}.
+  {label, 1665}.
+    {test, is_lt, {f, 1666}, [{integer, 0}, {y, 16}]}.
     {gc_bif, '-', {f, 0}, 0, [{y, 16}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1666}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1666}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1667}}.
-  {label, 1666}.
+    {test, is_ge, {f, 1667}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1667}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1668}}.
+  {label, 1667}.
     {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/io/fs.bp:1551:15">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1667}.
+  {label, 1668}.
     {move, {x, 0}, {y, 16}}.
     {move, {y, 5}, {x, 0}}.
     {move, {y, 16}, {x, 1}}.
     {call, 2, {f, 632}}.
-    {test, is_ne_exact, {f, 1668}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 1669}, [{x, 0}, {atom, undefined}]}.
     {move, {x, 0}, {y, 17}}.
     {move, {y, 17}, {x, 0}}.
-    {jump, {f, 1669}}.
-  {label, 1668}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {jump, {f, 1670}}.
   {label, 1669}.
-    {call, 1, {f, 966}}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 1670}.
+    {call, 1, {f, 967}}.
     {move, {x, 0}, {y, 18}}.
-    {test, is_lt, {f, 1670}, [{y, 18}, {integer, 0}]}.
+    {test, is_lt, {f, 1671}, [{y, 18}, {integer, 0}]}.
     {gc_bif, '-', {f, 0}, 0, [{integer, -1}, {y, 18}], {x, 0}}.
-    {test, is_ge, {f, 1671}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1671}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1672}}.
-  {label, 1671}.
+    {test, is_ge, {f, 1672}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1672}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1673}}.
+  {label, 1672}.
     {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/io/fs.bp:1553:39">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1672}.
+  {label, 1673}.
     {call, 1, {f, 67}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {deallocate, 21}.
     return.
-  {label, 1670}.
-    {jump, {f, 1664}}.
-  {label, 1665}.
+  {label, 1671}.
+    {jump, {f, 1665}}.
+  {label, 1666}.
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
@@ -13540,20 +13548,20 @@ test "fs answers PermissionDenied for an OS permission error" {
     {allocate, 4, 0}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {literal, <<"TMPDIR">>}, {x, 0}}.
-    {call, 1, {f, 966}}.
+    {call, 1, {f, 967}}.
     {move, {x, 0}, {y, 0}}.
     {move, {literal, <<"">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 1673}, [{y, 0}, {x, 0}]}.
+    {test, is_eq_exact, {f, 1674}, [{y, 0}, {x, 0}]}.
     {move, {literal, <<"/tmp">>}, {x, 0}}.
     {move, {x, 0}, {y, 0}}.
-    {jump, {f, 1674}}.
-  {label, 1673}.
+    {jump, {f, 1675}}.
   {label, 1674}.
+  {label, 1675}.
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 1}}.
     {line, [{location, "std@io@fs.erl", 91}]}.
-  {label, 1675}.
-    {test, is_lt, {f, 1676}, [{y, 1}, {integer, 100}]}.
+  {label, 1676}.
+    {test, is_lt, {f, 1677}, [{y, 1}, {integer, 100}]}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
     {move, {integer, 6}, {x, 0}}.
@@ -13573,31 +13581,31 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 668}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 669}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
     {call, 1, {f, 75}}.
-    {call, 1, {f, 966}}.
-    {test, is_eq_exact, {f, 1677}, [{x, 0}, {integer, 0}]}.
+    {call, 1, {f, 967}}.
+    {test, is_eq_exact, {f, 1678}, [{x, 0}, {integer, 0}]}.
     {move, {y, 3}, {x, 0}}.
     {deallocate, 4}.
     return.
-  {label, 1677}.
-    {gc_bif, '+', {f, 0}, 0, [{y, 1}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 1678}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1678}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1679}}.
   {label, 1678}.
+    {gc_bif, '+', {f, 0}, 0, [{y, 1}, {integer, 1}], {x, 0}}.
+    {test, is_ge, {f, 1679}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1679}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1680}}.
+  {label, 1679}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at src/io/fs.bp:1566:27">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1679}.
+  {label, 1680}.
     {move, {x, 0}, {y, 1}}.
-    {jump, {f, 1675}}.
-  {label, 1676}.
+    {jump, {f, 1676}}.
+  {label, 1677}.
     {move, {literal, <<"io.fs: no scratch directory could be made">>}, {x, 0}}.
-    {call, 1, {f, 1681}}.
+    {call, 1, {f, 1682}}.
     {move, {y, 0}, {x, 0}}.
     {deallocate, 4}.
     return.
@@ -13609,14 +13617,14 @@ test "fs answers PermissionDenied for an OS permission error" {
   {label, 159}.
     {allocate, 1, 0}.
     {init_yregs, {list, [{y, 0}]}}.
-    {call, 0, {f, 898}}.
+    {call, 0, {f, 899}}.
     {move, {x, 0}, {y, 0}}.
     {move, {literal, <<"">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 1682}, [{y, 0}, {x, 0}]}.
+    {test, is_eq_exact, {f, 1683}, [{y, 0}, {x, 0}]}.
     {move, {literal, <<"/">>}, {x, 0}}.
     {deallocate, 1}.
     return.
-  {label, 1682}.
+  {label, 1683}.
     {move, {y, 0}, {x, 0}}.
     {deallocate, 1}.
     return.
@@ -13634,46 +13642,46 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call, 1, {f, 79}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 1684}, [{x, 0}, 2, {atom, error}]}.
+    {test, is_tagged_tuple, {f, 1685}, [{x, 0}, 2, {atom, error}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 1685}}.
-  {label, 1684}.
-    {move, {atom, false}, {x, 0}}.
-  {label, 1685}.
-    {test, is_eq, {f, 1683}, [{x, 0}, {atom, true}]}.
-    {move, {literal, <<"io.fs: no link path">>}, {x, 0}}.
-    {call, 1, {f, 1681}}.
     {jump, {f, 1686}}.
-  {label, 1683}.
+  {label, 1685}.
+    {move, {atom, false}, {x, 0}}.
   {label, 1686}.
-    {move, {y, 2}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 1687}, [{x, 0}, 2, {atom, ok}]}.
-    {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 1688}}.
+    {test, is_eq, {f, 1684}, [{x, 0}, {atom, true}]}.
+    {move, {literal, <<"io.fs: no link path">>}, {x, 0}}.
+    {call, 1, {f, 1682}}.
+    {jump, {f, 1687}}.
+  {label, 1684}.
   {label, 1687}.
-    {move, {literal, <<"">>}, {x, 0}}.
+    {move, {y, 2}, {x, 0}}.
+    {test, is_tagged_tuple, {f, 1688}, [{x, 0}, 2, {atom, ok}]}.
+    {get_tuple_element, {x, 0}, 1, {x, 0}}.
+    {jump, {f, 1689}}.
   {label, 1688}.
+    {move, {literal, <<"">>}, {x, 0}}.
+  {label, 1689}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {call, 2, {f, 925}}.
+    {call, 2, {f, 926}}.
     {move, {x, 0}, {y, 3}}.
-    {test, is_lt, {f, 1689}, [{y, 3}, {integer, 0}]}.
+    {test, is_lt, {f, 1690}, [{y, 3}, {integer, 0}]}.
     {gc_bif, '-', {f, 0}, 0, [{integer, -1}, {y, 3}], {x, 0}}.
-    {test, is_ge, {f, 1690}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 1690}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 1691}}.
-  {label, 1690}.
+    {test, is_ge, {f, 1691}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 1691}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 1692}}.
+  {label, 1691}.
     {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at src/io/fs.bp:1582:43">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1691}.
-    {call, 1, {f, 67}}.
-    {test, is_tagged_tuple, {f, 1692}, [{x, 0}, 5, {atom, std@failure@@HostError}]}.
-    {get_tuple_element, {x, 0}, 1, {x, 0}}.
   {label, 1692}.
-    {call, 1, {f, 1681}}.
-    {jump, {f, 1693}}.
-  {label, 1689}.
+    {call, 1, {f, 67}}.
+    {test, is_tagged_tuple, {f, 1693}, [{x, 0}, 5, {atom, std@failure@@HostError}]}.
+    {get_tuple_element, {x, 0}, 1, {x, 0}}.
   {label, 1693}.
+    {call, 1, {f, 1682}}.
+    {jump, {f, 1694}}.
+  {label, 1690}.
+  {label, 1694}.
     {deallocate, 6}.
     return.
 % A host without `chmod` denies this user nothing: the permission tests have nothing to check there.
@@ -13717,20 +13725,20 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 39}}.
-    {test, is_tagged_tuple, {f, 1695}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 1696}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {jump, {f, 1694}}.
-  {label, 1695}.
-    {test, is_tagged_tuple, {f, 1696}, [{x, 0}, 2, {atom, error}]}.
+    {jump, {f, 1695}}.
+  {label, 1696}.
+    {test, is_tagged_tuple, {f, 1697}, [{x, 0}, 2, {atom, error}]}.
     {move, {atom, false}, {x, 0}}.
     {test_heap, 5, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, std@io@fs@@FileStat}, {integer, -1}, {integer, -1}, {x, 0}]}}.
-    {jump, {f, 1694}}.
-  {label, 1696}.
+    {jump, {f, 1695}}.
+  {label, 1697}.
     {case_end, {x, 0}}.
-  {label, 1694}.
+  {label, 1695}.
     {deallocate, 2}.
     return.
 % Internal, test scaffolding: `<dir>/app/page.bp`, `<dir>/app/blog/page.bp`,
@@ -13864,7 +13872,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {allocate, 5, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
     {move, {x, 0}, {y, 0}}.
-    {call, 0, {f, 1698}}.
+    {call, 0, {f, 1699}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {call, 1, {f, 169}}.
@@ -13886,17 +13894,17 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 2}, {x, 0}}.
     {call, 2, {f, 637}}.
     {call, 1, {f, 53}}.
-    {test, is_tagged_tuple, {f, 1714}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 1715}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 1715}}.
-  {label, 1714}.
+    {jump, {f, 1716}}.
+  {label, 1715}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
     {move, {literal, <<"<error>">>}, {x, 0}}.
     {move, {y, 3}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
-  {label, 1715}.
+  {label, 1716}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 1}, {x, 0}}.
     {call, 1, {f, 49}}.
@@ -13915,7 +13923,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {allocate, 8, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}]}}.
     {move, {x, 0}, {y, 0}}.
-    {call, 0, {f, 1698}}.
+    {call, 0, {f, 1699}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {call, 1, {f, 169}}.
@@ -13926,7 +13934,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
-    {call, 0, {f, 1717}}.
+    {call, 0, {f, 1718}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, std@path, relative, 2}}.
     {move, {y, 2}, {x, 1}}.
@@ -13946,17 +13954,17 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
     {call, 1, {f, 53}}.
-    {test, is_tagged_tuple, {f, 1726}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 1727}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 1727}}.
-  {label, 1726}.
+    {jump, {f, 1728}}.
+  {label, 1727}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 4}}.
     {move, {literal, <<"<error>">>}, {x, 0}}.
     {move, {y, 4}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
-  {label, 1727}.
+  {label, 1728}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 1}, {x, 0}}.
     {call, 1, {f, 49}}.
@@ -13976,19 +13984,19 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 53}}.
-    {test, is_tagged_tuple, {f, 1729}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 1730}, [{x, 0}, 2, {atom, ok}]}.
     {move, {literal, <<"">>}, {x, 0}}.
-    {jump, {f, 1728}}.
-  {label, 1729}.
-    {test, is_tagged_tuple, {f, 1730}, [{x, 0}, 2, {atom, error}]}.
+    {jump, {f, 1729}}.
+  {label, 1730}.
+    {test, is_tagged_tuple, {f, 1731}, [{x, 0}, 2, {atom, error}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {call, 1, {f, 177}}.
-    {jump, {f, 1728}}.
-  {label, 1730}.
+    {jump, {f, 1729}}.
+  {label, 1731}.
     {case_end, {x, 0}}.
-  {label, 1728}.
+  {label, 1729}.
     {deallocate, 2}.
     return.
 % Internal, test scaffolding: an `FsError` as one line — the variant, the path
@@ -14003,7 +14011,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}, {y, 14}, {y, 15}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 1732}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__notfound}]}.
+    {test, is_tagged_tuple, {f, 1733}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__notfound}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 1}}.
     {move, nil, {x, 0}}.
@@ -14019,12 +14027,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 668}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 669}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
-    {jump, {f, 1731}}.
-  {label, 1732}.
-    {test, is_tagged_tuple, {f, 1733}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__permissiondenied}]}.
+    {jump, {f, 1732}}.
+  {label, 1733}.
+    {test, is_tagged_tuple, {f, 1734}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__permissiondenied}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 3}}.
     {move, nil, {x, 0}}.
@@ -14040,12 +14048,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 668}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 669}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
-    {jump, {f, 1731}}.
-  {label, 1733}.
-    {test, is_tagged_tuple, {f, 1734}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__isdirectory}]}.
+    {jump, {f, 1732}}.
+  {label, 1734}.
+    {test, is_tagged_tuple, {f, 1735}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__isdirectory}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 5}}.
     {move, nil, {x, 0}}.
@@ -14061,12 +14069,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 668}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 669}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
-    {jump, {f, 1731}}.
-  {label, 1734}.
-    {test, is_tagged_tuple, {f, 1735}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__notdirectory}]}.
+    {jump, {f, 1732}}.
+  {label, 1735}.
+    {test, is_tagged_tuple, {f, 1736}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__notdirectory}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 7}}.
     {move, nil, {x, 0}}.
@@ -14082,12 +14090,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 668}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 669}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
-    {jump, {f, 1731}}.
-  {label, 1735}.
-    {test, is_tagged_tuple, {f, 1736}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__alreadyexists}]}.
+    {jump, {f, 1732}}.
+  {label, 1736}.
+    {test, is_tagged_tuple, {f, 1737}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__alreadyexists}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 9}}.
     {move, nil, {x, 0}}.
@@ -14103,12 +14111,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 668}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 669}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
-    {jump, {f, 1731}}.
-  {label, 1736}.
-    {test, is_tagged_tuple, {f, 1737}, [{x, 0}, 3, {atom, std@io@fs@@FsError__v__invalidutf8}]}.
+    {jump, {f, 1732}}.
+  {label, 1737}.
+    {test, is_tagged_tuple, {f, 1738}, [{x, 0}, 3, {atom, std@io@fs@@FsError__v__invalidutf8}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 11}}.
     {get_tuple_element, {x, 0}, 2, {x, 1}}.
@@ -14137,21 +14145,21 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 668}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 669}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
-    {jump, {f, 1731}}.
-  {label, 1737}.
-    {test, is_tagged_tuple, {f, 1738}, [{x, 0}, 3, {atom, std@io@fs@@FsError__v__other}]}.
+    {jump, {f, 1732}}.
+  {label, 1738}.
+    {test, is_tagged_tuple, {f, 1739}, [{x, 0}, 3, {atom, std@io@fs@@FsError__v__other}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 14}}.
     {get_tuple_element, {x, 0}, 2, {x, 1}}.
     {move, {x, 1}, {y, 15}}.
     {move, {y, 15}, {x, 0}}.
-    {jump, {f, 1731}}.
-  {label, 1738}.
+    {jump, {f, 1732}}.
+  {label, 1739}.
     {case_end, {x, 0}}.
-  {label, 1731}.
+  {label, 1732}.
     {deallocate, 16}.
     return.
 % Internal, test scaffolding: the fixture tree plus the names decision 177 is
@@ -14276,7 +14284,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call, 2, {f, 637}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 5}, {x, 0}}.
-    {call, 2, {f, 1740}}.
+    {call, 2, {f, 1741}}.
     {move, {literal, <<"page.bp">>}, {x, 0}}.
     {move, {x, 0}, {y, 7}}.
     {move, nil, {x, 0}}.
@@ -14298,7 +14306,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call, 2, {f, 637}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 7}, {x, 0}}.
-    {call, 2, {f, 1740}}.
+    {call, 2, {f, 1741}}.
     {move, {literal, <<"missing.bp">>}, {x, 0}}.
     {move, {x, 0}, {y, 9}}.
     {move, nil, {x, 0}}.
@@ -14320,7 +14328,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call, 2, {f, 637}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 9}, {x, 0}}.
-    {call, 2, {f, 1740}}.
+    {call, 2, {f, 1741}}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 14}.
     return.
@@ -14335,7 +14343,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {allocate, 7, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
     {move, {x, 0}, {y, 0}}.
-    {call, 0, {f, 1698}}.
+    {call, 0, {f, 1699}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {call, 1, {f, 179}}.
@@ -14359,17 +14367,17 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call, 2, {f, 55}}.
-    {test, is_tagged_tuple, {f, 1749}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 1750}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 1750}}.
-  {label, 1749}.
+    {jump, {f, 1751}}.
+  {label, 1750}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
     {move, {literal, <<"<error>">>}, {x, 0}}.
     {move, {y, 3}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
-  {label, 1750}.
+  {label, 1751}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 1}, {x, 0}}.
     {call, 1, {f, 49}}.
@@ -14389,19 +14397,19 @@ test "fs answers PermissionDenied for an OS permission error" {
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 1752}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 1753}, [{x, 0}, 2, {atom, ok}]}.
     {move, {literal, <<"ok">>}, {x, 0}}.
-    {jump, {f, 1751}}.
-  {label, 1752}.
-    {test, is_tagged_tuple, {f, 1753}, [{x, 0}, 2, {atom, error}]}.
+    {jump, {f, 1752}}.
+  {label, 1753}.
+    {test, is_tagged_tuple, {f, 1754}, [{x, 0}, 2, {atom, error}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {call, 1, {f, 177}}.
-    {jump, {f, 1751}}.
-  {label, 1753}.
+    {jump, {f, 1752}}.
+  {label, 1754}.
     {case_end, {x, 0}}.
-  {label, 1751}.
+  {label, 1752}.
     {deallocate, 2}.
     return.
 % Internal, test scaffolding: the file a failed `open` falls back to.
@@ -14416,8 +14424,8 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {literal, <<"">>}, {x, 0}}.
     {move, {x, 0}, {y, 0}}.
     {move, {literal, <<"">>}, {x, 0}}.
-    {call, 1, {f, 913}}.
-    {call, 1, {f, 872}}.
+    {call, 1, {f, 914}}.
+    {call, 1, {f, 873}}.
     {test_heap, 4, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, std@io@fs@@File}, {y, 0}, {x, 0}]}}.
     {deallocate, 2}.
@@ -14425,548 +14433,548 @@ test "fs answers PermissionDenied for an OS permission error" {
 % Internal, test scaffolding: take every permission from `path`; whether that
 % denies this user anything (root is denied nothing), and give them back.
 
-{function, 'string_slice', 3, 891}.
-  {label, 890}.
+{function, 'string_slice', 3, 892}.
+  {label, 891}.
     {line, [{location, "std@io@fs.erl", 105}]}.
     {func_info, {atom, std@io@fs}, {atom, 'string_slice'}, 3}.
-  {label, 891}.
+  {label, 892}.
     {allocate, 3, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {x, 2}, {y, 2}}.
-    {test, is_ne_exact, {f, 1754}, [{y, 2}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 1755}, [{y, 2}, {atom, undefined}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 2}, {x, 2}}.
     {move, {y, 1}, {x, 1}}.
-    {call_last, 3, {f, 1756}, 3}.
-  {label, 1754}.
+    {call_last, 3, {f, 1757}, 3}.
+  {label, 1755}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
-    {call_last, 2, {f, 1778}, 3}.
+    {call_last, 2, {f, 1779}, 3}.
 
-{function, 'bytes_slice', 3, 1091}.
-  {label, 1090}.
+{function, 'bytes_slice', 3, 1092}.
+  {label, 1091}.
     {line, [{location, "std@io@fs.erl", 106}]}.
     {func_info, {atom, std@io@fs}, {atom, 'bytes_slice'}, 3}.
-  {label, 1091}.
+  {label, 1092}.
     {allocate, 3, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {x, 2}, {y, 2}}.
-    {test, is_ne_exact, {f, 1794}, [{y, 2}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 1795}, [{y, 2}, {atom, undefined}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 2}, {x, 2}}.
     {move, {y, 1}, {x, 1}}.
-    {call_last, 3, {f, 1796}, 3}.
-  {label, 1794}.
+    {call_last, 3, {f, 1797}, 3}.
+  {label, 1795}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
-    {call_last, 2, {f, 1816}, 3}.
+    {call_last, 2, {f, 1817}, 3}.
 
-{function, '__bp_priv__array_range', 2, 1832}.
-  {label, 1831}.
+{function, '__bp_priv__array_range', 2, 1833}.
+  {label, 1832}.
     {line, [{location, "std@io@fs.erl", 108}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__array_range'}, 2}.
-  {label, 1832}.
+  {label, 1833}.
     {call_only, 2, {f, 3}}.
 
-{function, '__bp_priv__array_repeat', 2, 1834}.
-  {label, 1833}.
+{function, '__bp_priv__array_repeat', 2, 1835}.
+  {label, 1834}.
     {line, [{location, "std@io@fs.erl", 109}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__array_repeat'}, 2}.
-  {label, 1834}.
+  {label, 1835}.
     {call_only, 2, {f, 5}}.
 
-{function, '__bp_priv__bytes_slice', 3, 1836}.
-  {label, 1835}.
+{function, '__bp_priv__bytes_slice', 3, 1837}.
+  {label, 1836}.
     {line, [{location, "std@io@fs.erl", 110}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__bytes_slice'}, 3}.
-  {label, 1836}.
-    {call_only, 3, {f, 1091}}.
-
-{function, '__bp_priv__string_slice', 3, 1838}.
   {label, 1837}.
+    {call_only, 3, {f, 1092}}.
+
+{function, '__bp_priv__string_slice', 3, 1839}.
+  {label, 1838}.
     {line, [{location, "std@io@fs.erl", 111}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__string_slice'}, 3}.
-  {label, 1838}.
-    {call_only, 3, {f, 891}}.
-
-{function, '__bp_priv__allowAllWasm', 1, 1840}.
   {label, 1839}.
+    {call_only, 3, {f, 892}}.
+
+{function, '__bp_priv__allowAllWasm', 1, 1841}.
+  {label, 1840}.
     {line, [{location, "std@io@fs.erl", 112}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__allowAllWasm'}, 1}.
-  {label, 1840}.
+  {label, 1841}.
     {call_only, 1, {f, 165}}.
 
-{function, '__bp_priv__appendTextWasm', 2, 1842}.
-  {label, 1841}.
+{function, '__bp_priv__appendTextWasm', 2, 1843}.
+  {label, 1842}.
     {line, [{location, "std@io@fs.erl", 113}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__appendTextWasm'}, 2}.
-  {label, 1842}.
+  {label, 1843}.
     {call_only, 2, {f, 93}}.
 
-{function, '__bp_priv__blockOf', 1, 1844}.
-  {label, 1843}.
+{function, '__bp_priv__blockOf', 1, 1845}.
+  {label, 1844}.
     {line, [{location, "std@io@fs.erl", 114}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__blockOf'}, 1}.
-  {label, 1844}.
+  {label, 1845}.
     {call_only, 1, {f, 81}}.
 
-{function, '__bp_priv__bytesBefore', 2, 1846}.
-  {label, 1845}.
+{function, '__bp_priv__bytesBefore', 2, 1847}.
+  {label, 1846}.
     {line, [{location, "std@io@fs.erl", 115}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__bytesBefore'}, 2}.
-  {label, 1846}.
+  {label, 1847}.
     {call_only, 2, {f, 83}}.
 
-{function, '__bp_priv__classEnd', 2, 1848}.
-  {label, 1847}.
+{function, '__bp_priv__classEnd', 2, 1849}.
+  {label, 1848}.
     {line, [{location, "std@io@fs.erl", 116}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__classEnd'}, 2}.
-  {label, 1848}.
+  {label, 1849}.
     {call_only, 2, {f, 141}}.
 
-{function, '__bp_priv__classHas', 4, 1850}.
-  {label, 1849}.
+{function, '__bp_priv__classHas', 4, 1851}.
+  {label, 1850}.
     {line, [{location, "std@io@fs.erl", 117}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__classHas'}, 4}.
-  {label, 1850}.
+  {label, 1851}.
     {call_only, 4, {f, 143}}.
 
-{function, '__bp_priv__closeWasm', 1, 1852}.
-  {label, 1851}.
+{function, '__bp_priv__closeWasm', 1, 1853}.
+  {label, 1852}.
     {line, [{location, "std@io@fs.erl", 118}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__closeWasm'}, 1}.
-  {label, 1852}.
+  {label, 1853}.
     {call_only, 1, {f, 117}}.
 
-{function, '__bp_priv__copyWasm', 2, 1854}.
-  {label, 1853}.
+{function, '__bp_priv__copyWasm', 2, 1855}.
+  {label, 1854}.
     {line, [{location, "std@io@fs.erl", 119}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__copyWasm'}, 2}.
-  {label, 1854}.
+  {label, 1855}.
     {call_only, 2, {f, 131}}.
 
-{function, '__bp_priv__createWasm', 1, 1856}.
-  {label, 1855}.
+{function, '__bp_priv__createWasm', 1, 1857}.
+  {label, 1856}.
     {line, [{location, "std@io@fs.erl", 120}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__createWasm'}, 1}.
-  {label, 1856}.
+  {label, 1857}.
     {call_only, 1, {f, 101}}.
 
-{function, '__bp_priv__denyAllWasm', 1, 1858}.
-  {label, 1857}.
+{function, '__bp_priv__denyAllWasm', 1, 1859}.
+  {label, 1858}.
     {line, [{location, "std@io@fs.erl", 121}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__denyAllWasm'}, 1}.
-  {label, 1858}.
+  {label, 1859}.
     {call_only, 1, {f, 163}}.
 
-{function, '__bp_priv__describe', 1, 1860}.
-  {label, 1859}.
+{function, '__bp_priv__describe', 1, 1861}.
+  {label, 1860}.
     {line, [{location, "std@io@fs.erl", 122}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__describe'}, 1}.
-  {label, 1860}.
+  {label, 1861}.
     {call_only, 1, {f, 177}}.
 
-{function, '__bp_priv__existsWasm', 1, 1862}.
-  {label, 1861}.
+{function, '__bp_priv__existsWasm', 1, 1863}.
+  {label, 1862}.
     {line, [{location, "std@io@fs.erl", 123}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__existsWasm'}, 1}.
-  {label, 1862}.
+  {label, 1863}.
     {call_only, 1, {f, 121}}.
 
-{function, '__bp_priv__expandBraces', 1, 1864}.
-  {label, 1863}.
+{function, '__bp_priv__expandBraces', 1, 1865}.
+  {label, 1864}.
     {line, [{location, "std@io@fs.erl", 124}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__expandBraces'}, 1}.
-  {label, 1864}.
+  {label, 1865}.
     {call_only, 1, {f, 139}}.
 
-{function, '__bp_priv__fsError', 2, 1866}.
-  {label, 1865}.
+{function, '__bp_priv__fsError', 2, 1867}.
+  {label, 1866}.
     {line, [{location, "std@io@fs.erl", 125}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__fsError'}, 2}.
-  {label, 1866}.
+  {label, 1867}.
     {call_only, 2, {f, 7}}.
 
-{function, '__bp_priv__globMatch', 4, 1868}.
-  {label, 1867}.
+{function, '__bp_priv__globMatch', 4, 1869}.
+  {label, 1868}.
     {line, [{location, "std@io@fs.erl", 126}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__globMatch'}, 4}.
-  {label, 1868}.
+  {label, 1869}.
     {call_only, 4, {f, 145}}.
 
-{function, '__bp_priv__globNames', 2, 1870}.
-  {label, 1869}.
+{function, '__bp_priv__globNames', 2, 1871}.
+  {label, 1870}.
     {line, [{location, "std@io@fs.erl", 127}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__globNames'}, 2}.
-  {label, 1870}.
+  {label, 1871}.
     {call_only, 2, {f, 149}}.
 
-{function, '__bp_priv__globWalk', 5, 1872}.
-  {label, 1871}.
+{function, '__bp_priv__globWalk', 5, 1873}.
+  {label, 1872}.
     {line, [{location, "std@io@fs.erl", 128}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__globWalk'}, 5}.
-  {label, 1872}.
+  {label, 1873}.
     {call_only, 5, {f, 151}}.
 
-{function, '__bp_priv__globWasm', 2, 1874}.
-  {label, 1873}.
+{function, '__bp_priv__globWasm', 2, 1875}.
+  {label, 1874}.
     {line, [{location, "std@io@fs.erl", 129}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__globWasm'}, 2}.
-  {label, 1874}.
+  {label, 1875}.
     {call_only, 2, {f, 153}}.
 
-{function, '__bp_priv__globbed', 1, 1876}.
-  {label, 1875}.
+{function, '__bp_priv__globbed', 1, 1877}.
+  {label, 1876}.
     {line, [{location, "std@io@fs.erl", 130}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__globbed'}, 1}.
-  {label, 1876}.
+  {label, 1877}.
     {call_only, 1, {f, 181}}.
 
-{function, '__bp_priv__hashWasm', 1, 1878}.
-  {label, 1877}.
+{function, '__bp_priv__hashWasm', 1, 1879}.
+  {label, 1878}.
     {line, [{location, "std@io@fs.erl", 131}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__hashWasm'}, 1}.
-  {label, 1878}.
+  {label, 1879}.
     {call_only, 1, {f, 113}}.
 
-{function, '__bp_priv__isMagic', 1, 1880}.
-  {label, 1879}.
+{function, '__bp_priv__isMagic', 1, 1881}.
+  {label, 1880}.
     {line, [{location, "std@io@fs.erl", 132}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__isMagic'}, 1}.
-  {label, 1880}.
+  {label, 1881}.
     {call_only, 1, {f, 137}}.
 
-{function, '__bp_priv__joinPath', 2, 1882}.
-  {label, 1881}.
+{function, '__bp_priv__joinPath', 2, 1883}.
+  {label, 1882}.
     {line, [{location, "std@io@fs.erl", 133}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__joinPath'}, 2}.
-  {label, 1882}.
+  {label, 1883}.
     {call_only, 2, {f, 77}}.
 
-{function, '__bp_priv__lift', 2, 1884}.
-  {label, 1883}.
+{function, '__bp_priv__lift', 2, 1885}.
+  {label, 1884}.
     {line, [{location, "std@io@fs.erl", 134}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__lift'}, 2}.
-  {label, 1884}.
+  {label, 1885}.
     {call_only, 2, {f, 9}}.
 
-{function, '__bp_priv__liftHandle', 2, 1886}.
-  {label, 1885}.
+{function, '__bp_priv__liftHandle', 2, 1887}.
+  {label, 1886}.
     {line, [{location, "std@io@fs.erl", 135}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__liftHandle'}, 2}.
-  {label, 1886}.
+  {label, 1887}.
     {call_only, 2, {f, 25}}.
 
-{function, '__bp_priv__liftStat', 2, 1888}.
-  {label, 1887}.
+{function, '__bp_priv__liftStat', 2, 1889}.
+  {label, 1888}.
     {line, [{location, "std@io@fs.erl", 136}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__liftStat'}, 2}.
-  {label, 1888}.
+  {label, 1889}.
     {call_only, 2, {f, 21}}.
 
-{function, '__bp_priv__liftStrings', 2, 1890}.
-  {label, 1889}.
+{function, '__bp_priv__liftStrings', 2, 1891}.
+  {label, 1890}.
     {line, [{location, "std@io@fs.erl", 137}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__liftStrings'}, 2}.
-  {label, 1890}.
+  {label, 1891}.
     {call_only, 2, {f, 19}}.
 
-{function, '__bp_priv__liftWalked', 2, 1892}.
-  {label, 1891}.
+{function, '__bp_priv__liftWalked', 2, 1893}.
+  {label, 1892}.
     {line, [{location, "std@io@fs.erl", 138}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__liftWalked'}, 2}.
-  {label, 1892}.
+  {label, 1893}.
     {call_only, 2, {f, 23}}.
 
-{function, '__bp_priv__linkToWasm', 2, 1894}.
-  {label, 1893}.
+{function, '__bp_priv__linkToWasm', 2, 1895}.
+  {label, 1894}.
     {line, [{location, "std@io@fs.erl", 139}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__linkToWasm'}, 2}.
-  {label, 1894}.
+  {label, 1895}.
     {call_only, 2, {f, 161}}.
 
-{function, '__bp_priv__listWasm', 1, 1896}.
-  {label, 1895}.
+{function, '__bp_priv__listWasm', 1, 1897}.
+  {label, 1896}.
     {line, [{location, "std@io@fs.erl", 140}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__listWasm'}, 1}.
-  {label, 1896}.
+  {label, 1897}.
     {call_only, 1, {f, 123}}.
 
-{function, '__bp_priv__makeFixtureTree', 1, 1898}.
-  {label, 1897}.
+{function, '__bp_priv__makeFixtureTree', 1, 1899}.
+  {label, 1898}.
     {line, [{location, "std@io@fs.erl", 141}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__makeFixtureTree'}, 1}.
-  {label, 1898}.
+  {label, 1899}.
     {call_only, 1, {f, 169}}.
 
-{function, '__bp_priv__makeGlobTree', 1, 1900}.
-  {label, 1899}.
+{function, '__bp_priv__makeGlobTree', 1, 1901}.
+  {label, 1900}.
     {line, [{location, "std@io@fs.erl", 142}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__makeGlobTree'}, 1}.
-  {label, 1900}.
+  {label, 1901}.
     {call_only, 1, {f, 179}}.
 
-{function, '__bp_priv__memHandleWasm', 1, 1902}.
-  {label, 1901}.
+{function, '__bp_priv__memHandleWasm', 1, 1903}.
+  {label, 1902}.
     {line, [{location, "std@io@fs.erl", 143}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__memHandleWasm'}, 1}.
-  {label, 1902}.
+  {label, 1903}.
     {call_only, 1, {f, 103}}.
 
-{function, '__bp_priv__mkdirRecursiveWasm', 1, 1904}.
-  {label, 1903}.
+{function, '__bp_priv__mkdirRecursiveWasm', 1, 1905}.
+  {label, 1904}.
     {line, [{location, "std@io@fs.erl", 144}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__mkdirRecursiveWasm'}, 1}.
-  {label, 1904}.
+  {label, 1905}.
     {call_only, 1, {f, 127}}.
 
-{function, '__bp_priv__mkdirWasm', 1, 1906}.
-  {label, 1905}.
+{function, '__bp_priv__mkdirWasm', 1, 1907}.
+  {label, 1906}.
     {line, [{location, "std@io@fs.erl", 145}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__mkdirWasm'}, 1}.
-  {label, 1906}.
+  {label, 1907}.
     {call_only, 1, {f, 125}}.
 
-{function, '__bp_priv__noFile', 0, 1908}.
-  {label, 1907}.
+{function, '__bp_priv__noFile', 0, 1909}.
+  {label, 1908}.
     {line, [{location, "std@io@fs.erl", 146}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__noFile'}, 0}.
-  {label, 1908}.
+  {label, 1909}.
     {call_only, 0, {f, 185}}.
 
-{function, '__bp_priv__okBytes', 1, 1910}.
-  {label, 1909}.
+{function, '__bp_priv__okBytes', 1, 1911}.
+  {label, 1910}.
     {line, [{location, "std@io@fs.erl", 147}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__okBytes'}, 1}.
-  {label, 1910}.
+  {label, 1911}.
     {call_only, 1, {f, 69}}.
 
-{function, '__bp_priv__okSize', 1, 1912}.
-  {label, 1911}.
+{function, '__bp_priv__okSize', 1, 1913}.
+  {label, 1912}.
     {line, [{location, "std@io@fs.erl", 148}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__okSize'}, 1}.
-  {label, 1912}.
+  {label, 1913}.
     {call_only, 1, {f, 73}}.
 
-{function, '__bp_priv__okStrings', 1, 1914}.
-  {label, 1913}.
+{function, '__bp_priv__okStrings', 1, 1915}.
+  {label, 1914}.
     {line, [{location, "std@io@fs.erl", 149}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__okStrings'}, 1}.
-  {label, 1914}.
+  {label, 1915}.
     {call_only, 1, {f, 71}}.
 
-{function, '__bp_priv__openWasm', 1, 1916}.
-  {label, 1915}.
+{function, '__bp_priv__openWasm', 1, 1917}.
+  {label, 1916}.
     {line, [{location, "std@io@fs.erl", 150}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__openWasm'}, 1}.
-  {label, 1916}.
+  {label, 1917}.
     {call_only, 1, {f, 99}}.
 
-{function, '__bp_priv__readAllWasm', 1, 1918}.
-  {label, 1917}.
+{function, '__bp_priv__readAllWasm', 1, 1919}.
+  {label, 1918}.
     {line, [{location, "std@io@fs.erl", 151}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__readAllWasm'}, 1}.
-  {label, 1918}.
+  {label, 1919}.
     {call_only, 1, {f, 109}}.
 
-{function, '__bp_priv__readBytesWasm', 1, 1920}.
-  {label, 1919}.
+{function, '__bp_priv__readBytesWasm', 1, 1921}.
+  {label, 1920}.
     {line, [{location, "std@io@fs.erl", 152}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__readBytesWasm'}, 1}.
-  {label, 1920}.
+  {label, 1921}.
     {call_only, 1, {f, 87}}.
 
-{function, '__bp_priv__readLineWasm', 1, 1922}.
-  {label, 1921}.
+{function, '__bp_priv__readLineWasm', 1, 1923}.
+  {label, 1922}.
     {line, [{location, "std@io@fs.erl", 153}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__readLineWasm'}, 1}.
-  {label, 1922}.
+  {label, 1923}.
     {call_only, 1, {f, 111}}.
 
-{function, '__bp_priv__readOnlyWasm', 1, 1924}.
-  {label, 1923}.
+{function, '__bp_priv__readOnlyWasm', 1, 1925}.
+  {label, 1924}.
     {line, [{location, "std@io@fs.erl", 154}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__readOnlyWasm'}, 1}.
-  {label, 1924}.
+  {label, 1925}.
     {call_only, 1, {f, 119}}.
 
-{function, '__bp_priv__readWasm', 2, 1926}.
-  {label, 1925}.
+{function, '__bp_priv__readWasm', 2, 1927}.
+  {label, 1926}.
     {line, [{location, "std@io@fs.erl", 155}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__readWasm'}, 2}.
-  {label, 1926}.
+  {label, 1927}.
     {call_only, 2, {f, 107}}.
 
-{function, '__bp_priv__removeTreeWasm', 1, 1928}.
-  {label, 1927}.
+{function, '__bp_priv__removeTreeWasm', 1, 1929}.
+  {label, 1928}.
     {line, [{location, "std@io@fs.erl", 156}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__removeTreeWasm'}, 1}.
-  {label, 1928}.
+  {label, 1929}.
     {call_only, 1, {f, 155}}.
 
-{function, '__bp_priv__resolve', 1, 1930}.
-  {label, 1929}.
+{function, '__bp_priv__resolve', 1, 1931}.
+  {label, 1930}.
     {line, [{location, "std@io@fs.erl", 157}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__resolve'}, 1}.
-  {label, 1930}.
+  {label, 1931}.
     {call_only, 1, {f, 79}}.
 
-{function, '__bp_priv__rmWasm', 1, 1932}.
-  {label, 1931}.
+{function, '__bp_priv__rmWasm', 1, 1933}.
+  {label, 1932}.
     {line, [{location, "std@io@fs.erl", 158}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__rmWasm'}, 1}.
-  {label, 1932}.
+  {label, 1933}.
     {call_only, 1, {f, 129}}.
 
-{function, '__bp_priv__scratchDirWasm', 0, 1934}.
-  {label, 1933}.
+{function, '__bp_priv__scratchDirWasm', 0, 1935}.
+  {label, 1934}.
     {line, [{location, "std@io@fs.erl", 159}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__scratchDirWasm'}, 0}.
-  {label, 1934}.
+  {label, 1935}.
     {call_only, 0, {f, 157}}.
 
-{function, '__bp_priv__segmentMatches', 2, 1936}.
-  {label, 1935}.
+{function, '__bp_priv__segmentMatches', 2, 1937}.
+  {label, 1936}.
     {line, [{location, "std@io@fs.erl", 160}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__segmentMatches'}, 2}.
-  {label, 1936}.
+  {label, 1937}.
     {call_only, 2, {f, 147}}.
 
-{function, '__bp_priv__sizeWasm', 2, 1938}.
-  {label, 1937}.
+{function, '__bp_priv__sizeWasm', 2, 1939}.
+  {label, 1938}.
     {line, [{location, "std@io@fs.erl", 161}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__sizeWasm'}, 2}.
-  {label, 1938}.
+  {label, 1939}.
     {call_only, 2, {f, 105}}.
 
-{function, '__bp_priv__sortedStrings', 1, 1940}.
-  {label, 1939}.
+{function, '__bp_priv__sortedStrings', 1, 1941}.
+  {label, 1940}.
     {line, [{location, "std@io@fs.erl", 162}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__sortedStrings'}, 1}.
-  {label, 1940}.
+  {label, 1941}.
     {call_only, 1, {f, 85}}.
 
-{function, '__bp_priv__statOr', 1, 1942}.
-  {label, 1941}.
+{function, '__bp_priv__statOr', 1, 1943}.
+  {label, 1942}.
     {line, [{location, "std@io@fs.erl", 163}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__statOr'}, 1}.
-  {label, 1942}.
+  {label, 1943}.
     {call_only, 1, {f, 167}}.
 
-{function, '__bp_priv__statWasm', 1, 1944}.
-  {label, 1943}.
+{function, '__bp_priv__statWasm', 1, 1945}.
+  {label, 1944}.
     {line, [{location, "std@io@fs.erl", 164}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__statWasm'}, 1}.
-  {label, 1944}.
+  {label, 1945}.
     {call_only, 1, {f, 133}}.
 
-{function, '__bp_priv__stripEolWasm', 1, 1946}.
-  {label, 1945}.
+{function, '__bp_priv__stripEolWasm', 1, 1947}.
+  {label, 1946}.
     {line, [{location, "std@io@fs.erl", 165}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__stripEolWasm'}, 1}.
-  {label, 1946}.
+  {label, 1947}.
     {call_only, 1, {f, 97}}.
 
-{function, '__bp_priv__utf8OffsetWasm', 1, 1948}.
-  {label, 1947}.
+{function, '__bp_priv__utf8OffsetWasm', 1, 1949}.
+  {label, 1948}.
     {line, [{location, "std@io@fs.erl", 166}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__utf8OffsetWasm'}, 1}.
-  {label, 1948}.
+  {label, 1949}.
     {call_only, 1, {f, 95}}.
 
-{function, '__bp_priv__variantOf', 1, 1950}.
-  {label, 1949}.
+{function, '__bp_priv__variantOf', 1, 1951}.
+  {label, 1950}.
     {line, [{location, "std@io@fs.erl", 167}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__variantOf'}, 1}.
-  {label, 1950}.
+  {label, 1951}.
     {call_only, 1, {f, 183}}.
 
-{function, '__bp_priv__walkFixture', 1, 1952}.
-  {label, 1951}.
+{function, '__bp_priv__walkFixture', 1, 1953}.
+  {label, 1952}.
     {line, [{location, "std@io@fs.erl", 168}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__walkFixture'}, 1}.
-  {label, 1952}.
+  {label, 1953}.
     {call_only, 1, {f, 171}}.
 
-{function, '__bp_priv__walkFixtureFromCwd', 1, 1954}.
-  {label, 1953}.
+{function, '__bp_priv__walkFixtureFromCwd', 1, 1955}.
+  {label, 1954}.
     {line, [{location, "std@io@fs.erl", 169}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__walkFixtureFromCwd'}, 1}.
-  {label, 1954}.
+  {label, 1955}.
     {call_only, 1, {f, 173}}.
 
-{function, '__bp_priv__walkRefusal', 1, 1956}.
-  {label, 1955}.
+{function, '__bp_priv__walkRefusal', 1, 1957}.
+  {label, 1956}.
     {line, [{location, "std@io@fs.erl", 170}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__walkRefusal'}, 1}.
-  {label, 1956}.
+  {label, 1957}.
     {call_only, 1, {f, 175}}.
 
-{function, '__bp_priv__walkWasm', 1, 1958}.
-  {label, 1957}.
+{function, '__bp_priv__walkWasm', 1, 1959}.
+  {label, 1958}.
     {line, [{location, "std@io@fs.erl", 171}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__walkWasm'}, 1}.
-  {label, 1958}.
+  {label, 1959}.
     {call_only, 1, {f, 135}}.
 
-{function, '__bp_priv__wasiError', 1, 1960}.
-  {label, 1959}.
+{function, '__bp_priv__wasiError', 1, 1961}.
+  {label, 1960}.
     {line, [{location, "std@io@fs.erl", 172}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__wasiError'}, 1}.
-  {label, 1960}.
+  {label, 1961}.
     {call_only, 1, {f, 67}}.
 
-{function, '__bp_priv__wasiName', 1, 1962}.
-  {label, 1961}.
+{function, '__bp_priv__wasiName', 1, 1963}.
+  {label, 1962}.
     {line, [{location, "std@io@fs.erl", 173}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__wasiName'}, 1}.
-  {label, 1962}.
+  {label, 1963}.
     {call_only, 1, {f, 63}}.
 
-{function, '__bp_priv__wasiText', 1, 1964}.
-  {label, 1963}.
+{function, '__bp_priv__wasiText', 1, 1965}.
+  {label, 1964}.
     {line, [{location, "std@io@fs.erl", 174}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__wasiText'}, 1}.
-  {label, 1964}.
+  {label, 1965}.
     {call_only, 1, {f, 65}}.
 
-{function, '__bp_priv__withoutRoot', 1, 1966}.
-  {label, 1965}.
+{function, '__bp_priv__withoutRoot', 1, 1967}.
+  {label, 1966}.
     {line, [{location, "std@io@fs.erl", 175}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__withoutRoot'}, 1}.
-  {label, 1966}.
+  {label, 1967}.
     {call_only, 1, {f, 75}}.
 
-{function, '__bp_priv__workingDirWasm', 0, 1968}.
-  {label, 1967}.
+{function, '__bp_priv__workingDirWasm', 0, 1969}.
+  {label, 1968}.
     {line, [{location, "std@io@fs.erl", 176}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__workingDirWasm'}, 0}.
-  {label, 1968}.
+  {label, 1969}.
     {call_only, 0, {f, 159}}.
 
-{function, '__bp_priv__writeBytesWasm', 2, 1970}.
-  {label, 1969}.
+{function, '__bp_priv__writeBytesWasm', 2, 1971}.
+  {label, 1970}.
     {line, [{location, "std@io@fs.erl", 177}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__writeBytesWasm'}, 2}.
-  {label, 1970}.
+  {label, 1971}.
     {call_only, 2, {f, 89}}.
 
-{function, '__bp_priv__writeTextWasm', 2, 1972}.
-  {label, 1971}.
+{function, '__bp_priv__writeTextWasm', 2, 1973}.
+  {label, 1972}.
     {line, [{location, "std@io@fs.erl", 178}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__writeTextWasm'}, 2}.
-  {label, 1972}.
+  {label, 1973}.
     {call_only, 2, {f, 91}}.
 
-{function, '__bp_priv__writeWasm', 2, 1974}.
-  {label, 1973}.
+{function, '__bp_priv__writeWasm', 2, 1975}.
+  {label, 1974}.
     {line, [{location, "std@io@fs.erl", 179}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_priv__writeWasm'}, 2}.
-  {label, 1974}.
+  {label, 1975}.
     {call_only, 2, {f, 115}}.
 
 {function, '__bp_tpl_0', 1, 187}.
@@ -17484,6 +17492,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {test, is_ne_exact, {f, 655}, [{x, 0}, {atom, true}]}.
     {test, is_ne_exact, {f, 655}, [{x, 0}, {atom, false}]}.
     {test, is_ne_exact, {f, 655}, [{x, 0}, {atom, undefined}]}.
+    {test, is_eq_exact, {f, 663}, [{x, 0}, {atom, '__bp_gen'}]}.
+    {move, {literal, {panic, <<"wasm cannot print a generator value dynamically yet">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 663}.
     {test, is_eq_exact, {f, 661}, [{x, 0}, {atom, ok}]}.
     {move, {literal, <<"Ok(">>}, {y, 1}}.
     {jump, {f, 662}}.
@@ -17567,28 +17579,28 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 1, {extfunc, erlang, atom_to_list, 1}}.
     {move, {literal, <<"__v__">>}, {x, 1}}.
     {call_ext, 2, {extfunc, string, split, 2}}.
-    {test, is_nonempty_list, {f, 663}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 664}, [{x, 0}]}.
     {get_list, {x, 0}, {x, 1}, {x, 2}}.
     {move, {x, 1}, {y, 2}}.
-    {test, is_nonempty_list, {f, 663}, [{x, 2}]}.
+    {test, is_nonempty_list, {f, 664}, [{x, 2}]}.
     {move, {y, 2}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, list_to_atom, 1}}.
     {move, {x, 0}, {y, 1}}.
-  {label, 663}.
+  {label, 664}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, code, ensure_loaded, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {atom, '__bp_format'}, {x, 1}}.
     {move, {integer, 1}, {x, 2}}.
     {call_ext, 3, {extfunc, erlang, function_exported, 3}}.
-    {test, is_eq_exact, {f, 664}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 665}, [{x, 0}, {atom, true}]}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, nil, {x, 2}}.
     {move, {y, 1}, {x, 0}}.
     {move, {atom, '__bp_format'}, {x, 1}}.
     {call_ext, 3, {extfunc, erlang, apply, 3}}.
     {call_last, 1, {f, 649}, 3}.
-  {label, 664}.
+  {label, 665}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, nil, {x, 1}}.
     {move, {literal, <<"~p">>}, {x, 0}}.
@@ -17605,20 +17617,20 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {integer, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test, is_eq_exact, {f, 665}, [{x, 0}, {atom, text}]}.
-    {move, {integer, 2}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
-  {label, 665}.
-    {move, {integer, 3}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {move, {x, 0}, {y, 1}}.
-    {test, is_eq_exact, {f, 666}, [{x, 0}, nil]}.
+    {test, is_eq_exact, {f, 666}, [{x, 0}, {atom, text}]}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
   {label, 666}.
+    {move, {integer, 3}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {move, {x, 0}, {y, 1}}.
+    {test, is_eq_exact, {f, 667}, [{x, 0}, nil]}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
+  {label, 667}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
     {make_fun3, {f, 651}, 0, 0, {x, 0}, {list, []}}.
     {move, {y, 1}, {x, 1}}.
@@ -17662,19 +17674,19 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 2}.
     return.
 
-{function, '-bp_stringify-', 1, 668}.
-  {label, 667}.
+{function, '-bp_stringify-', 1, 669}.
+  {label, 668}.
     {line, [{location, "std@io@fs.erl", 29}]}.
     {func_info, {atom, std@io@fs}, {atom, '-bp_stringify-'}, 1}.
-  {label, 668}.
+  {label, 669}.
     {allocate, 0, 1}.
-    {test, is_binary, {f, 669}, [{x, 0}]}.
+    {test, is_binary, {f, 670}, [{x, 0}]}.
     {deallocate, 0}.
     return.
-  {label, 669}.
-    {test, is_integer, {f, 670}, [{x, 0}]}.
-    {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 0}.
   {label, 670}.
+    {test, is_integer, {f, 671}, [{x, 0}]}.
+    {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 0}.
+  {label, 671}.
     {call, 1, {f, 643}}.
     {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 0}.
 
@@ -17688,17 +17700,17 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 1}, {y, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 668}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 669}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 2, {extfunc, lists, join, 2}}.
     {call_ext_last, 1, {extfunc, erlang, iolist_to_binary, 1}, 1}.
 
-{function, '__bp_tpl_14--t/2-fun-0--fun-1-', 1, 696}.
-  {label, 695}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14--t/2-fun-0--fun-1-'}, 1}.
+{function, '__bp_tpl_14--t/2-fun-0--fun-1-', 1, 697}.
   {label, 696}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14--t/2-fun-0--fun-1-'}, 1}.
+  {label, 697}.
     {allocate, 6, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
     {move, {x, 0}, {y, 1}}.
@@ -17706,12 +17718,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 1, {extfunc, file, read_link_info, 1}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_tuple, {f, 700}, [{x, 0}]}.
-    {test, test_arity, {f, 700}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 701}, [{x, 0}]}.
+    {test, test_arity, {f, 701}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 3}}.
     {get_tuple_element, {x, 0}, 1, {y, 4}}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_eq_exact, {f, 700}, [{x, 0}, {atom, ok}]}.
+    {test, is_eq_exact, {f, 701}, [{x, 0}, {atom, ok}]}.
     {move, {y, 4}, {y, 0}}.
     {move, {integer, 3}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
@@ -17724,15 +17736,15 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 5}, {x, 0}}.
     {deallocate, 6}.
     return.
-  {label, 700}.
+  {label, 701}.
     {move, {atom, false}, {x, 0}}.
     {deallocate, 6}.
     return.
 
-{function, '__bp_tpl_14---t/2-fun-0--fun-2--fun-3-', 1, 709}.
-  {label, 708}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14---t/2-fun-0--fun-2--fun-3-'}, 1}.
+{function, '__bp_tpl_14---t/2-fun-0--fun-2--fun-3-', 1, 710}.
   {label, 709}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14---t/2-fun-0--fun-2--fun-3-'}, 1}.
+  {label, 710}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -17740,108 +17752,108 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {literal, [42, 63, 91, 123]}, {x, 1}}.
     {call_ext_last, 2, {extfunc, lists, member, 2}, 1}.
 
-{function, '__bp_tpl_14--t/2-fun-0--fun-2-', 1, 705}.
-  {label, 704}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14--t/2-fun-0--fun-2-'}, 1}.
+{function, '__bp_tpl_14--t/2-fun-0--fun-2-', 1, 706}.
   {label, 705}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14--t/2-fun-0--fun-2-'}, 1}.
+  {label, 706}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 709}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 710}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext_last, 2, {extfunc, lists, any, 2}, 2}.
 
-{function, '__bp_tpl_14--t/2-fun-0--fun-4-', 2, 715}.
-  {label, 714}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14--t/2-fun-0--fun-4-'}, 2}.
+{function, '__bp_tpl_14--t/2-fun-0--fun-4-', 2, 716}.
   {label, 715}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14--t/2-fun-0--fun-4-'}, 2}.
+  {label, 716}.
     {allocate, 9, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}]}}.
     {move, {x, 0}, {y, 1}}.
     {move, {x, 1}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_eq_exact, {f, 719}, [{x, 0}, {literal, [42]}]}.
+    {test, is_eq_exact, {f, 720}, [{x, 0}, {literal, [42]}]}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, file, list_dir, 1}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_tuple, {f, 721}, [{x, 0}]}.
-    {test, test_arity, {f, 721}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 722}, [{x, 0}]}.
+    {test, test_arity, {f, 722}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 6}}.
     {get_tuple_element, {x, 0}, 1, {y, 7}}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 721}, [{x, 0}, {atom, ok}]}.
+    {test, is_eq_exact, {f, 722}, [{x, 0}, {atom, ok}]}.
     {move, {y, 7}, {y, 0}}.
     {move, {y, 0}, {y, 5}}.
-    {jump, {f, 720}}.
-  {label, 721}.
+    {jump, {f, 721}}.
+  {label, 722}.
     {move, nil, {y, 5}}.
-    {jump, {f, 720}}.
-  {label, 720}.
+    {jump, {f, 721}}.
+  {label, 721}.
     {move, {y, 5}, {y, 3}}.
-    {jump, {f, 718}}.
-  {label, 719}.
-    {'try', {y, 8}, {f, 724}}.
+    {jump, {f, 719}}.
+  {label, 720}.
+    {'try', {y, 8}, {f, 725}}.
     {move, {y, 2}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, filelib, wildcard, 2}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 5}, {y, 4}}.
     {try_end, {y, 8}}.
-    {jump, {f, 725}}.
-  {label, 724}.
+    {jump, {f, 726}}.
+  {label, 725}.
     {try_case, {y, 8}}.
     {move, {x, 0}, {y, 5}}.
     {move, {x, 1}, {y, 6}}.
     {move, {x, 2}, {y, 7}}.
     {move, nil, {y, 4}}.
-    {jump, {f, 726}}.
+    {jump, {f, 727}}.
+  {label, 727}.
   {label, 726}.
-  {label, 725}.
     {move, {y, 4}, {y, 3}}.
-    {jump, {f, 718}}.
-  {label, 718}.
+    {jump, {f, 719}}.
+  {label, 719}.
     {move, {y, 3}, {y, 0}}.
-    {jump, {f, 729}}.
-  {label, 729}.
+    {jump, {f, 730}}.
+  {label, 730}.
     {move, nil, {y, 3}}.
     {move, {y, 0}, {y, 4}}.
-  {label, 731}.
+  {label, 732}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_nonempty_list, {f, 732}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 733}, [{x, 0}]}.
     {get_list, {x, 0}, {y, 5}, {y, 4}}.
     {move, {y, 5}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {bif, hd, {f, 731}, [{x, 0}], {x, 0}}.
+    {bif, hd, {f, 732}, [{x, 0}], {x, 0}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {x, 0}}.
     {move, {integer, 46}, {x, 1}}.
-    {test, is_ne_exact, {f, 734}, [{x, 0}, {x, 1}]}.
-    {jump, {f, 735}}.
-  {label, 734}.
-    {move, {y, 2}, {x, 0}}.
-    {bif, hd, {f, 731}, [{x, 0}], {x, 0}}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {x, 0}}.
-    {move, {integer, 46}, {x, 1}}.
-    {test, is_eq_exact, {f, 731}, [{x, 0}, {x, 1}]}.
+    {test, is_ne_exact, {f, 735}, [{x, 0}, {x, 1}]}.
+    {jump, {f, 736}}.
   {label, 735}.
+    {move, {y, 2}, {x, 0}}.
+    {bif, hd, {f, 732}, [{x, 0}], {x, 0}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {x, 0}}.
+    {move, {integer, 46}, {x, 1}}.
+    {test, is_eq_exact, {f, 732}, [{x, 0}, {x, 1}]}.
+  {label, 736}.
     {test_heap, 2, 0}.
     {put_list, {y, 0}, {y, 3}, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
-    {jump, {f, 731}}.
-  {label, 732}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_nil, {f, 733}, [{x, 0}]}.
-    {jump, {f, 730}}.
+    {jump, {f, 732}}.
   {label, 733}.
+    {move, {y, 4}, {x, 0}}.
+    {test, is_nil, {f, 734}, [{x, 0}]}.
+    {jump, {f, 731}}.
+  {label, 734}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, bad_generator}, {y, 4}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 730}.
+  {label, 731}.
     {move, {y, 3}, {x, 0}}.
     {call_ext, 1, {extfunc, lists, reverse, 1}}.
     {move, {x, 0}, {y, 4}}.
@@ -17849,20 +17861,20 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 9}.
     return.
 
-{function, '__bp_tpl_14--t/2-fun-0--fun-5-', 2, 739}.
-  {label, 738}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14--t/2-fun-0--fun-5-'}, 2}.
+{function, '__bp_tpl_14--t/2-fun-0--fun-5-', 2, 740}.
   {label, 739}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14--t/2-fun-0--fun-5-'}, 2}.
+  {label, 740}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_eq_exact, {f, 741}, [{x, 0}, nil]}.
+    {test, is_eq_exact, {f, 742}, [{x, 0}, nil]}.
     {move, {y, 1}, {x, 0}}.
     {deallocate, 3}.
     return.
-  {label, 741}.
+  {label, 742}.
     {move, {literal, [47]}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '++', 2}}.
@@ -17875,10 +17887,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 3}.
     return.
 
-{function, '__bp_tpl_14---t/2-fun-0--fun-6--fun-7-', 7, 752}.
-  {label, 751}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14---t/2-fun-0--fun-6--fun-7-'}, 7}.
+{function, '__bp_tpl_14---t/2-fun-0--fun-6--fun-7-', 7, 753}.
   {label, 752}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14---t/2-fun-0--fun-6--fun-7-'}, 7}.
+  {label, 753}.
     {allocate, 11, 7}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}]}}.
     {move, {x, 0}, {y, 7}}.
@@ -17893,22 +17905,22 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 2, {extfunc, filename, join, 2}}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {y, 5}}.
-    {jump, {f, 756}}.
-  {label, 756}.
+    {jump, {f, 757}}.
+  {label, 757}.
     {move, {y, 2}, {x, 0}}.
     {move, {y, 7}, {x, 1}}.
     {move, {y, 1}, {x, 2}}.
     {call_fun, 2}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {y, 6}}.
-    {jump, {f, 758}}.
-  {label, 758}.
+    {jump, {f, 759}}.
+  {label, 759}.
     {move, {y, 5}, {x, 0}}.
     {move, {y, 3}, {x, 1}}.
     {call_fun, 1}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 760}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 761}, [{x, 0}, {atom, true}]}.
     {test_heap, 2, 0}.
     {put_list, {y, 6}, {y, 8}, {x, 0}}.
     {move, {x, 0}, {y, 10}}.
@@ -17920,23 +17932,23 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_fun, 4}.
     {deallocate, 11}.
     return.
-  {label, 760}.
+  {label, 761}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 761}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 762}, [{x, 0}, {atom, false}]}.
     {test_heap, 2, 0}.
     {put_list, {y, 6}, {y, 8}, {x, 0}}.
     {move, {x, 0}, {y, 10}}.
     {move, {y, 10}, {x, 0}}.
     {deallocate, 11}.
     return.
-  {label, 761}.
+  {label, 762}.
     {move, {y, 9}, {x, 0}}.
     {case_end, {x, 0}}.
 
-{function, '__bp_tpl_14---t/2-fun-0--fun-6--fun-8-', 8, 764}.
-  {label, 763}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14---t/2-fun-0--fun-6--fun-8-'}, 8}.
+{function, '__bp_tpl_14---t/2-fun-0--fun-6--fun-8-', 8, 765}.
   {label, 764}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14---t/2-fun-0--fun-6--fun-8-'}, 8}.
+  {label, 765}.
     {allocate, 11, 8}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}]}}.
     {move, {x, 0}, {y, 7}}.
@@ -17952,14 +17964,14 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 2, {extfunc, filename, join, 2}}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {y, 6}}.
-    {jump, {f, 768}}.
-  {label, 768}.
+    {jump, {f, 769}}.
+  {label, 769}.
     {move, {y, 6}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_fun, 1}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 770}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 771}, [{x, 0}, {atom, true}]}.
     {move, {y, 5}, {x, 0}}.
     {move, {y, 7}, {x, 1}}.
     {move, {y, 4}, {x, 2}}.
@@ -17973,20 +17985,20 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_fun, 4}.
     {deallocate, 11}.
     return.
-  {label, 770}.
+  {label, 771}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 771}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 772}, [{x, 0}, {atom, false}]}.
     {move, {y, 8}, {x, 0}}.
     {deallocate, 11}.
     return.
-  {label, 771}.
+  {label, 772}.
     {move, {y, 9}, {x, 0}}.
     {case_end, {x, 0}}.
 
-{function, '__bp_tpl_14---t/2-fun-0--fun-6--fun-9-', 8, 790}.
-  {label, 789}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14---t/2-fun-0--fun-6--fun-9-'}, 8}.
+{function, '__bp_tpl_14---t/2-fun-0--fun-6--fun-9-', 8, 791}.
   {label, 790}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14---t/2-fun-0--fun-6--fun-9-'}, 8}.
+  {label, 791}.
     {allocate, 11, 8}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}]}}.
     {move, {x, 0}, {y, 8}}.
@@ -18002,31 +18014,31 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 2, {extfunc, filename, join, 2}}.
     {move, {x, 0}, {y, 10}}.
     {move, {y, 10}, {y, 6}}.
-    {jump, {f, 794}}.
-  {label, 794}.
+    {jump, {f, 795}}.
+  {label, 795}.
     {move, {y, 2}, {x, 0}}.
     {move, {y, 8}, {x, 1}}.
     {move, {y, 1}, {x, 2}}.
     {call_fun, 2}.
     {move, {x, 0}, {y, 10}}.
     {move, {y, 10}, {y, 7}}.
-    {jump, {f, 796}}.
-  {label, 796}.
+    {jump, {f, 797}}.
+  {label, 797}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_eq_exact, {f, 798}, [{x, 0}, nil]}.
+    {test, is_eq_exact, {f, 799}, [{x, 0}, nil]}.
     {test_heap, 2, 0}.
     {put_list, {y, 7}, {y, 9}, {x, 0}}.
     {move, {x, 0}, {y, 10}}.
     {move, {y, 10}, {x, 0}}.
     {deallocate, 11}.
     return.
-  {label, 798}.
+  {label, 799}.
     {move, {y, 6}, {x, 0}}.
     {move, {y, 4}, {x, 1}}.
     {call_fun, 1}.
     {move, {x, 0}, {y, 10}}.
     {move, {y, 10}, {x, 0}}.
-    {test, is_eq_exact, {f, 801}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 802}, [{x, 0}, {atom, true}]}.
     {move, {y, 3}, {x, 0}}.
     {move, {y, 6}, {x, 1}}.
     {move, {y, 7}, {x, 2}}.
@@ -18035,20 +18047,20 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_fun, 4}.
     {deallocate, 11}.
     return.
-  {label, 801}.
+  {label, 802}.
     {move, {y, 10}, {x, 0}}.
-    {test, is_eq_exact, {f, 802}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 803}, [{x, 0}, {atom, false}]}.
     {move, {y, 9}, {x, 0}}.
     {deallocate, 11}.
     return.
-  {label, 802}.
+  {label, 803}.
     {move, {y, 10}, {x, 0}}.
     {case_end, {x, 0}}.
 
-{function, '__bp_tpl_14--t/2-fun-0--fun-6-', 8, 746}.
-  {label, 745}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14--t/2-fun-0--fun-6-'}, 8}.
+{function, '__bp_tpl_14--t/2-fun-0--fun-6-', 8, 747}.
   {label, 746}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14--t/2-fun-0--fun-6-'}, 8}.
+  {label, 747}.
     {allocate, 19, 8}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}, {y, 14}, {y, 15}, {y, 16}, {y, 17}, {y, 18}]}}.
     {move, {x, 0}, {y, 9}}.
@@ -18060,29 +18072,29 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 6}, {y, 2}}.
     {move, {x, 7}, {y, 3}}.
     {test_heap, {alloc, [{words, 4}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 746}, 1, 0, {x, 0}, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
+    {make_fun3, {f, 747}, 1, 0, {x, 0}, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 748}, [{x, 0}, nil]}.
+    {test, is_eq_exact, {f, 749}, [{x, 0}, nil]}.
     {move, {y, 11}, {x, 0}}.
-    {test, is_eq_exact, {f, 748}, [{x, 0}, nil]}.
+    {test, is_eq_exact, {f, 749}, [{x, 0}, nil]}.
     {move, {y, 12}, {x, 0}}.
     {deallocate, 19}.
     return.
-  {label, 748}.
+  {label, 749}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 749}, [{x, 0}, nil]}.
+    {test, is_eq_exact, {f, 750}, [{x, 0}, nil]}.
     {test_heap, 2, 0}.
     {put_list, {y, 11}, {y, 12}, {x, 0}}.
     {move, {x, 0}, {y, 13}}.
     {move, {y, 13}, {x, 0}}.
     {deallocate, 19}.
     return.
-  {label, 749}.
+  {label, 750}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 750}, [{x, 0}, {literal, [[42, 42]]}]}.
+    {test, is_eq_exact, {f, 751}, [{x, 0}, {literal, [[42, 42]]}]}.
     {test_heap, {alloc, [{words, 5}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 752}, 2, 0, {x, 0}, {list, [{y, 10}, {y, 0}, {y, 11}, {y, 1}, {y, 4}]}}.
+    {make_fun3, {f, 753}, 2, 0, {x, 0}, {list, [{y, 10}, {y, 0}, {y, 11}, {y, 1}, {y, 4}]}}.
     {move, {x, 0}, {y, 13}}.
     {move, {y, 10}, {x, 0}}.
     {move, {literal, [42]}, {x, 1}}.
@@ -18093,16 +18105,16 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 12}, {x, 1}}.
     {move, {y, 14}, {x, 2}}.
     {call_ext_last, 3, {extfunc, lists, foldl, 3}, 19}.
-  {label, 750}.
+  {label, 751}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_nonempty_list, {f, 762}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 763}, [{x, 0}]}.
     {get_list, {x, 0}, {y, 13}, {y, 14}}.
     {move, {y, 13}, {x, 0}}.
-    {test, is_eq_exact, {f, 762}, [{x, 0}, {literal, [42, 42]}]}.
+    {test, is_eq_exact, {f, 763}, [{x, 0}, {literal, [42, 42]}]}.
     {move, {y, 14}, {y, 5}}.
     {move, {y, 9}, {y, 6}}.
     {test_heap, {alloc, [{words, 6}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 764}, 3, 0, {x, 0}, {list, [{y, 10}, {y, 1}, {y, 4}, {y, 6}, {y, 0}, {y, 11}]}}.
+    {make_fun3, {f, 765}, 3, 0, {x, 0}, {list, [{y, 10}, {y, 1}, {y, 4}, {y, 6}, {y, 0}, {y, 11}]}}.
     {move, {x, 0}, {y, 15}}.
     {move, {y, 5}, {x, 0}}.
     {move, {y, 10}, {x, 1}}.
@@ -18112,7 +18124,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 1}, {x, 5}}.
     {move, {y, 2}, {x, 6}}.
     {move, {y, 3}, {x, 7}}.
-    {call, 8, {f, 746}}.
+    {call, 8, {f, 747}}.
     {move, {x, 0}, {y, 16}}.
     {move, {y, 10}, {x, 0}}.
     {move, {literal, [42]}, {x, 1}}.
@@ -18123,9 +18135,9 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 16}, {x, 1}}.
     {move, {y, 17}, {x, 2}}.
     {call_ext_last, 3, {extfunc, lists, foldl, 3}, 19}.
-  {label, 762}.
+  {label, 763}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_nonempty_list, {f, 772}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 773}, [{x, 0}]}.
     {get_list, {x, 0}, {y, 13}, {y, 14}}.
     {move, {y, 13}, {y, 6}}.
     {move, {y, 14}, {y, 5}}.
@@ -18134,49 +18146,49 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_fun, 1}.
     {move, {x, 0}, {y, 15}}.
     {move, {y, 15}, {x, 0}}.
-    {test, is_eq_exact, {f, 774}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 775}, [{x, 0}, {atom, false}]}.
     {move, {y, 10}, {x, 0}}.
     {move, {y, 6}, {x, 1}}.
     {call_ext, 2, {extfunc, filename, join, 2}}.
     {move, {x, 0}, {y, 16}}.
     {move, {y, 16}, {y, 7}}.
-    {jump, {f, 776}}.
-  {label, 776}.
+    {jump, {f, 777}}.
+  {label, 777}.
     {move, {y, 11}, {x, 0}}.
     {move, {y, 6}, {x, 1}}.
     {move, {y, 0}, {x, 2}}.
     {call_fun, 2}.
     {move, {x, 0}, {y, 16}}.
     {move, {y, 16}, {y, 8}}.
-    {jump, {f, 778}}.
-  {label, 778}.
+    {jump, {f, 779}}.
+  {label, 779}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 780}, [{x, 0}, nil]}.
+    {test, is_eq_exact, {f, 781}, [{x, 0}, nil]}.
     {move, {y, 7}, {x, 0}}.
     {call_ext, 1, {extfunc, file, read_link_info, 1}}.
     {move, {x, 0}, {y, 16}}.
     {move, {y, 16}, {x, 0}}.
-    {test, is_tuple, {f, 782}, [{x, 0}]}.
-    {test, test_arity, {f, 782}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 783}, [{x, 0}]}.
+    {test, test_arity, {f, 783}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 17}}.
     {move, {y, 17}, {x, 0}}.
-    {test, is_eq_exact, {f, 782}, [{x, 0}, {atom, ok}]}.
+    {test, is_eq_exact, {f, 783}, [{x, 0}, {atom, ok}]}.
     {test_heap, 2, 0}.
     {put_list, {y, 8}, {y, 12}, {x, 0}}.
     {move, {x, 0}, {y, 18}}.
     {move, {y, 18}, {x, 0}}.
     {deallocate, 19}.
     return.
-  {label, 782}.
+  {label, 783}.
     {move, {y, 12}, {x, 0}}.
     {deallocate, 19}.
     return.
-  {label, 780}.
+  {label, 781}.
     {move, {y, 7}, {x, 0}}.
     {call_ext, 1, {extfunc, filelib, is_dir, 1}}.
     {move, {x, 0}, {y, 16}}.
     {move, {y, 16}, {x, 0}}.
-    {test, is_eq_exact, {f, 786}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 787}, [{x, 0}, {atom, true}]}.
     {move, {y, 5}, {x, 0}}.
     {move, {y, 7}, {x, 1}}.
     {move, {y, 8}, {x, 2}}.
@@ -18185,21 +18197,21 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 1}, {x, 5}}.
     {move, {y, 2}, {x, 6}}.
     {move, {y, 3}, {x, 7}}.
-    {call_last, 8, {f, 746}, 19}.
-  {label, 786}.
+    {call_last, 8, {f, 747}, 19}.
+  {label, 787}.
     {move, {y, 16}, {x, 0}}.
-    {test, is_eq_exact, {f, 787}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 788}, [{x, 0}, {atom, false}]}.
     {move, {y, 12}, {x, 0}}.
     {deallocate, 19}.
     return.
-  {label, 787}.
+  {label, 788}.
     {move, {y, 16}, {x, 0}}.
     {case_end, {x, 0}}.
-  {label, 774}.
+  {label, 775}.
     {move, {y, 15}, {x, 0}}.
-    {test, is_eq_exact, {f, 788}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 789}, [{x, 0}, {atom, true}]}.
     {test_heap, {alloc, [{words, 6}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 790}, 4, 0, {x, 0}, {list, [{y, 10}, {y, 0}, {y, 11}, {y, 5}, {y, 1}, {y, 4}]}}.
+    {make_fun3, {f, 791}, 4, 0, {x, 0}, {list, [{y, 10}, {y, 0}, {y, 11}, {y, 5}, {y, 1}, {y, 4}]}}.
     {move, {x, 0}, {y, 16}}.
     {move, {y, 10}, {x, 0}}.
     {move, {y, 6}, {x, 1}}.
@@ -18210,10 +18222,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 12}, {x, 1}}.
     {move, {y, 17}, {x, 2}}.
     {call_ext_last, 3, {extfunc, lists, foldl, 3}, 19}.
-  {label, 788}.
+  {label, 789}.
     {move, {y, 15}, {x, 0}}.
     {case_end, {x, 0}}.
-  {label, 772}.
+  {label, 773}.
     {move, {y, 9}, {x, 0}}.
     {move, {y, 10}, {x, 1}}.
     {move, {y, 11}, {x, 2}}.
@@ -18223,12 +18235,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 2}, {x, 6}}.
     {move, {y, 3}, {x, 7}}.
     {deallocate, 19}.
-    {jump, {f, 745}}.
+    {jump, {f, 746}}.
 
-{function, '__bp_tpl_14-t/2-fun-0-', 2, 677}.
-  {label, 676}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14-t/2-fun-0-'}, 2}.
+{function, '__bp_tpl_14-t/2-fun-0-', 2, 678}.
   {label, 677}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14-t/2-fun-0-'}, 2}.
+  {label, 678}.
     {allocate, 16, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}, {y, 14}, {y, 15}]}}.
     {move, {x, 0}, {y, 7}}.
@@ -18237,14 +18249,14 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {y, 0}}.
-    {jump, {f, 681}}.
-  {label, 681}.
+    {jump, {f, 682}}.
+  {label, 682}.
     {move, {y, 7}, {x, 0}}.
     {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {y, 1}}.
-    {jump, {f, 683}}.
-  {label, 683}.
+    {jump, {f, 684}}.
+  {label, 684}.
     {move, nil, {y, 9}}.
     {move, {y, 1}, {x, 0}}.
     {move, {literal, [47]}, {x, 1}}.
@@ -18252,9 +18264,9 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 3, {extfunc, string, split, 3}}.
     {move, {x, 0}, {y, 11}}.
     {move, {y, 11}, {y, 10}}.
-  {label, 685}.
+  {label, 686}.
     {move, {y, 10}, {x, 0}}.
-    {test, is_nonempty_list, {f, 686}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 687}, [{x, 0}]}.
     {get_list, {x, 0}, {y, 12}, {y, 10}}.
     {move, {y, 12}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
@@ -18262,76 +18274,76 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 2, {extfunc, erlang, '=/=', 2}}.
     {move, {x, 0}, {y, 13}}.
     {move, {y, 13}, {x, 0}}.
-    {test, is_eq_exact, {f, 688}, [{x, 0}, {atom, true}]}.
-    {jump, {f, 690}}.
-  {label, 688}.
-    {move, {y, 13}, {x, 0}}.
-    {test, is_eq_exact, {f, 689}, [{x, 0}, {atom, false}]}.
-    {jump, {f, 685}}.
+    {test, is_eq_exact, {f, 689}, [{x, 0}, {atom, true}]}.
+    {jump, {f, 691}}.
   {label, 689}.
+    {move, {y, 13}, {x, 0}}.
+    {test, is_eq_exact, {f, 690}, [{x, 0}, {atom, false}]}.
+    {jump, {f, 686}}.
+  {label, 690}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, bad_filter}, {y, 13}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 690}.
+  {label, 691}.
     {move, {y, 2}, {x, 0}}.
     {move, {literal, [46]}, {x, 1}}.
-    {test, is_ne_exact, {f, 685}, [{x, 0}, {x, 1}]}.
+    {test, is_ne_exact, {f, 686}, [{x, 0}, {x, 1}]}.
     {test_heap, 2, 0}.
     {put_list, {y, 2}, {y, 9}, {x, 0}}.
     {move, {x, 0}, {y, 9}}.
-    {jump, {f, 685}}.
-  {label, 686}.
-    {move, {y, 10}, {x, 0}}.
-    {test, is_nil, {f, 687}, [{x, 0}]}.
-    {jump, {f, 684}}.
+    {jump, {f, 686}}.
   {label, 687}.
+    {move, {y, 10}, {x, 0}}.
+    {test, is_nil, {f, 688}, [{x, 0}]}.
+    {jump, {f, 685}}.
+  {label, 688}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, bad_generator}, {y, 10}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 684}.
+  {label, 685}.
     {move, {y, 9}, {x, 0}}.
     {call_ext, 1, {extfunc, lists, reverse, 1}}.
     {move, {x, 0}, {y, 10}}.
     {move, {y, 10}, {y, 2}}.
-    {jump, {f, 692}}.
-  {label, 692}.
+    {jump, {f, 693}}.
+  {label, 693}.
     {move, {literal, [47]}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, lists, suffix, 2}}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {y, 1}}.
-    {jump, {f, 694}}.
-  {label, 694}.
+    {jump, {f, 695}}.
+  {label, 695}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 696}, 5, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 697}, 5, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {y, 3}}.
-    {jump, {f, 703}}.
-  {label, 703}.
+    {jump, {f, 704}}.
+  {label, 704}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 705}, 6, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 706}, 6, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {y, 4}}.
-    {jump, {f, 713}}.
-  {label, 713}.
+    {jump, {f, 714}}.
+  {label, 714}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 715}, 7, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 716}, 7, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {y, 5}}.
-    {jump, {f, 737}}.
-  {label, 737}.
+    {jump, {f, 738}}.
+  {label, 738}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 739}, 8, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 740}, 8, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {y, 6}}.
-    {jump, {f, 744}}.
-  {label, 744}.
+    {jump, {f, 745}}.
+  {label, 745}.
     {test_heap, {alloc, [{words, 4}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 746}, 1, 0, {x, 0}, {list, [{y, 6}, {y, 3}, {y, 5}, {y, 4}]}}.
+    {make_fun3, {f, 747}, 1, 0, {x, 0}, {list, [{y, 6}, {y, 3}, {y, 5}, {y, 4}]}}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {y, 4}}.
-    {jump, {f, 804}}.
-  {label, 804}.
+    {jump, {f, 805}}.
+  {label, 805}.
     {move, nil, {y, 9}}.
     {move, {y, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
@@ -18344,16 +18356,16 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 1, {extfunc, lists, usort, 1}}.
     {move, {x, 0}, {y, 11}}.
     {move, {y, 11}, {y, 10}}.
-  {label, 806}.
+  {label, 807}.
     {move, {y, 10}, {x, 0}}.
-    {test, is_nonempty_list, {f, 807}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 808}, [{x, 0}]}.
     {get_list, {x, 0}, {y, 12}, {y, 10}}.
     {move, {y, 12}, {y, 2}}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, 'not', 1}}.
     {move, {x, 0}, {y, 14}}.
     {move, {y, 14}, {x, 0}}.
-    {test, is_eq_exact, {f, 809}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 810}, [{x, 0}, {atom, false}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 2}, {x, 1}}.
     {call_ext, 2, {extfunc, filename, join, 2}}.
@@ -18363,45 +18375,45 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_fun, 1}.
     {move, {x, 0}, {y, 15}}.
     {move, {y, 15}, {y, 13}}.
-    {jump, {f, 811}}.
-  {label, 809}.
-    {move, {y, 14}, {x, 0}}.
-    {test, is_eq_exact, {f, 810}, [{x, 0}, {atom, true}]}.
-    {move, {atom, true}, {y, 13}}.
-    {jump, {f, 811}}.
+    {jump, {f, 812}}.
   {label, 810}.
+    {move, {y, 14}, {x, 0}}.
+    {test, is_eq_exact, {f, 811}, [{x, 0}, {atom, true}]}.
+    {move, {atom, true}, {y, 13}}.
+    {jump, {f, 812}}.
+  {label, 811}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, badarg}, {y, 14}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 811}.
-    {move, {y, 13}, {x, 0}}.
-    {test, is_eq_exact, {f, 812}, [{x, 0}, {atom, true}]}.
-    {jump, {f, 814}}.
   {label, 812}.
     {move, {y, 13}, {x, 0}}.
-    {test, is_eq_exact, {f, 813}, [{x, 0}, {atom, false}]}.
-    {jump, {f, 806}}.
+    {test, is_eq_exact, {f, 813}, [{x, 0}, {atom, true}]}.
+    {jump, {f, 815}}.
   {label, 813}.
+    {move, {y, 13}, {x, 0}}.
+    {test, is_eq_exact, {f, 814}, [{x, 0}, {atom, false}]}.
+    {jump, {f, 807}}.
+  {label, 814}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, bad_filter}, {y, 13}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 814}.
+  {label, 815}.
     {move, {y, 2}, {x, 0}}.
     {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
     {move, {x, 0}, {y, 13}}.
     {test_heap, 2, 0}.
     {put_list, {y, 13}, {y, 9}, {x, 0}}.
     {move, {x, 0}, {y, 9}}.
-    {jump, {f, 806}}.
-  {label, 807}.
-    {move, {y, 10}, {x, 0}}.
-    {test, is_nil, {f, 808}, [{x, 0}]}.
-    {jump, {f, 805}}.
+    {jump, {f, 807}}.
   {label, 808}.
+    {move, {y, 10}, {x, 0}}.
+    {test, is_nil, {f, 809}, [{x, 0}]}.
+    {jump, {f, 806}}.
+  {label, 809}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, bad_generator}, {y, 10}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 805}.
+  {label, 806}.
     {move, {y, 9}, {x, 0}}.
     {call_ext, 1, {extfunc, lists, reverse, 1}}.
     {move, {x, 0}, {y, 10}}.
@@ -18409,16 +18421,16 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 16}.
     return.
 
-{function, '__bp_tpl_14', 2, 673}.
-  {label, 672}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14'}, 2}.
+{function, '__bp_tpl_14', 2, 674}.
   {label, 673}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_14'}, 2}.
+  {label, 674}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 677}, 9, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 678}, 9, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -18427,10 +18439,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 3}.
     return.
 
-{function, '__bp_tpl_15-t/1-fun-0-', 1, 822}.
-  {label, 821}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_15-t/1-fun-0-'}, 1}.
+{function, '__bp_tpl_15-t/1-fun-0-', 1, 823}.
   {label, 822}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_15-t/1-fun-0-'}, 1}.
+  {label, 823}.
     {allocate, 6, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
     {move, {x, 0}, {y, 1}}.
@@ -18439,12 +18451,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 2, {extfunc, file, open, 2}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_tuple, {f, 826}, [{x, 0}]}.
-    {test, test_arity, {f, 826}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 827}, [{x, 0}]}.
+    {test, test_arity, {f, 827}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 3}}.
     {get_tuple_element, {x, 0}, 1, {y, 4}}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_eq_exact, {f, 826}, [{x, 0}, {atom, ok}]}.
+    {test, is_eq_exact, {f, 827}, [{x, 0}, {atom, ok}]}.
     {move, {y, 4}, {y, 0}}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
@@ -18452,14 +18464,14 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 5}, {x, 0}}.
     {deallocate, 6}.
     return.
-  {label, 826}.
+  {label, 827}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_tuple, {f, 827}, [{x, 0}]}.
-    {test, test_arity, {f, 827}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 828}, [{x, 0}]}.
+    {test, test_arity, {f, 828}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 3}}.
     {get_tuple_element, {x, 0}, 1, {y, 4}}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_eq_exact, {f, 827}, [{x, 0}, {atom, error}]}.
+    {test, is_eq_exact, {f, 828}, [{x, 0}, {atom, error}]}.
     {move, {y, 4}, {y, 0}}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 0}]}}.
@@ -18467,20 +18479,20 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 5}, {x, 0}}.
     {deallocate, 6}.
     return.
-  {label, 827}.
+  {label, 828}.
     {move, {y, 2}, {x, 0}}.
     {case_end, {x, 0}}.
 
-{function, '__bp_tpl_15', 1, 816}.
-  {label, 815}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_15'}, 1}.
+{function, '__bp_tpl_15', 1, 817}.
   {label, 816}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_15'}, 1}.
+  {label, 817}.
     {allocate, 12, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}]}}.
     {move, {x, 0}, {y, 3}}.
-    {'try', {y, 11}, {f, 819}}.
+    {'try', {y, 11}, {f, 820}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 822}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 823}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 3}, {x, 0}}.
     {move, {y, 5}, {x, 1}}.
@@ -18489,26 +18501,26 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 5}, {y, 6}}.
     {try_end, {y, 11}}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_tuple, {f, 829}, [{x, 0}]}.
-    {test, test_arity, {f, 829}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 7}}.
-    {get_tuple_element, {x, 0}, 1, {y, 8}}.
-    {move, {y, 7}, {x, 0}}.
-    {test, is_eq_exact, {f, 829}, [{x, 0}, {atom, ok}]}.
-    {move, {y, 8}, {y, 0}}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
-    {move, {x, 0}, {y, 9}}.
-    {move, {y, 9}, {y, 4}}.
-    {jump, {f, 828}}.
-  {label, 829}.
-    {move, {y, 6}, {x, 0}}.
     {test, is_tuple, {f, 830}, [{x, 0}]}.
     {test, test_arity, {f, 830}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 7}}.
     {get_tuple_element, {x, 0}, 1, {y, 8}}.
     {move, {y, 7}, {x, 0}}.
-    {test, is_eq_exact, {f, 830}, [{x, 0}, {atom, error}]}.
+    {test, is_eq_exact, {f, 830}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 8}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 4}}.
+    {jump, {f, 829}}.
+  {label, 830}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tuple, {f, 831}, [{x, 0}]}.
+    {test, test_arity, {f, 831}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 831}, [{x, 0}, {atom, error}]}.
     {move, {y, 8}, {y, 1}}.
     {test_heap, 2, 0}.
     {put_list, {y, 1}, nil, {x, 0}}.
@@ -18527,17 +18539,17 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 9}]}}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {y, 4}}.
-    {jump, {f, 828}}.
-  {label, 830}.
+    {jump, {f, 829}}.
+  {label, 831}.
     {move, {y, 6}, {y, 0}}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
     {move, {x, 0}, {y, 7}}.
     {move, {y, 7}, {y, 4}}.
-    {jump, {f, 828}}.
-  {label, 828}.
-    {jump, {f, 820}}.
-  {label, 819}.
+    {jump, {f, 829}}.
+  {label, 829}.
+    {jump, {f, 821}}.
+  {label, 820}.
     {try_case, {y, 11}}.
     {move, {x, 0}, {y, 5}}.
     {move, {x, 1}, {y, 6}}.
@@ -18558,23 +18570,23 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_eq_exact, {f, 835}, [{x, 0}, {atom, error}]}.
+    {test, is_eq_exact, {f, 836}, [{x, 0}, {atom, error}]}.
     {move, {atom, std@failure@@HostErrorName__v__error}, {y, 9}}.
-    {jump, {f, 834}}.
-  {label, 835}.
-    {move, {y, 0}, {x, 0}}.
-    {test, is_eq_exact, {f, 836}, [{x, 0}, {atom, throw}]}.
-    {move, {atom, std@failure@@HostErrorName__v__throw}, {y, 9}}.
-    {jump, {f, 834}}.
+    {jump, {f, 835}}.
   {label, 836}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_eq_exact, {f, 837}, [{x, 0}, {atom, exit}]}.
-    {move, {atom, std@failure@@HostErrorName__v__exit}, {y, 9}}.
-    {jump, {f, 834}}.
+    {test, is_eq_exact, {f, 837}, [{x, 0}, {atom, throw}]}.
+    {move, {atom, std@failure@@HostErrorName__v__throw}, {y, 9}}.
+    {jump, {f, 835}}.
   {label, 837}.
     {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 838}, [{x, 0}, {atom, exit}]}.
+    {move, {atom, std@failure@@HostErrorName__v__exit}, {y, 9}}.
+    {jump, {f, 835}}.
+  {label, 838}.
+    {move, {y, 0}, {x, 0}}.
     {case_end, {x, 0}}.
-  {label, 834}.
+  {label, 835}.
     {test_heap, 2, 0}.
     {put_list, {y, 2}, nil, {x, 0}}.
     {move, {x, 0}, {y, 10}}.
@@ -18592,17 +18604,17 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 8}]}}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 8}, {y, 4}}.
-    {jump, {f, 832}}.
-  {label, 832}.
-  {label, 820}.
+    {jump, {f, 833}}.
+  {label, 833}.
+  {label, 821}.
     {move, {y, 4}, {x, 0}}.
     {deallocate, 12}.
     return.
 
-{function, '__bp_tpl_16-t/1-fun-0-', 1, 847}.
-  {label, 846}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_16-t/1-fun-0-'}, 1}.
+{function, '__bp_tpl_16-t/1-fun-0-', 1, 848}.
   {label, 847}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_16-t/1-fun-0-'}, 1}.
+  {label, 848}.
     {allocate, 6, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
     {move, {x, 0}, {y, 1}}.
@@ -18611,12 +18623,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 2, {extfunc, file, open, 2}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_tuple, {f, 851}, [{x, 0}]}.
-    {test, test_arity, {f, 851}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 852}, [{x, 0}]}.
+    {test, test_arity, {f, 852}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 3}}.
     {get_tuple_element, {x, 0}, 1, {y, 4}}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_eq_exact, {f, 851}, [{x, 0}, {atom, ok}]}.
+    {test, is_eq_exact, {f, 852}, [{x, 0}, {atom, ok}]}.
     {move, {y, 4}, {y, 0}}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
@@ -18624,14 +18636,14 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 5}, {x, 0}}.
     {deallocate, 6}.
     return.
-  {label, 851}.
+  {label, 852}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_tuple, {f, 852}, [{x, 0}]}.
-    {test, test_arity, {f, 852}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 853}, [{x, 0}]}.
+    {test, test_arity, {f, 853}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 3}}.
     {get_tuple_element, {x, 0}, 1, {y, 4}}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_eq_exact, {f, 852}, [{x, 0}, {atom, error}]}.
+    {test, is_eq_exact, {f, 853}, [{x, 0}, {atom, error}]}.
     {move, {y, 4}, {y, 0}}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 0}]}}.
@@ -18639,20 +18651,20 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 5}, {x, 0}}.
     {deallocate, 6}.
     return.
-  {label, 852}.
+  {label, 853}.
     {move, {y, 2}, {x, 0}}.
     {case_end, {x, 0}}.
 
-{function, '__bp_tpl_16', 1, 841}.
-  {label, 840}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_16'}, 1}.
+{function, '__bp_tpl_16', 1, 842}.
   {label, 841}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_16'}, 1}.
+  {label, 842}.
     {allocate, 12, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}]}}.
     {move, {x, 0}, {y, 3}}.
-    {'try', {y, 11}, {f, 844}}.
+    {'try', {y, 11}, {f, 845}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 847}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 848}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 3}, {x, 0}}.
     {move, {y, 5}, {x, 1}}.
@@ -18661,26 +18673,26 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 5}, {y, 6}}.
     {try_end, {y, 11}}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_tuple, {f, 854}, [{x, 0}]}.
-    {test, test_arity, {f, 854}, [{x, 0}, 2]}.
-    {get_tuple_element, {x, 0}, 0, {y, 7}}.
-    {get_tuple_element, {x, 0}, 1, {y, 8}}.
-    {move, {y, 7}, {x, 0}}.
-    {test, is_eq_exact, {f, 854}, [{x, 0}, {atom, ok}]}.
-    {move, {y, 8}, {y, 0}}.
-    {test_heap, 3, 0}.
-    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
-    {move, {x, 0}, {y, 9}}.
-    {move, {y, 9}, {y, 4}}.
-    {jump, {f, 853}}.
-  {label, 854}.
-    {move, {y, 6}, {x, 0}}.
     {test, is_tuple, {f, 855}, [{x, 0}]}.
     {test, test_arity, {f, 855}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 7}}.
     {get_tuple_element, {x, 0}, 1, {y, 8}}.
     {move, {y, 7}, {x, 0}}.
-    {test, is_eq_exact, {f, 855}, [{x, 0}, {atom, error}]}.
+    {test, is_eq_exact, {f, 855}, [{x, 0}, {atom, ok}]}.
+    {move, {y, 8}, {y, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
+    {move, {x, 0}, {y, 9}}.
+    {move, {y, 9}, {y, 4}}.
+    {jump, {f, 854}}.
+  {label, 855}.
+    {move, {y, 6}, {x, 0}}.
+    {test, is_tuple, {f, 856}, [{x, 0}]}.
+    {test, test_arity, {f, 856}, [{x, 0}, 2]}.
+    {get_tuple_element, {x, 0}, 0, {y, 7}}.
+    {get_tuple_element, {x, 0}, 1, {y, 8}}.
+    {move, {y, 7}, {x, 0}}.
+    {test, is_eq_exact, {f, 856}, [{x, 0}, {atom, error}]}.
     {move, {y, 8}, {y, 1}}.
     {test_heap, 2, 0}.
     {put_list, {y, 1}, nil, {x, 0}}.
@@ -18699,17 +18711,17 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 9}]}}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {y, 4}}.
-    {jump, {f, 853}}.
-  {label, 855}.
+    {jump, {f, 854}}.
+  {label, 856}.
     {move, {y, 6}, {y, 0}}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {y, 0}]}}.
     {move, {x, 0}, {y, 7}}.
     {move, {y, 7}, {y, 4}}.
-    {jump, {f, 853}}.
-  {label, 853}.
-    {jump, {f, 845}}.
-  {label, 844}.
+    {jump, {f, 854}}.
+  {label, 854}.
+    {jump, {f, 846}}.
+  {label, 845}.
     {try_case, {y, 11}}.
     {move, {x, 0}, {y, 5}}.
     {move, {x, 1}, {y, 6}}.
@@ -18730,23 +18742,23 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_eq_exact, {f, 860}, [{x, 0}, {atom, error}]}.
+    {test, is_eq_exact, {f, 861}, [{x, 0}, {atom, error}]}.
     {move, {atom, std@failure@@HostErrorName__v__error}, {y, 9}}.
-    {jump, {f, 859}}.
-  {label, 860}.
-    {move, {y, 0}, {x, 0}}.
-    {test, is_eq_exact, {f, 861}, [{x, 0}, {atom, throw}]}.
-    {move, {atom, std@failure@@HostErrorName__v__throw}, {y, 9}}.
-    {jump, {f, 859}}.
+    {jump, {f, 860}}.
   {label, 861}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_eq_exact, {f, 862}, [{x, 0}, {atom, exit}]}.
-    {move, {atom, std@failure@@HostErrorName__v__exit}, {y, 9}}.
-    {jump, {f, 859}}.
+    {test, is_eq_exact, {f, 862}, [{x, 0}, {atom, throw}]}.
+    {move, {atom, std@failure@@HostErrorName__v__throw}, {y, 9}}.
+    {jump, {f, 860}}.
   {label, 862}.
     {move, {y, 0}, {x, 0}}.
+    {test, is_eq_exact, {f, 863}, [{x, 0}, {atom, exit}]}.
+    {move, {atom, std@failure@@HostErrorName__v__exit}, {y, 9}}.
+    {jump, {f, 860}}.
+  {label, 863}.
+    {move, {y, 0}, {x, 0}}.
     {case_end, {x, 0}}.
-  {label, 859}.
+  {label, 860}.
     {test_heap, 2, 0}.
     {put_list, {y, 2}, nil, {x, 0}}.
     {move, {x, 0}, {y, 10}}.
@@ -18764,28 +18776,28 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, error}, {y, 8}]}}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 8}, {y, 4}}.
-    {jump, {f, 857}}.
-  {label, 857}.
-  {label, 845}.
+    {jump, {f, 858}}.
+  {label, 858}.
+  {label, 846}.
     {move, {y, 4}, {x, 0}}.
     {deallocate, 12}.
     return.
 
-{function, '-bp_field-', 2, 866}.
-  {label, 865}.
+{function, '-bp_field-', 2, 867}.
+  {label, 866}.
     {line, [{location, "std@io@fs.erl", 43}]}.
     {func_info, {atom, std@io@fs}, {atom, '-bp_field-'}, 2}.
-  {label, 866}.
-    {test, is_map, {f, 867}, [{x, 0}]}.
+  {label, 867}.
+    {test, is_map, {f, 868}, [{x, 0}]}.
     {move, {x, 0}, {x, 2}}.
     {move, {x, 1}, {x, 0}}.
     {move, {x, 2}, {x, 1}}.
     {move, {atom, undefined}, {x, 2}}.
     {call_ext_only, 3, {extfunc, maps, get, 3}}.
-  {label, 867}.
-    {test, is_tuple, {f, 868}, [{x, 0}]}.
-    {bif, element, {f, 870}, [{integer, 1}, {x, 0}], {x, 2}}.
-    {test, is_atom, {f, 870}, [{x, 2}]}.
+  {label, 868}.
+    {test, is_tuple, {f, 869}, [{x, 0}]}.
+    {bif, element, {f, 871}, [{integer, 1}, {x, 0}], {x, 2}}.
+    {test, is_atom, {f, 871}, [{x, 2}]}.
     {test_heap, 4, 3}.
     {put_list, {x, 1}, nil, {x, 3}}.
     {put_list, {x, 0}, {x, 3}, {x, 3}}.
@@ -18793,26 +18805,26 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {atom, '__bp_get'}, {x, 1}}.
     {move, {x, 3}, {x, 2}}.
     {call_ext_only, 3, {extfunc, erlang, apply, 3}}.
-  {label, 868}.
-    {test, is_eq_exact, {f, 870}, [{x, 1}, {atom, length}]}.
-    {test, is_list, {f, 869}, [{x, 0}]}.
+  {label, 869}.
+    {test, is_eq_exact, {f, 871}, [{x, 1}, {atom, length}]}.
+    {test, is_list, {f, 870}, [{x, 0}]}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
     return.
-  {label, 869}.
-    {test, is_binary, {f, 870}, [{x, 0}]}.
+  {label, 870}.
+    {test, is_binary, {f, 871}, [{x, 0}]}.
     {allocate, 0, 1}.
     {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
     {deallocate, 0}.
     return.
-  {label, 870}.
+  {label, 871}.
     {move, {atom, undefined}, {x, 0}}.
     return.
 
-{function, '__bp_tpl_17', 1, 872}.
-  {label, 871}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_17'}, 1}.
+{function, '__bp_tpl_17', 1, 873}.
   {label, 872}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_17'}, 1}.
+  {label, 873}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -18827,18 +18839,18 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 2}.
     return.
 
-{function, '__bp_tpl_18', 0, 898}.
-  {label, 897}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_18'}, 0}.
+{function, '__bp_tpl_18', 0, 899}.
   {label, 898}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_18'}, 0}.
+  {label, 899}.
     {allocate, 0, 0}.
     {move, {atom, wasm_only}, {x, 0}}.
     {call_ext_last, 1, {extfunc, erlang, error, 1}, 0}.
 
-{function, '__bp_tpl_19', 1, 913}.
-  {label, 912}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_19'}, 1}.
+{function, '__bp_tpl_19', 1, 914}.
   {label, 913}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_19'}, 1}.
+  {label, 914}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -18846,20 +18858,20 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 1}.
     return.
 
-{function, '__bp_tpl_20', 1, 915}.
-  {label, 914}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_20'}, 1}.
+{function, '__bp_tpl_20', 1, 916}.
   {label, 915}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_20'}, 1}.
+  {label, 916}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call_ext_last, 1, {extfunc, erlang, byte_size, 1}, 1}.
 
-{function, '__bp_tpl_21', 2, 925}.
-  {label, 924}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_21'}, 2}.
+{function, '__bp_tpl_21', 2, 926}.
   {label, 925}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_21'}, 2}.
+  {label, 926}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -18867,54 +18879,54 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {atom, wasm_only}, {x, 0}}.
     {call_ext_last, 1, {extfunc, erlang, error, 1}, 2}.
 
-{function, '__bp_tpl_22', 1, 966}.
-  {label, 965}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_22'}, 1}.
+{function, '__bp_tpl_22', 1, 967}.
   {label, 966}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_22'}, 1}.
+  {label, 967}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {atom, wasm_only}, {x, 0}}.
     {call_ext_last, 1, {extfunc, erlang, error, 1}, 1}.
 
-{function, '__bp_tpl_23-t/1-fun-0-', 1, 1022}.
-  {label, 1021}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_23-t/1-fun-0-'}, 1}.
+{function, '__bp_tpl_23-t/1-fun-0-', 1, 1023}.
   {label, 1022}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_23-t/1-fun-0-'}, 1}.
+  {label, 1023}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {integer, -9223372036854775807}, {x, 0}}.
     {move, {integer, 1}, {x, 1}}.
-    {gc_bif, '-', {f, 1024}, 2, [{x, 0}, {x, 1}], {x, 0}}.
+    {gc_bif, '-', {f, 1025}, 2, [{x, 0}, {x, 1}], {x, 0}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
-    {test, is_ge, {f, 1024}, [{x, 0}, {x, 1}]}.
+    {test, is_ge, {f, 1025}, [{x, 0}, {x, 1}]}.
     {move, {integer, 9223372036854775807}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
-    {test, is_ge, {f, 1024}, [{x, 0}, {x, 1}]}.
-    {jump, {f, 1025}}.
-  {label, 1025}.
+    {test, is_ge, {f, 1025}, [{x, 0}, {x, 1}]}.
+    {jump, {f, 1026}}.
+  {label, 1026}.
     {move, {y, 0}, {x, 0}}.
     {deallocate, 2}.
     return.
-  {label, 1024}.
+  {label, 1025}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, integer_to_binary, 1}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_binary, {f, 1027}, [{x, 0}]}.
+    {test, is_binary, {f, 1028}, [{x, 0}]}.
     {test_heap, 6, 0}.
     {put_list, {literal, <<" does not fit i64">>}, nil, {x, 0}}.
     {put_list, {y, 1}, {x, 0}, {x, 0}}.
     {put_list, {literal, <<"toI64: ">>}, {x, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
-    {jump, {f, 1028}}.
-  {label, 1027}.
+    {jump, {f, 1029}}.
+  {label, 1028}.
     {move, {atom, badarg}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1028}.
+  {label, 1029}.
     {move, {x, 0}, {y, 1}}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, integer_overflow}, {y, 1}]}}.
@@ -18922,15 +18934,15 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 1}, {x, 0}}.
     {call_ext_last, 1, {extfunc, erlang, error, 1}, 2}.
 
-{function, '__bp_tpl_23', 1, 1018}.
-  {label, 1017}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_23'}, 1}.
+{function, '__bp_tpl_23', 1, 1019}.
   {label, 1018}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_23'}, 1}.
+  {label, 1019}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 1022}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 1023}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -18938,88 +18950,88 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 2}.
     return.
 
-{function, '__bp_tpl_24-t/2-fun-0-', 2, 1136}.
-  {label, 1135}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_24-t/2-fun-0-'}, 2}.
+{function, '__bp_tpl_24-t/2-fun-0-', 2, 1137}.
   {label, 1136}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_24-t/2-fun-0-'}, 2}.
+  {label, 1137}.
     {allocate, 7, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
     {move, {x, 0}, {y, 1}}.
     {move, {x, 1}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_eq_exact, {f, 1138}, [{x, 0}, {literal, <<"">>}]}.
+    {test, is_eq_exact, {f, 1139}, [{x, 0}, {literal, <<"">>}]}.
     {move, nil, {y, 3}}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
-    {test, is_list, {f, 1140}, [{x, 0}]}.
-    {jump, {f, 1141}}.
-  {label, 1140}.
-    {test, is_tuple, {f, 1142}, [{x, 0}]}.
-    {test, test_arity, {f, 1142}, [{x, 0}, 3]}.
+    {test, is_list, {f, 1141}, [{x, 0}]}.
+    {jump, {f, 1142}}.
+  {label, 1141}.
+    {test, is_tuple, {f, 1143}, [{x, 0}]}.
+    {test, test_arity, {f, 1143}, [{x, 0}, 3]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 1141}}.
-  {label, 1142}.
+    {jump, {f, 1142}}.
+  {label, 1143}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, bad_generator}, {y, 1}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1141}.
+  {label, 1142}.
     {move, {x, 0}, {y, 4}}.
-  {label, 1143}.
+  {label, 1144}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_nonempty_list, {f, 1144}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 1145}, [{x, 0}]}.
     {get_list, {x, 0}, {y, 5}, {y, 4}}.
     {move, {y, 5}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_integer, {f, 1146}, [{x, 0}]}.
+    {test, is_integer, {f, 1147}, [{x, 0}]}.
     {test_heap, 2, 0}.
     {put_list, {y, 0}, nil, {x, 0}}.
     {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
-    {test, is_binary, {f, 1146}, [{x, 0}]}.
+    {test, is_binary, {f, 1147}, [{x, 0}]}.
     {move, {x, 0}, {y, 6}}.
     {test_heap, 2, 0}.
     {put_list, {y, 6}, nil, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
-    {jump, {f, 1147}}.
-  {label, 1146}.
+    {jump, {f, 1148}}.
+  {label, 1147}.
     {move, {atom, badarg}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1147}.
+  {label, 1148}.
     {move, {x, 0}, {y, 6}}.
     {test_heap, 2, 0}.
     {put_list, {y, 6}, {y, 3}, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
-    {jump, {f, 1143}}.
-  {label, 1144}.
-    {move, {y, 4}, {x, 0}}.
-    {test, is_nil, {f, 1145}, [{x, 0}]}.
-    {jump, {f, 1139}}.
+    {jump, {f, 1144}}.
   {label, 1145}.
+    {move, {y, 4}, {x, 0}}.
+    {test, is_nil, {f, 1146}, [{x, 0}]}.
+    {jump, {f, 1140}}.
+  {label, 1146}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, bad_generator}, {y, 4}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1139}.
+  {label, 1140}.
     {move, {y, 3}, {x, 0}}.
     {call_ext, 1, {extfunc, lists, reverse, 1}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {x, 0}}.
     {deallocate, 7}.
     return.
-  {label, 1138}.
+  {label, 1139}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 2}, {x, 1}}.
     {move, {atom, all}, {x, 2}}.
     {call_ext_last, 3, {extfunc, string, split, 3}, 7}.
 
-{function, '__bp_tpl_24', 2, 1132}.
-  {label, 1131}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_24'}, 2}.
+{function, '__bp_tpl_24', 2, 1133}.
   {label, 1132}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_24'}, 2}.
+  {label, 1133}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 1136}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 1137}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -19028,10 +19040,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 3}.
     return.
 
-{function, '__bp_tpl_25', 1, 1252}.
-  {label, 1251}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_25'}, 1}.
+{function, '__bp_tpl_25', 1, 1253}.
   {label, 1252}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_25'}, 1}.
+  {label, 1253}.
     {allocate, 7, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
     {move, {x, 0}, {y, 1}}.
@@ -19041,40 +19053,40 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 2, {extfunc, unicode, characters_to_list, 2}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {y, 3}}.
-  {label, 1256}.
+  {label, 1257}.
     {move, {y, 3}, {x, 0}}.
-    {test, is_nonempty_list, {f, 1257}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 1258}, [{x, 0}]}.
     {get_list, {x, 0}, {y, 5}, {y, 3}}.
     {move, {y, 5}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_integer, {f, 1259}, [{x, 0}]}.
+    {test, is_integer, {f, 1260}, [{x, 0}]}.
     {test_heap, 2, 0}.
     {put_list, {y, 0}, nil, {x, 0}}.
     {call_ext, 1, {extfunc, unicode, characters_to_binary, 1}}.
-    {test, is_binary, {f, 1259}, [{x, 0}]}.
+    {test, is_binary, {f, 1260}, [{x, 0}]}.
     {move, {x, 0}, {y, 6}}.
     {test_heap, 2, 0}.
     {put_list, {y, 6}, nil, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
-    {jump, {f, 1260}}.
-  {label, 1259}.
+    {jump, {f, 1261}}.
+  {label, 1260}.
     {move, {atom, badarg}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1260}.
+  {label, 1261}.
     {move, {x, 0}, {y, 6}}.
     {test_heap, 2, 0}.
     {put_list, {y, 6}, {y, 2}, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
-    {jump, {f, 1256}}.
-  {label, 1257}.
-    {move, {y, 3}, {x, 0}}.
-    {test, is_nil, {f, 1258}, [{x, 0}]}.
-    {jump, {f, 1255}}.
+    {jump, {f, 1257}}.
   {label, 1258}.
+    {move, {y, 3}, {x, 0}}.
+    {test, is_nil, {f, 1259}, [{x, 0}]}.
+    {jump, {f, 1256}}.
+  {label, 1259}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, bad_generator}, {y, 3}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1255}.
+  {label, 1256}.
     {move, {y, 2}, {x, 0}}.
     {call_ext, 1, {extfunc, lists, reverse, 1}}.
     {move, {x, 0}, {y, 3}}.
@@ -19082,25 +19094,25 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 7}.
     return.
 
-{function, '__bp_add', 2, 1321}.
-  {label, 1320}.
+{function, '__bp_add', 2, 1322}.
+  {label, 1321}.
     {line, [{location, "std@io@fs.erl", 82}]}.
     {func_info, {atom, std@io@fs}, {atom, '__bp_add'}, 2}.
-  {label, 1321}.
-    {test, is_binary, {f, 1322}, [{x, 0}]}.
-    {test, is_binary, {f, 1322}, [{x, 1}]}.
+  {label, 1322}.
+    {test, is_binary, {f, 1323}, [{x, 0}]}.
+    {test, is_binary, {f, 1323}, [{x, 1}]}.
     {test_heap, 4, 2}.
     {put_list, {x, 1}, nil, {x, 1}}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {call_ext_only, 1, {extfunc, erlang, iolist_to_binary, 1}}.
-  {label, 1322}.
+  {label, 1323}.
     {gc_bif, '+', {f, 0}, 2, [{x, 0}, {x, 1}], {x, 0}}.
     return.
 
-{function, '__bp_tpl_26-t/2-fun-0-', 2, 1410}.
-  {label, 1409}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_26-t/2-fun-0-'}, 2}.
+{function, '__bp_tpl_26-t/2-fun-0-', 2, 1411}.
   {label, 1410}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_26-t/2-fun-0-'}, 2}.
+  {label, 1411}.
     {allocate, 5, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
     {move, {x, 0}, {y, 1}}.
@@ -19111,16 +19123,16 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {gc_bif, length, {f, 1414}, 1, [{x, 0}], {x, 0}}.
+    {gc_bif, length, {f, 1415}, 1, [{x, 0}], {x, 0}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 2}, {x, 0}}.
     {move, {y, 4}, {x, 1}}.
-    {test, is_lt, {f, 1414}, [{x, 0}, {x, 1}]}.
+    {test, is_lt, {f, 1415}, [{x, 0}, {x, 1}]}.
     {move, {y, 2}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
-    {test, is_ge, {f, 1414}, [{x, 0}, {x, 1}]}.
-    {jump, {f, 1415}}.
-  {label, 1415}.
+    {test, is_ge, {f, 1415}, [{x, 0}, {x, 1}]}.
+    {jump, {f, 1416}}.
+  {label, 1416}.
     {move, {y, 2}, {x, 0}}.
     {move, {integer, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '+', 2}}.
@@ -19128,21 +19140,21 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 4}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext_last, 2, {extfunc, lists, nth, 2}, 5}.
-  {label, 1414}.
+  {label, 1415}.
     {move, {integer, -1}, {x, 0}}.
     {deallocate, 5}.
     return.
 
-{function, '__bp_tpl_26', 2, 1406}.
-  {label, 1405}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_26'}, 2}.
+{function, '__bp_tpl_26', 2, 1407}.
   {label, 1406}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_26'}, 2}.
+  {label, 1407}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 1410}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 1411}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -19151,10 +19163,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 3}.
     return.
 
-{function, '__bp_tpl_27-t/2-fun-0-', 2, 1601}.
-  {label, 1600}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_27-t/2-fun-0-'}, 2}.
+{function, '__bp_tpl_27-t/2-fun-0-', 2, 1602}.
   {label, 1601}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_27-t/2-fun-0-'}, 2}.
+  {label, 1602}.
     {allocate, 7, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
     {move, {x, 0}, {y, 2}}.
@@ -19163,20 +19175,20 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 1, {extfunc, erlang, byte_size, 1}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {y, 0}}.
-    {jump, {f, 1605}}.
-  {label, 1605}.
+    {jump, {f, 1606}}.
+  {label, 1606}.
     {move, {y, 3}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, byte_size, 1}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {y, 1}}.
-    {jump, {f, 1607}}.
-  {label, 1607}.
+    {jump, {f, 1608}}.
+  {label, 1608}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '=<', 2}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 1608}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 1609}, [{x, 0}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '-', 2}}.
@@ -19191,31 +19203,31 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 2, {extfunc, erlang, '=:=', 2}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {y, 4}}.
-    {jump, {f, 1610}}.
-  {label, 1608}.
-    {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 1609}, [{x, 0}, {atom, false}]}.
-    {move, {atom, false}, {y, 4}}.
-    {jump, {f, 1610}}.
+    {jump, {f, 1611}}.
   {label, 1609}.
+    {move, {y, 5}, {x, 0}}.
+    {test, is_eq_exact, {f, 1610}, [{x, 0}, {atom, false}]}.
+    {move, {atom, false}, {y, 4}}.
+    {jump, {f, 1611}}.
+  {label, 1610}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, badarg}, {y, 5}]}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 1610}.
+  {label, 1611}.
     {move, {y, 4}, {x, 0}}.
     {deallocate, 7}.
     return.
 
-{function, '__bp_tpl_27', 2, 1597}.
-  {label, 1596}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_27'}, 2}.
+{function, '__bp_tpl_27', 2, 1598}.
   {label, 1597}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_27'}, 2}.
+  {label, 1598}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 1601}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 1602}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -19224,10 +19236,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 3}.
     return.
 
-{function, '__bp_tpl_28', 1, 1681}.
-  {label, 1680}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_28'}, 1}.
+{function, '__bp_tpl_28', 1, 1682}.
   {label, 1681}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_28'}, 1}.
+  {label, 1682}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -19237,27 +19249,27 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 1}, {x, 0}}.
     {call_ext_last, 1, {extfunc, erlang, error, 1}, 2}.
 
-{function, '__bp_tpl_29-t/0-fun-0-', 0, 1702}.
-  {label, 1701}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_29-t/0-fun-0-'}, 0}.
+{function, '__bp_tpl_29-t/0-fun-0-', 0, 1703}.
   {label, 1702}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_29-t/0-fun-0-'}, 0}.
+  {label, 1703}.
     {allocate, 3, 0}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {literal, [84, 77, 80, 68, 73, 82]}, {x, 0}}.
     {call_ext, 1, {extfunc, os, getenv, 1}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 1706}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 1707}, [{x, 0}, {atom, false}]}.
     {move, {literal, [47, 116, 109, 112]}, {y, 2}}.
-    {jump, {f, 1705}}.
-  {label, 1706}.
+    {jump, {f, 1706}}.
+  {label, 1707}.
     {move, {y, 1}, {y, 0}}.
     {move, {y, 0}, {y, 2}}.
-    {jump, {f, 1705}}.
-  {label, 1705}.
+    {jump, {f, 1706}}.
+  {label, 1706}.
     {move, {y, 2}, {y, 0}}.
-    {jump, {f, 1709}}.
-  {label, 1709}.
+    {jump, {f, 1710}}.
+  {label, 1710}.
     {move, {literal, [positive]}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, unique_integer, 1}}.
     {move, {x, 0}, {y, 1}}.
@@ -19273,77 +19285,77 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 2, {extfunc, filename, join, 2}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {y, 0}}.
-    {jump, {f, 1711}}.
-  {label, 1711}.
+    {jump, {f, 1712}}.
+  {label, 1712}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, file, make_dir, 1}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq_exact, {f, 1712}, [{x, 0}, {atom, ok}]}.
-    {jump, {f, 1713}}.
-  {label, 1712}.
+    {test, is_eq_exact, {f, 1713}, [{x, 0}, {atom, ok}]}.
+    {jump, {f, 1714}}.
+  {label, 1713}.
     {move, {y, 1}, {x, 0}}.
     {badmatch, {x, 0}}.
-  {label, 1713}.
+  {label, 1714}.
     {move, {y, 0}, {x, 0}}.
     {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 3}.
 
-{function, '__bp_tpl_29', 0, 1698}.
-  {label, 1697}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_29'}, 0}.
+{function, '__bp_tpl_29', 0, 1699}.
   {label, 1698}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_29'}, 0}.
+  {label, 1699}.
     {allocate, 1, 0}.
     {init_yregs, {list, [{y, 0}]}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 1702}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 1703}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call_fun, 0}.
     {deallocate, 1}.
     return.
 
-{function, '__bp_tpl_30-t/0-fun-0-', 0, 1721}.
-  {label, 1720}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_30-t/0-fun-0-'}, 0}.
+{function, '__bp_tpl_30-t/0-fun-0-', 0, 1722}.
   {label, 1721}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_30-t/0-fun-0-'}, 0}.
+  {label, 1722}.
     {allocate, 4, 0}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {call_ext, 0, {extfunc, file, get_cwd, 0}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_tuple, {f, 1724}, [{x, 0}]}.
-    {test, test_arity, {f, 1724}, [{x, 0}, 2]}.
+    {test, is_tuple, {f, 1725}, [{x, 0}]}.
+    {test, test_arity, {f, 1725}, [{x, 0}, 2]}.
     {get_tuple_element, {x, 0}, 0, {y, 2}}.
     {get_tuple_element, {x, 0}, 1, {y, 3}}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_eq_exact, {f, 1724}, [{x, 0}, {atom, ok}]}.
+    {test, is_eq_exact, {f, 1725}, [{x, 0}, {atom, ok}]}.
     {move, {y, 3}, {y, 0}}.
-    {jump, {f, 1725}}.
-  {label, 1724}.
+    {jump, {f, 1726}}.
+  {label, 1725}.
     {move, {y, 1}, {x, 0}}.
     {badmatch, {x, 0}}.
-  {label, 1725}.
+  {label, 1726}.
     {move, {y, 0}, {x, 0}}.
     {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 4}.
 
-{function, '__bp_tpl_30', 0, 1717}.
-  {label, 1716}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_30'}, 0}.
+{function, '__bp_tpl_30', 0, 1718}.
   {label, 1717}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_30'}, 0}.
+  {label, 1718}.
     {allocate, 1, 0}.
     {init_yregs, {list, [{y, 0}]}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 1721}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 1722}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call_fun, 0}.
     {deallocate, 1}.
     return.
 
-{function, '__bp_tpl_31-t/2-fun-0-', 2, 1744}.
-  {label, 1743}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_31-t/2-fun-0-'}, 2}.
+{function, '__bp_tpl_31-t/2-fun-0-', 2, 1745}.
   {label, 1744}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_31-t/2-fun-0-'}, 2}.
+  {label, 1745}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -19353,26 +19365,26 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 2, {extfunc, file, make_symlink, 2}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
-    {test, is_eq_exact, {f, 1747}, [{x, 0}, {atom, ok}]}.
-    {jump, {f, 1748}}.
-  {label, 1747}.
+    {test, is_eq_exact, {f, 1748}, [{x, 0}, {atom, ok}]}.
+    {jump, {f, 1749}}.
+  {label, 1748}.
     {move, {y, 2}, {x, 0}}.
     {badmatch, {x, 0}}.
-  {label, 1748}.
+  {label, 1749}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 3}.
     return.
 
-{function, '__bp_tpl_31', 2, 1740}.
-  {label, 1739}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_31'}, 2}.
+{function, '__bp_tpl_31', 2, 1741}.
   {label, 1740}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_31'}, 2}.
+  {label, 1741}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 1744}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 1745}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -19381,10 +19393,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 3}.
     return.
 
-{function, '__bp_tpl_32-t/3-fun-0-', 3, 1760}.
-  {label, 1759}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_32-t/3-fun-0-'}, 3}.
+{function, '__bp_tpl_32-t/3-fun-0-', 3, 1761}.
   {label, 1760}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_32-t/3-fun-0-'}, 3}.
+  {label, 1761}.
     {allocate, 9, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}]}}.
     {move, {x, 0}, {y, 3}}.
@@ -19394,20 +19406,20 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {y, 0}}.
-    {jump, {f, 1764}}.
-  {label, 1764}.
+    {jump, {f, 1765}}.
+  {label, 1765}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, length, 1}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {y, 1}}.
-    {jump, {f, 1766}}.
-  {label, 1766}.
+    {jump, {f, 1767}}.
+  {label, 1767}.
     {move, {y, 4}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '<', 2}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 1768}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 1769}, [{x, 0}, {atom, true}]}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 4}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '+', 2}}.
@@ -19417,29 +19429,29 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 2, {extfunc, erlang, max, 2}}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 8}, {y, 7}}.
-    {jump, {f, 1767}}.
-  {label, 1768}.
+    {jump, {f, 1768}}.
+  {label, 1769}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 1769}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 1770}, [{x, 0}, {atom, false}]}.
     {move, {y, 4}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, min, 2}}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 8}, {y, 7}}.
-    {jump, {f, 1767}}.
-  {label, 1769}.
+    {jump, {f, 1768}}.
+  {label, 1770}.
     {move, {y, 6}, {x, 0}}.
     {case_end, {x, 0}}.
-  {label, 1767}.
+  {label, 1768}.
     {move, {y, 7}, {y, 2}}.
-    {jump, {f, 1771}}.
-  {label, 1771}.
+    {jump, {f, 1772}}.
+  {label, 1772}.
     {move, {y, 5}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '<', 2}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 1773}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 1774}, [{x, 0}, {atom, true}]}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 5}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '+', 2}}.
@@ -19449,23 +19461,23 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 2, {extfunc, erlang, max, 2}}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 8}, {y, 7}}.
-    {jump, {f, 1772}}.
-  {label, 1773}.
+    {jump, {f, 1773}}.
+  {label, 1774}.
     {move, {y, 6}, {x, 0}}.
-    {test, is_eq_exact, {f, 1774}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 1775}, [{x, 0}, {atom, false}]}.
     {move, {y, 5}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, min, 2}}.
     {move, {x, 0}, {y, 8}}.
     {move, {y, 8}, {y, 7}}.
-    {jump, {f, 1772}}.
-  {label, 1774}.
+    {jump, {f, 1773}}.
+  {label, 1775}.
     {move, {y, 6}, {x, 0}}.
     {case_end, {x, 0}}.
-  {label, 1772}.
+  {label, 1773}.
     {move, {y, 7}, {y, 1}}.
-    {jump, {f, 1776}}.
-  {label, 1776}.
+    {jump, {f, 1777}}.
+  {label, 1777}.
     {move, {y, 2}, {x, 0}}.
     {move, {integer, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '+', 2}}.
@@ -19486,17 +19498,17 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 6}, {x, 0}}.
     {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 9}.
 
-{function, '__bp_tpl_32', 3, 1756}.
-  {label, 1755}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_32'}, 3}.
+{function, '__bp_tpl_32', 3, 1757}.
   {label, 1756}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_32'}, 3}.
+  {label, 1757}.
     {allocate, 4, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {x, 2}, {y, 2}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 1760}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 1761}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -19506,10 +19518,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 4}.
     return.
 
-{function, '__bp_tpl_33-t/2-fun-0-', 2, 1782}.
-  {label, 1781}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_33-t/2-fun-0-'}, 2}.
+{function, '__bp_tpl_33-t/2-fun-0-', 2, 1783}.
   {label, 1782}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_33-t/2-fun-0-'}, 2}.
+  {label, 1783}.
     {allocate, 7, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
     {move, {x, 0}, {y, 2}}.
@@ -19518,20 +19530,20 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {y, 0}}.
-    {jump, {f, 1786}}.
-  {label, 1786}.
+    {jump, {f, 1787}}.
+  {label, 1787}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, length, 1}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {y, 1}}.
-    {jump, {f, 1788}}.
-  {label, 1788}.
+    {jump, {f, 1789}}.
+  {label, 1789}.
     {move, {y, 3}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '<', 2}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 1790}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 1791}, [{x, 0}, {atom, true}]}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 3}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '+', 2}}.
@@ -19541,23 +19553,23 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 2, {extfunc, erlang, max, 2}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {y, 5}}.
-    {jump, {f, 1789}}.
-  {label, 1790}.
+    {jump, {f, 1790}}.
+  {label, 1791}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 1791}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 1792}, [{x, 0}, {atom, false}]}.
     {move, {y, 3}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, min, 2}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {y, 5}}.
-    {jump, {f, 1789}}.
-  {label, 1791}.
+    {jump, {f, 1790}}.
+  {label, 1792}.
     {move, {y, 4}, {x, 0}}.
     {case_end, {x, 0}}.
-  {label, 1789}.
+  {label, 1790}.
     {move, {y, 5}, {y, 1}}.
-    {jump, {f, 1793}}.
-  {label, 1793}.
+    {jump, {f, 1794}}.
+  {label, 1794}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, lists, nthtail, 2}}.
@@ -19565,16 +19577,16 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 4}, {x, 0}}.
     {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 7}.
 
-{function, '__bp_tpl_33', 2, 1778}.
-  {label, 1777}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_33'}, 2}.
+{function, '__bp_tpl_33', 2, 1779}.
   {label, 1778}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_33'}, 2}.
+  {label, 1779}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 1782}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 1783}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -19583,10 +19595,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 3}.
     return.
 
-{function, '__bp_tpl_34-t/3-fun-0-', 3, 1800}.
-  {label, 1799}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_34-t/3-fun-0-'}, 3}.
+{function, '__bp_tpl_34-t/3-fun-0-', 3, 1801}.
   {label, 1800}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_34-t/3-fun-0-'}, 3}.
+  {label, 1801}.
     {allocate, 8, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}]}}.
     {move, {x, 0}, {y, 2}}.
@@ -19596,14 +19608,14 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 1, {extfunc, erlang, byte_size, 1}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 5}, {y, 0}}.
-    {jump, {f, 1804}}.
-  {label, 1804}.
+    {jump, {f, 1805}}.
+  {label, 1805}.
     {move, {y, 3}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '<', 2}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 1806}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 1807}, [{x, 0}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 3}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '+', 2}}.
@@ -19613,29 +19625,29 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 2, {extfunc, erlang, max, 2}}.
     {move, {x, 0}, {y, 7}}.
     {move, {y, 7}, {y, 6}}.
-    {jump, {f, 1805}}.
-  {label, 1806}.
+    {jump, {f, 1806}}.
+  {label, 1807}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 1807}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 1808}, [{x, 0}, {atom, false}]}.
     {move, {y, 3}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, min, 2}}.
     {move, {x, 0}, {y, 7}}.
     {move, {y, 7}, {y, 6}}.
-    {jump, {f, 1805}}.
-  {label, 1807}.
+    {jump, {f, 1806}}.
+  {label, 1808}.
     {move, {y, 5}, {x, 0}}.
     {case_end, {x, 0}}.
-  {label, 1805}.
+  {label, 1806}.
     {move, {y, 6}, {y, 1}}.
-    {jump, {f, 1809}}.
-  {label, 1809}.
+    {jump, {f, 1810}}.
+  {label, 1810}.
     {move, {y, 4}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '<', 2}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 1811}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 1812}, [{x, 0}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 4}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '+', 2}}.
@@ -19645,23 +19657,23 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 2, {extfunc, erlang, max, 2}}.
     {move, {x, 0}, {y, 7}}.
     {move, {y, 7}, {y, 6}}.
-    {jump, {f, 1810}}.
-  {label, 1811}.
+    {jump, {f, 1811}}.
+  {label, 1812}.
     {move, {y, 5}, {x, 0}}.
-    {test, is_eq_exact, {f, 1812}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 1813}, [{x, 0}, {atom, false}]}.
     {move, {y, 4}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, min, 2}}.
     {move, {x, 0}, {y, 7}}.
     {move, {y, 7}, {y, 6}}.
-    {jump, {f, 1810}}.
-  {label, 1812}.
+    {jump, {f, 1811}}.
+  {label, 1813}.
     {move, {y, 5}, {x, 0}}.
     {case_end, {x, 0}}.
-  {label, 1810}.
+  {label, 1811}.
     {move, {y, 6}, {y, 0}}.
-    {jump, {f, 1814}}.
-  {label, 1814}.
+    {jump, {f, 1815}}.
+  {label, 1815}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '-', 2}}.
@@ -19675,17 +19687,17 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 5}, {x, 2}}.
     {call_ext_last, 3, {extfunc, binary, part, 3}, 8}.
 
-{function, '__bp_tpl_34', 3, 1796}.
-  {label, 1795}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_34'}, 3}.
+{function, '__bp_tpl_34', 3, 1797}.
   {label, 1796}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_34'}, 3}.
+  {label, 1797}.
     {allocate, 4, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {x, 2}, {y, 2}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 1800}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 1801}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -19695,10 +19707,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 4}.
     return.
 
-{function, '__bp_tpl_35-t/2-fun-0-', 2, 1820}.
-  {label, 1819}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_35-t/2-fun-0-'}, 2}.
+{function, '__bp_tpl_35-t/2-fun-0-', 2, 1821}.
   {label, 1820}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_35-t/2-fun-0-'}, 2}.
+  {label, 1821}.
     {allocate, 7, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
     {move, {x, 0}, {y, 2}}.
@@ -19707,14 +19719,14 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 1, {extfunc, erlang, byte_size, 1}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {y, 0}}.
-    {jump, {f, 1824}}.
-  {label, 1824}.
+    {jump, {f, 1825}}.
+  {label, 1825}.
     {move, {y, 3}, {x, 0}}.
     {move, {integer, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '<', 2}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 1826}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 1827}, [{x, 0}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 3}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '+', 2}}.
@@ -19724,23 +19736,23 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 2, {extfunc, erlang, max, 2}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {y, 5}}.
-    {jump, {f, 1825}}.
-  {label, 1826}.
+    {jump, {f, 1826}}.
+  {label, 1827}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 1827}, [{x, 0}, {atom, false}]}.
+    {test, is_eq_exact, {f, 1828}, [{x, 0}, {atom, false}]}.
     {move, {y, 3}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, min, 2}}.
     {move, {x, 0}, {y, 6}}.
     {move, {y, 6}, {y, 5}}.
-    {jump, {f, 1825}}.
-  {label, 1827}.
+    {jump, {f, 1826}}.
+  {label, 1828}.
     {move, {y, 4}, {x, 0}}.
     {case_end, {x, 0}}.
-  {label, 1825}.
+  {label, 1826}.
     {move, {y, 5}, {y, 1}}.
-    {jump, {f, 1829}}.
-  {label, 1829}.
+    {jump, {f, 1830}}.
+  {label, 1830}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, '-', 2}}.
@@ -19750,16 +19762,16 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 4}, {x, 2}}.
     {call_ext_last, 3, {extfunc, binary, part, 3}, 7}.
 
-{function, '__bp_tpl_35', 2, 1816}.
-  {label, 1815}.
-    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_35'}, 2}.
+{function, '__bp_tpl_35', 2, 1817}.
   {label, 1816}.
+    {func_info, {atom, std@io@fs}, {atom, '__bp_tpl_35'}, 2}.
+  {label, 1817}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 1820}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 1821}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -19778,11 +19790,11 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_list, {f, 1830}, [{x, 0}]}.
+    {test, is_list, {f, 1831}, [{x, 0}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext_last, 2, {extfunc, lists, append, 2}, 2}.
-  {label, 1830}.
+  {label, 1831}.
     %% unresolved_method: append/2
     {move, {literal, {unresolved_method, append, 2}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
@@ -19795,7 +19807,7 @@ test "fs answers PermissionDenied for an OS permission error" {
 {module, std@io@fs@@FsError}.
 {exports, [{message, 1}, {'__bp_format', 1}]}.
 {attributes, []}.
-{labels, 54}.
+{labels, 55}.
 
 {function, message, 1, 3}.
   {label, 2}.
@@ -19822,12 +19834,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 36}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 37}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
     {jump, {f, 4}}.
   {label, 5}.
-    {test, is_tagged_tuple, {f, 39}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__permissiondenied}]}.
+    {test, is_tagged_tuple, {f, 40}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__permissiondenied}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 3}}.
     {move, nil, {x, 0}}.
@@ -19843,12 +19855,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 36}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 37}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
     {jump, {f, 4}}.
-  {label, 39}.
-    {test, is_tagged_tuple, {f, 40}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__isdirectory}]}.
+  {label, 40}.
+    {test, is_tagged_tuple, {f, 41}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__isdirectory}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 5}}.
     {move, nil, {x, 0}}.
@@ -19864,12 +19876,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 36}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 37}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
     {jump, {f, 4}}.
-  {label, 40}.
-    {test, is_tagged_tuple, {f, 41}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__notdirectory}]}.
+  {label, 41}.
+    {test, is_tagged_tuple, {f, 42}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__notdirectory}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 7}}.
     {move, nil, {x, 0}}.
@@ -19885,12 +19897,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 36}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 37}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
     {jump, {f, 4}}.
-  {label, 41}.
-    {test, is_tagged_tuple, {f, 42}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__alreadyexists}]}.
+  {label, 42}.
+    {test, is_tagged_tuple, {f, 43}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__alreadyexists}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 9}}.
     {move, nil, {x, 0}}.
@@ -19906,12 +19918,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 36}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 37}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
     {jump, {f, 4}}.
-  {label, 42}.
-    {test, is_tagged_tuple, {f, 43}, [{x, 0}, 3, {atom, std@io@fs@@FsError__v__invalidutf8}]}.
+  {label, 43}.
+    {test, is_tagged_tuple, {f, 44}, [{x, 0}, 3, {atom, std@io@fs@@FsError__v__invalidutf8}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 11}}.
     {get_tuple_element, {x, 0}, 2, {x, 1}}.
@@ -19940,12 +19952,12 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 36}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 37}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
     {jump, {f, 4}}.
-  {label, 43}.
-    {test, is_tagged_tuple, {f, 44}, [{x, 0}, 3, {atom, std@io@fs@@FsError__v__other}]}.
+  {label, 44}.
+    {test, is_tagged_tuple, {f, 45}, [{x, 0}, 3, {atom, std@io@fs@@FsError__v__other}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 14}}.
     {get_tuple_element, {x, 0}, 2, {x, 1}}.
@@ -19968,26 +19980,26 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 36}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 37}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
     {jump, {f, 4}}.
-  {label, 44}.
+  {label, 45}.
     {case_end, {x, 0}}.
   {label, 4}.
     {deallocate, 17}.
     return.
 
-{function, '__bp_format', 1, 46}.
-  {label, 45}.
+{function, '__bp_format', 1, 47}.
+  {label, 46}.
     {line, [{location, "std@io@fs@@FsError.erl", 4}]}.
     {func_info, {atom, std@io@fs@@FsError}, {atom, '__bp_format'}, 1}.
-  {label, 46}.
+  {label, 47}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 47}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__notfound}]}.
+    {test, is_tagged_tuple, {f, 48}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__notfound}]}.
     {move, nil, {y, 1}}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
@@ -19999,9 +20011,9 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"FsError.NotFound">>}, {y, 1}]}}.
     {deallocate, 2}.
     return.
-  {label, 47}.
+  {label, 48}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 48}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__permissiondenied}]}.
+    {test, is_tagged_tuple, {f, 49}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__permissiondenied}]}.
     {move, nil, {y, 1}}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
@@ -20013,9 +20025,9 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"FsError.PermissionDenied">>}, {y, 1}]}}.
     {deallocate, 2}.
     return.
-  {label, 48}.
+  {label, 49}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 49}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__isdirectory}]}.
+    {test, is_tagged_tuple, {f, 50}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__isdirectory}]}.
     {move, nil, {y, 1}}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
@@ -20027,9 +20039,9 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"FsError.IsDirectory">>}, {y, 1}]}}.
     {deallocate, 2}.
     return.
-  {label, 49}.
+  {label, 50}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 50}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__notdirectory}]}.
+    {test, is_tagged_tuple, {f, 51}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__notdirectory}]}.
     {move, nil, {y, 1}}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
@@ -20041,9 +20053,9 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"FsError.NotDirectory">>}, {y, 1}]}}.
     {deallocate, 2}.
     return.
-  {label, 50}.
+  {label, 51}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 51}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__alreadyexists}]}.
+    {test, is_tagged_tuple, {f, 52}, [{x, 0}, 2, {atom, std@io@fs@@FsError__v__alreadyexists}]}.
     {move, nil, {y, 1}}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
@@ -20055,9 +20067,9 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"FsError.AlreadyExists">>}, {y, 1}]}}.
     {deallocate, 2}.
     return.
-  {label, 51}.
+  {label, 52}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 52}, [{x, 0}, 3, {atom, std@io@fs@@FsError__v__invalidutf8}]}.
+    {test, is_tagged_tuple, {f, 53}, [{x, 0}, 3, {atom, std@io@fs@@FsError__v__invalidutf8}]}.
     {move, nil, {y, 1}}.
     {move, {integer, 3}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
@@ -20075,9 +20087,9 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"FsError.InvalidUtf8">>}, {y, 1}]}}.
     {deallocate, 2}.
     return.
-  {label, 52}.
+  {label, 53}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 53}, [{x, 0}, 3, {atom, std@io@fs@@FsError__v__other}]}.
+    {test, is_tagged_tuple, {f, 54}, [{x, 0}, 3, {atom, std@io@fs@@FsError__v__other}]}.
     {move, nil, {y, 1}}.
     {move, {integer, 3}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
@@ -20095,7 +20107,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"FsError.Other">>}, {y, 1}]}}.
     {deallocate, 2}.
     return.
-  {label, 53}.
+  {label, 54}.
     {test_heap, 4, 1}.
     {put_tuple2, {x, 0}, {list, [{atom, variant}, {literal, <<"FsError">>}, nil]}}.
     {deallocate, 2}.
@@ -20184,6 +20196,10 @@ test "fs answers PermissionDenied for an OS permission error" {
     {test, is_ne_exact, {f, 23}, [{x, 0}, {atom, true}]}.
     {test, is_ne_exact, {f, 23}, [{x, 0}, {atom, false}]}.
     {test, is_ne_exact, {f, 23}, [{x, 0}, {atom, undefined}]}.
+    {test, is_eq_exact, {f, 31}, [{x, 0}, {atom, '__bp_gen'}]}.
+    {move, {literal, {panic, <<"wasm cannot print a generator value dynamically yet">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 31}.
     {test, is_eq_exact, {f, 29}, [{x, 0}, {atom, ok}]}.
     {move, {literal, <<"Ok(">>}, {y, 1}}.
     {jump, {f, 30}}.
@@ -20267,28 +20283,28 @@ test "fs answers PermissionDenied for an OS permission error" {
     {call_ext, 1, {extfunc, erlang, atom_to_list, 1}}.
     {move, {literal, <<"__v__">>}, {x, 1}}.
     {call_ext, 2, {extfunc, string, split, 2}}.
-    {test, is_nonempty_list, {f, 31}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 32}, [{x, 0}]}.
     {get_list, {x, 0}, {x, 1}, {x, 2}}.
     {move, {x, 1}, {y, 2}}.
-    {test, is_nonempty_list, {f, 31}, [{x, 2}]}.
+    {test, is_nonempty_list, {f, 32}, [{x, 2}]}.
     {move, {y, 2}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, list_to_atom, 1}}.
     {move, {x, 0}, {y, 1}}.
-  {label, 31}.
+  {label, 32}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, code, ensure_loaded, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {atom, '__bp_format'}, {x, 1}}.
     {move, {integer, 1}, {x, 2}}.
     {call_ext, 3, {extfunc, erlang, function_exported, 3}}.
-    {test, is_eq_exact, {f, 32}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 33}, [{x, 0}, {atom, true}]}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, nil, {x, 2}}.
     {move, {y, 1}, {x, 0}}.
     {move, {atom, '__bp_format'}, {x, 1}}.
     {call_ext, 3, {extfunc, erlang, apply, 3}}.
     {call_last, 1, {f, 17}, 3}.
-  {label, 32}.
+  {label, 33}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, nil, {x, 1}}.
     {move, {literal, <<"~p">>}, {x, 0}}.
@@ -20305,20 +20321,20 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {integer, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test, is_eq_exact, {f, 33}, [{x, 0}, {atom, text}]}.
-    {move, {integer, 2}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
-  {label, 33}.
-    {move, {integer, 3}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {move, {x, 0}, {y, 1}}.
-    {test, is_eq_exact, {f, 34}, [{x, 0}, nil]}.
+    {test, is_eq_exact, {f, 34}, [{x, 0}, {atom, text}]}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
   {label, 34}.
+    {move, {integer, 3}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {move, {x, 0}, {y, 1}}.
+    {test, is_eq_exact, {f, 35}, [{x, 0}, nil]}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
+  {label, 35}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
     {make_fun3, {f, 19}, 0, 0, {x, 0}, {list, []}}.
     {move, {y, 1}, {x, 1}}.
@@ -20362,19 +20378,19 @@ test "fs answers PermissionDenied for an OS permission error" {
     {deallocate, 2}.
     return.
 
-{function, '-bp_stringify-', 1, 36}.
-  {label, 35}.
+{function, '-bp_stringify-', 1, 37}.
+  {label, 36}.
     {line, [{location, "std@io@fs@@FsError.erl", 4}]}.
     {func_info, {atom, std@io@fs@@FsError}, {atom, '-bp_stringify-'}, 1}.
-  {label, 36}.
+  {label, 37}.
     {allocate, 0, 1}.
-    {test, is_binary, {f, 37}, [{x, 0}]}.
+    {test, is_binary, {f, 38}, [{x, 0}]}.
     {deallocate, 0}.
     return.
-  {label, 37}.
-    {test, is_integer, {f, 38}, [{x, 0}]}.
-    {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 0}.
   {label, 38}.
+    {test, is_integer, {f, 39}, [{x, 0}]}.
+    {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 0}.
+  {label, 39}.
     {call, 1, {f, 11}}.
     {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 0}.
 ```

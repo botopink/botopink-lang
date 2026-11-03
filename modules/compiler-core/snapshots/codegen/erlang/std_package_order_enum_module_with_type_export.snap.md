@@ -828,6 +828,7 @@ reverse(O) ->
 '__bp_show'(V, _) when erlang:is_list(V) -> [$[, lists:join(", ", ['__bp_show'(E, false) || E <- V]), $]];
 '__bp_show'({ok, P}, _) -> ["Ok(", '__bp_show'(P, false), $)];
 '__bp_show'({error, P}, _) -> ["Error(", '__bp_show'(P, false), $)];
+'__bp_show'({'__bp_gen', _}, _) -> erlang:error({panic, <<"wasm cannot print a generator value dynamically yet">>});
 '__bp_show'(V, _) when erlang:is_tuple(V), erlang:tuple_size(V) > 0, erlang:is_atom(erlang:element(1, V)), erlang:element(1, V) =/= true, erlang:element(1, V) =/= false, erlang:element(1, V) =/= undefined -> '__bp_tagged'(erlang:element(1, V), V);
 '__bp_show'(V, _) when erlang:is_tuple(V) -> ["#(", lists:join(", ", ['__bp_show'(E, false) || E <- erlang:tuple_to_list(V)]), $)];
 '__bp_show'(undefined, _) -> "null";
@@ -959,6 +960,7 @@ ofEntries(Entries) ->
 '__bp_show'(V, _) when erlang:is_list(V) -> [$[, lists:join(", ", ['__bp_show'(E, false) || E <- V]), $]];
 '__bp_show'({ok, P}, _) -> ["Ok(", '__bp_show'(P, false), $)];
 '__bp_show'({error, P}, _) -> ["Error(", '__bp_show'(P, false), $)];
+'__bp_show'({'__bp_gen', _}, _) -> erlang:error({panic, <<"wasm cannot print a generator value dynamically yet">>});
 '__bp_show'(V, _) when erlang:is_tuple(V), erlang:tuple_size(V) > 0, erlang:is_atom(erlang:element(1, V)), erlang:element(1, V) =/= true, erlang:element(1, V) =/= false, erlang:element(1, V) =/= undefined -> '__bp_tagged'(erlang:element(1, V), V);
 '__bp_show'(V, _) when erlang:is_tuple(V) -> ["#(", lists:join(", ", ['__bp_show'(E, false) || E <- erlang:tuple_to_list(V)]), $)];
 '__bp_show'(undefined, _) -> "null";
@@ -1151,6 +1153,7 @@ main() ->
 '__bp_show'(V, _) when erlang:is_list(V) -> [$[, lists:join(", ", ['__bp_show'(E, false) || E <- V]), $]];
 '__bp_show'({ok, P}, _) -> ["Ok(", '__bp_show'(P, false), $)];
 '__bp_show'({error, P}, _) -> ["Error(", '__bp_show'(P, false), $)];
+'__bp_show'({'__bp_gen', _}, _) -> erlang:error({panic, <<"wasm cannot print a generator value dynamically yet">>});
 '__bp_show'(V, _) when erlang:is_tuple(V), erlang:tuple_size(V) > 0, erlang:is_atom(erlang:element(1, V)), erlang:element(1, V) =/= true, erlang:element(1, V) =/= false, erlang:element(1, V) =/= undefined -> '__bp_tagged'(erlang:element(1, V), V);
 '__bp_show'(V, _) when erlang:is_tuple(V) -> ["#(", lists:join(", ", ['__bp_show'(E, false) || E <- erlang:tuple_to_list(V)]), $)];
 '__bp_show'(undefined, _) -> "null";

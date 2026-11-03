@@ -226,7 +226,7 @@ import {functions} from "std";
 {module, test@main}.
 {exports, [{'_botopink_main', 0}, {main, 1}, {main, 0}, {'__bp_priv__pairsOf', 1}, {'__bp_priv__parse', 1}]}.
 {attributes, []}.
-{labels, 70}.
+{labels, 71}.
 
 {function, parse, 1, 3}.
   {label, 2}.
@@ -310,10 +310,10 @@ import {functions} from "std";
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 20}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 53}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 54}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 0}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 57}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 58}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -326,7 +326,7 @@ import {functions} from "std";
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 20}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 61}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 62}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
     {move, {y, 3}, {x, 1}}.
@@ -339,7 +339,7 @@ import {functions} from "std";
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 20}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 63}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 64}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 5}}.
     {move, {y, 5}, {x, 0}}.
     {call_ext, 1, {extfunc, std@functions, flip, 1}}.
@@ -382,18 +382,18 @@ import {functions} from "std";
   {label, 11}.
     {call_only, 0, {f, 9}}.
 
-{function, '__bp_priv__pairsOf', 1, 67}.
-  {label, 66}.
+{function, '__bp_priv__pairsOf', 1, 68}.
+  {label, 67}.
     {line, [{location, "test@main.erl", 6}]}.
     {func_info, {atom, test@main}, {atom, '__bp_priv__pairsOf'}, 1}.
-  {label, 67}.
+  {label, 68}.
     {call_only, 1, {f, 5}}.
 
-{function, '__bp_priv__parse', 1, 69}.
-  {label, 68}.
+{function, '__bp_priv__parse', 1, 70}.
+  {label, 69}.
     {line, [{location, "test@main.erl", 7}]}.
     {func_info, {atom, test@main}, {atom, '__bp_priv__parse'}, 1}.
-  {label, 69}.
+  {label, 70}.
     {call_only, 1, {f, 3}}.
 
 {function, '__bp_print', 1, 20}.
@@ -479,6 +479,10 @@ import {functions} from "std";
     {test, is_ne_exact, {f, 36}, [{x, 0}, {atom, true}]}.
     {test, is_ne_exact, {f, 36}, [{x, 0}, {atom, false}]}.
     {test, is_ne_exact, {f, 36}, [{x, 0}, {atom, undefined}]}.
+    {test, is_eq_exact, {f, 44}, [{x, 0}, {atom, '__bp_gen'}]}.
+    {move, {literal, {panic, <<"wasm cannot print a generator value dynamically yet">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 44}.
     {test, is_eq_exact, {f, 42}, [{x, 0}, {atom, ok}]}.
     {move, {literal, <<"Ok(">>}, {y, 1}}.
     {jump, {f, 43}}.
@@ -562,28 +566,28 @@ import {functions} from "std";
     {call_ext, 1, {extfunc, erlang, atom_to_list, 1}}.
     {move, {literal, <<"__v__">>}, {x, 1}}.
     {call_ext, 2, {extfunc, string, split, 2}}.
-    {test, is_nonempty_list, {f, 44}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 45}, [{x, 0}]}.
     {get_list, {x, 0}, {x, 1}, {x, 2}}.
     {move, {x, 1}, {y, 2}}.
-    {test, is_nonempty_list, {f, 44}, [{x, 2}]}.
+    {test, is_nonempty_list, {f, 45}, [{x, 2}]}.
     {move, {y, 2}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, list_to_atom, 1}}.
     {move, {x, 0}, {y, 1}}.
-  {label, 44}.
+  {label, 45}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, code, ensure_loaded, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {atom, '__bp_format'}, {x, 1}}.
     {move, {integer, 1}, {x, 2}}.
     {call_ext, 3, {extfunc, erlang, function_exported, 3}}.
-    {test, is_eq_exact, {f, 45}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 46}, [{x, 0}, {atom, true}]}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, nil, {x, 2}}.
     {move, {y, 1}, {x, 0}}.
     {move, {atom, '__bp_format'}, {x, 1}}.
     {call_ext, 3, {extfunc, erlang, apply, 3}}.
     {call_last, 1, {f, 30}, 3}.
-  {label, 45}.
+  {label, 46}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, nil, {x, 1}}.
     {move, {literal, <<"~p">>}, {x, 0}}.
@@ -600,20 +604,20 @@ import {functions} from "std";
     {move, {integer, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test, is_eq_exact, {f, 46}, [{x, 0}, {atom, text}]}.
-    {move, {integer, 2}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
-  {label, 46}.
-    {move, {integer, 3}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {move, {x, 0}, {y, 1}}.
-    {test, is_eq_exact, {f, 47}, [{x, 0}, nil]}.
+    {test, is_eq_exact, {f, 47}, [{x, 0}, {atom, text}]}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
   {label, 47}.
+    {move, {integer, 3}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {move, {x, 0}, {y, 1}}.
+    {test, is_eq_exact, {f, 48}, [{x, 0}, nil]}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
+  {label, 48}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
     {make_fun3, {f, 32}, 0, 0, {x, 0}, {list, []}}.
     {move, {y, 1}, {x, 1}}.
@@ -657,19 +661,19 @@ import {functions} from "std";
     {deallocate, 2}.
     return.
 
-{function, '-bp_stringify-', 1, 49}.
-  {label, 48}.
+{function, '-bp_stringify-', 1, 50}.
+  {label, 49}.
     {line, [{location, "test@main.erl", 3}]}.
     {func_info, {atom, test@main}, {atom, '-bp_stringify-'}, 1}.
-  {label, 49}.
+  {label, 50}.
     {allocate, 0, 1}.
-    {test, is_binary, {f, 50}, [{x, 0}]}.
+    {test, is_binary, {f, 51}, [{x, 0}]}.
     {deallocate, 0}.
     return.
-  {label, 50}.
-    {test, is_integer, {f, 51}, [{x, 0}]}.
-    {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 0}.
   {label, 51}.
+    {test, is_integer, {f, 52}, [{x, 0}]}.
+    {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 0}.
+  {label, 52}.
     {call, 1, {f, 24}}.
     {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 0}.
 
@@ -683,7 +687,7 @@ import {functions} from "std";
     {move, {x, 1}, {y, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 49}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 50}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
@@ -729,49 +733,49 @@ import {functions} from "std";
     {deallocate, 4}.
     return.
 
-{function, '-main/0-fun-1-', 1, 53}.
-  {label, 52}.
+{function, '-main/0-fun-1-', 1, 54}.
+  {label, 53}.
     {line, [{location, "test@main.erl", 4}]}.
     {func_info, {atom, test@main}, {atom, '-main/0-fun-1-'}, 1}.
-  {label, 53}.
+  {label, 54}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {gc_bif, '*', {f, 0}, 0, [{y, 0}, {integer, 2}], {x, 0}}.
-    {test, is_ge, {f, 54}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 54}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 55}}.
-  {label, 54}.
+    {test, is_ge, {f, 55}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 55}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 56}}.
+  {label, 55}.
     {move, {literal, {integer_overflow, <<"integer overflow: * on i32 at test@main.bp:14:43">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 55}.
+  {label, 56}.
     {deallocate, 1}.
     return.
 
-{function, '-main/0-fun-2-', 1, 57}.
-  {label, 56}.
+{function, '-main/0-fun-2-', 1, 58}.
+  {label, 57}.
     {line, [{location, "test@main.erl", 4}]}.
     {func_info, {atom, test@main}, {atom, '-main/0-fun-2-'}, 1}.
-  {label, 57}.
+  {label, 58}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {gc_bif, '+', {f, 0}, 0, [{y, 0}, {integer, 1}], {x, 0}}.
-    {test, is_ge, {f, 58}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 58}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 59}}.
-  {label, 58}.
+    {test, is_ge, {f, 59}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 59}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 60}}.
+  {label, 59}.
     {move, {literal, {integer_overflow, <<"integer overflow: + on i32 at test@main.bp:15:43">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 59}.
+  {label, 60}.
     {deallocate, 1}.
     return.
 
-{function, '-main/0-fun-3-', 1, 61}.
-  {label, 60}.
+{function, '-main/0-fun-3-', 1, 62}.
+  {label, 61}.
     {line, [{location, "test@main.erl", 4}]}.
     {func_info, {atom, test@main}, {atom, '-main/0-fun-3-'}, 1}.
-  {label, 61}.
+  {label, 62}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -788,29 +792,29 @@ import {functions} from "std";
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 49}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 50}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
     {deallocate, 2}.
     return.
 
-{function, '-main/0-fun-4-', 2, 63}.
-  {label, 62}.
+{function, '-main/0-fun-4-', 2, 64}.
+  {label, 63}.
     {line, [{location, "test@main.erl", 4}]}.
     {func_info, {atom, test@main}, {atom, '-main/0-fun-4-'}, 2}.
-  {label, 63}.
+  {label, 64}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {gc_bif, '-', {f, 0}, 0, [{y, 0}, {y, 1}], {x, 0}}.
-    {test, is_ge, {f, 64}, [{x, 0}, {integer, -2147483648}]}.
-    {test, is_ge, {f, 64}, [{integer, 2147483647}, {x, 0}]}.
-    {jump, {f, 65}}.
-  {label, 64}.
+    {test, is_ge, {f, 65}, [{x, 0}, {integer, -2147483648}]}.
+    {test, is_ge, {f, 65}, [{integer, 2147483647}, {x, 0}]}.
+    {jump, {f, 66}}.
+  {label, 65}.
     {move, {literal, {integer_overflow, <<"integer overflow: - on i32 at test@main.bp:19:48">>}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
-  {label, 65}.
+  {label, 66}.
     {deallocate, 2}.
     return.
 ```

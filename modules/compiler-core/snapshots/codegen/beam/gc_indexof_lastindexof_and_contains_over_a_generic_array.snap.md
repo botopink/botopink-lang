@@ -1366,7 +1366,7 @@ test "asserts: errorText answers the empty string for Ok" {
 {module, std@testing@asserts}.
 {exports, [{isTrue, 1}, {isFalse, 1}, {equals, 2}, {notEquals, 2}, {approxEquals, 3}, {deepEquals, 2}, {isNil, 1}, {isNotNil, 1}, {isOk, 1}, {isError, 1}, {contains, 2}, {notContains, 2}, {startsWith, 2}, {endsWith, 2}, {matches, 2}, {isEmpty, 1}, {isNotEmpty, 1}, {lengthIs, 2}, {includes, 2}, {notIncludes, 2}, {between, 3}, {greaterThan, 2}, {lessThan, 2}, {throws, 1}, {throwsWith, 2}, {fail, 1}, {errorText, 1}, {'__bp_priv__caughtMessage', 1}, {'__bp_priv__explode', 0}, {'__bp_priv__parsePort', 1}, {'__bp_priv__quoteRaiser', 0}]}.
 {attributes, []}.
-{labels, 188}.
+{labels, 189}.
 %%% std/testing/asserts — the canonical assertion API every test is written against
 %%% (1.0.10-beta front 01-std, `asserts-api.md`; decisions 74 and 67).
 %%% 
@@ -2268,7 +2268,7 @@ test "asserts: errorText answers the empty string for Ok" {
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 171}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 172}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
     {move, {x, 0}, {x, 1}}.
@@ -2290,20 +2290,20 @@ test "asserts: errorText answers the empty string for Ok" {
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 175}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 176}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 1}}.
     {move, {literal, <<"">>}, {x, 0}}.
-    {jump, {f, 174}}.
-  {label, 175}.
-    {test, is_tagged_tuple, {f, 176}, [{x, 0}, 2, {atom, error}]}.
+    {jump, {f, 175}}.
+  {label, 176}.
+    {test, is_tagged_tuple, {f, 177}, [{x, 0}, 2, {atom, error}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 2}}.
     {move, {y, 2}, {x, 0}}.
-    {jump, {f, 174}}.
-  {label, 176}.
+    {jump, {f, 175}}.
+  {label, 177}.
     {case_end, {x, 0}}.
-  {label, 174}.
+  {label, 175}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
     {deallocate, 4}.
@@ -2322,14 +2322,14 @@ test "asserts: errorText answers the empty string for Ok" {
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {literal, <<"">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 177}, [{y, 0}, {x, 0}]}.
+    {test, is_eq_exact, {f, 178}, [{y, 0}, {x, 0}]}.
     {move, {literal, <<"empty input">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
     {deallocate, 1}.
     return.
-  {label, 177}.
+  {label, 178}.
     {move, {integer, 8080}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
@@ -2344,7 +2344,7 @@ test "asserts: errorText answers the empty string for Ok" {
   {label, 61}.
     {allocate, 0, 0}.
     {move, {literal, <<"boom: the widget is on fire">>}, {x, 0}}.
-    {call, 1, {f, 179}}.
+    {call, 1, {f, 180}}.
     {move, {integer, 0}, {x, 0}}.
     {deallocate, 0}.
     return.
@@ -2364,38 +2364,38 @@ test "asserts: errorText answers the empty string for Ok" {
   {label, 63}.
     {allocate, 0, 0}.
     {move, {literal, <<"withHeader(\"Set-Cookie\", v) \\ twice">>}, {x, 0}}.
-    {call, 1, {f, 179}}.
+    {call, 1, {f, 180}}.
     {move, {integer, 0}, {x, 0}}.
     {deallocate, 0}.
     return.
 % utility
 
-{function, '__bp_priv__caughtMessage', 1, 181}.
-  {label, 180}.
+{function, '__bp_priv__caughtMessage', 1, 182}.
+  {label, 181}.
     {line, [{location, "std@testing@asserts.erl", 32}]}.
     {func_info, {atom, std@testing@asserts}, {atom, '__bp_priv__caughtMessage'}, 1}.
-  {label, 181}.
+  {label, 182}.
     {call_only, 1, {f, 49}}.
 
-{function, '__bp_priv__explode', 0, 183}.
-  {label, 182}.
+{function, '__bp_priv__explode', 0, 184}.
+  {label, 183}.
     {line, [{location, "std@testing@asserts.erl", 33}]}.
     {func_info, {atom, std@testing@asserts}, {atom, '__bp_priv__explode'}, 0}.
-  {label, 183}.
+  {label, 184}.
     {call_only, 0, {f, 61}}.
 
-{function, '__bp_priv__parsePort', 1, 185}.
-  {label, 184}.
+{function, '__bp_priv__parsePort', 1, 186}.
+  {label, 185}.
     {line, [{location, "std@testing@asserts.erl", 34}]}.
     {func_info, {atom, std@testing@asserts}, {atom, '__bp_priv__parsePort'}, 1}.
-  {label, 185}.
+  {label, 186}.
     {call_only, 1, {f, 59}}.
 
-{function, '__bp_priv__quoteRaiser', 0, 187}.
-  {label, 186}.
+{function, '__bp_priv__quoteRaiser', 0, 188}.
+  {label, 187}.
     {line, [{location, "std@testing@asserts.erl", 35}]}.
     {func_info, {atom, std@testing@asserts}, {atom, '__bp_priv__quoteRaiser'}, 0}.
-  {label, 187}.
+  {label, 188}.
     {call_only, 0, {f, 63}}.
 
 {function, '__bp_tpl_0', 1, 73}.
@@ -2609,6 +2609,10 @@ test "asserts: errorText answers the empty string for Ok" {
     {test, is_ne_exact, {f, 158}, [{x, 0}, {atom, true}]}.
     {test, is_ne_exact, {f, 158}, [{x, 0}, {atom, false}]}.
     {test, is_ne_exact, {f, 158}, [{x, 0}, {atom, undefined}]}.
+    {test, is_eq_exact, {f, 166}, [{x, 0}, {atom, '__bp_gen'}]}.
+    {move, {literal, {panic, <<"wasm cannot print a generator value dynamically yet">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 166}.
     {test, is_eq_exact, {f, 164}, [{x, 0}, {atom, ok}]}.
     {move, {literal, <<"Ok(">>}, {y, 1}}.
     {jump, {f, 165}}.
@@ -2692,28 +2696,28 @@ test "asserts: errorText answers the empty string for Ok" {
     {call_ext, 1, {extfunc, erlang, atom_to_list, 1}}.
     {move, {literal, <<"__v__">>}, {x, 1}}.
     {call_ext, 2, {extfunc, string, split, 2}}.
-    {test, is_nonempty_list, {f, 166}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 167}, [{x, 0}]}.
     {get_list, {x, 0}, {x, 1}, {x, 2}}.
     {move, {x, 1}, {y, 2}}.
-    {test, is_nonempty_list, {f, 166}, [{x, 2}]}.
+    {test, is_nonempty_list, {f, 167}, [{x, 2}]}.
     {move, {y, 2}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, list_to_atom, 1}}.
     {move, {x, 0}, {y, 1}}.
-  {label, 166}.
+  {label, 167}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, code, ensure_loaded, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {atom, '__bp_format'}, {x, 1}}.
     {move, {integer, 1}, {x, 2}}.
     {call_ext, 3, {extfunc, erlang, function_exported, 3}}.
-    {test, is_eq_exact, {f, 167}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 168}, [{x, 0}, {atom, true}]}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, nil, {x, 2}}.
     {move, {y, 1}, {x, 0}}.
     {move, {atom, '__bp_format'}, {x, 1}}.
     {call_ext, 3, {extfunc, erlang, apply, 3}}.
     {call_last, 1, {f, 152}, 3}.
-  {label, 167}.
+  {label, 168}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, nil, {x, 1}}.
     {move, {literal, <<"~p">>}, {x, 0}}.
@@ -2730,20 +2734,20 @@ test "asserts: errorText answers the empty string for Ok" {
     {move, {integer, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test, is_eq_exact, {f, 168}, [{x, 0}, {atom, text}]}.
-    {move, {integer, 2}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
-  {label, 168}.
-    {move, {integer, 3}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {move, {x, 0}, {y, 1}}.
-    {test, is_eq_exact, {f, 169}, [{x, 0}, nil]}.
+    {test, is_eq_exact, {f, 169}, [{x, 0}, {atom, text}]}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
   {label, 169}.
+    {move, {integer, 3}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {move, {x, 0}, {y, 1}}.
+    {test, is_eq_exact, {f, 170}, [{x, 0}, nil]}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
+  {label, 170}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
     {make_fun3, {f, 154}, 0, 0, {x, 0}, {list, []}}.
     {move, {y, 1}, {x, 1}}.
@@ -2787,26 +2791,26 @@ test "asserts: errorText answers the empty string for Ok" {
     {deallocate, 2}.
     return.
 
-{function, '-bp_stringify-', 1, 171}.
-  {label, 170}.
+{function, '-bp_stringify-', 1, 172}.
+  {label, 171}.
     {line, [{location, "std@testing@asserts.erl", 28}]}.
     {func_info, {atom, std@testing@asserts}, {atom, '-bp_stringify-'}, 1}.
-  {label, 171}.
+  {label, 172}.
     {allocate, 0, 1}.
-    {test, is_binary, {f, 172}, [{x, 0}]}.
+    {test, is_binary, {f, 173}, [{x, 0}]}.
     {deallocate, 0}.
     return.
-  {label, 172}.
-    {test, is_integer, {f, 173}, [{x, 0}]}.
-    {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 0}.
   {label, 173}.
+    {test, is_integer, {f, 174}, [{x, 0}]}.
+    {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 0}.
+  {label, 174}.
     {call, 1, {f, 146}}.
     {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 0}.
 
-{function, '__bp_tpl_3', 1, 179}.
-  {label, 178}.
-    {func_info, {atom, std@testing@asserts}, {atom, '__bp_tpl_3'}, 1}.
+{function, '__bp_tpl_3', 1, 180}.
   {label, 179}.
+    {func_info, {atom, std@testing@asserts}, {atom, '__bp_tpl_3'}, 1}.
+  {label, 180}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -2854,7 +2858,7 @@ import {testing.asserts} from "std";
 {module, test@main}.
 {exports, [{'_botopink_main', 0}, {main, 1}, {main, 0}, {'__bp_priv__array_range', 2}, {'__bp_priv__array_repeat', 2}, {'__bp_priv__at', 2}, {'__bp_priv__holds', 2}, {'__bp_priv__lastAt', 2}]}.
 {attributes, []}.
-{labels, 103}.
+{labels, 104}.
 
 {function, 'array_range', 2, 3}.
   {label, 2}.
@@ -3027,12 +3031,12 @@ import {testing.asserts} from "std";
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {integer, 3}, {x, 1}}.
     {call_ext, 2, {extfunc, std@testing@asserts, includes, 2}}.
-    {test, is_tagged_tuple, {f, 85}, [{x, 0}, 2, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 86}, [{x, 0}, 2, {atom, ok}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 86}}.
-  {label, 85}.
-    {move, {atom, false}, {x, 0}}.
+    {jump, {f, 87}}.
   {label, 86}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 87}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 57}}.
@@ -3159,13 +3163,13 @@ import {testing.asserts} from "std";
     {allocate, 0, 0}.
     {move, {atom, test@main}, {x, 0}}.
     {call_ext, 1, {extfunc, code, which, 1}}.
-    {test, is_list, {f, 87}, [{x, 0}]}.
+    {test, is_list, {f, 88}, [{x, 0}]}.
     {call_ext, 1, {extfunc, filename, dirname, 1}}.
     {move, {literal, [42, 46, 101, 114, 108]}, {x, 1}}.
     {call_ext, 2, {extfunc, filename, join, 2}}.
     {call_ext, 1, {extfunc, filelib, wildcard, 1}}.
     {call_last, 1, {f, 21}, 0}.
-  {label, 87}.
+  {label, 88}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 0}.
     return.
@@ -3175,7 +3179,7 @@ import {testing.asserts} from "std";
     {line, [{location, "test@main.erl", 10}]}.
     {func_info, {atom, test@main}, {atom, '-bp_load_sibling-'}, 1}.
   {label, 21}.
-    {test, is_nonempty_list, {f, 88}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 89}, [{x, 0}]}.
     {allocate, 2, 1}.
     {get_list, {x, 0}, {y, 1}, {y, 0}}.
     {move, {literal, [46, 101, 114, 108]}, {x, 1}}.
@@ -3183,19 +3187,19 @@ import {testing.asserts} from "std";
     {call_ext, 2, {extfunc, filename, basename, 2}}.
     {call_ext, 1, {extfunc, erlang, list_to_atom, 1}}.
     {call_ext, 1, {extfunc, code, ensure_loaded, 1}}.
-    {test, is_tagged_tuple, {f, 89}, [{x, 0}, 2, {atom, module}]}.
-    {jump, {f, 91}}.
-  {label, 89}.
+    {test, is_tagged_tuple, {f, 90}, [{x, 0}, 2, {atom, module}]}.
+    {jump, {f, 92}}.
+  {label, 90}.
     {move, {literal, [binary, return_errors]}, {x, 1}}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 2, {extfunc, compile, file, 2}}.
-    {test, is_tagged_tuple, {f, 90}, [{x, 0}, 3, {atom, ok}]}.
+    {test, is_tagged_tuple, {f, 91}, [{x, 0}, 3, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 2, {x, 2}}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 3, {extfunc, code, load_binary, 3}}.
-    {jump, {f, 91}}.
-  {label, 90}.
+    {jump, {f, 92}}.
+  {label, 91}.
     {test_heap, 4, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {put_list, {y, 1}, {x, 0}, {x, 1}}.
@@ -3206,46 +3210,46 @@ import {testing.asserts} from "std";
     {call_ext, 2, {extfunc, file, write, 2}}.
     {move, {integer, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, halt, 1}}.
-  {label, 91}.
+  {label, 92}.
     {move, {y, 0}, {x, 0}}.
     {call_last, 1, {f, 21}, 2}.
-  {label, 88}.
+  {label, 89}.
     {move, {atom, ok}, {x, 0}}.
     return.
 
-{function, '__bp_priv__array_range', 2, 94}.
-  {label, 93}.
+{function, '__bp_priv__array_range', 2, 95}.
+  {label, 94}.
     {line, [{location, "test@main.erl", 12}]}.
     {func_info, {atom, test@main}, {atom, '__bp_priv__array_range'}, 2}.
-  {label, 94}.
+  {label, 95}.
     {call_only, 2, {f, 3}}.
 
-{function, '__bp_priv__array_repeat', 2, 96}.
-  {label, 95}.
+{function, '__bp_priv__array_repeat', 2, 97}.
+  {label, 96}.
     {line, [{location, "test@main.erl", 13}]}.
     {func_info, {atom, test@main}, {atom, '__bp_priv__array_repeat'}, 2}.
-  {label, 96}.
+  {label, 97}.
     {call_only, 2, {f, 5}}.
 
-{function, '__bp_priv__at', 2, 98}.
-  {label, 97}.
+{function, '__bp_priv__at', 2, 99}.
+  {label, 98}.
     {line, [{location, "test@main.erl", 14}]}.
     {func_info, {atom, test@main}, {atom, '__bp_priv__at'}, 2}.
-  {label, 98}.
+  {label, 99}.
     {call_only, 2, {f, 7}}.
 
-{function, '__bp_priv__holds', 2, 100}.
-  {label, 99}.
+{function, '__bp_priv__holds', 2, 101}.
+  {label, 100}.
     {line, [{location, "test@main.erl", 15}]}.
     {func_info, {atom, test@main}, {atom, '__bp_priv__holds'}, 2}.
-  {label, 100}.
+  {label, 101}.
     {call_only, 2, {f, 11}}.
 
-{function, '__bp_priv__lastAt', 2, 102}.
-  {label, 101}.
+{function, '__bp_priv__lastAt', 2, 103}.
+  {label, 102}.
     {line, [{location, "test@main.erl", 16}]}.
     {func_info, {atom, test@main}, {atom, '__bp_priv__lastAt'}, 2}.
-  {label, 102}.
+  {label, 103}.
     {call_only, 2, {f, 9}}.
 
 {function, '-bp_indexOf-', 3, 33}.
@@ -3447,6 +3451,10 @@ import {testing.asserts} from "std";
     {test, is_ne_exact, {f, 73}, [{x, 0}, {atom, true}]}.
     {test, is_ne_exact, {f, 73}, [{x, 0}, {atom, false}]}.
     {test, is_ne_exact, {f, 73}, [{x, 0}, {atom, undefined}]}.
+    {test, is_eq_exact, {f, 81}, [{x, 0}, {atom, '__bp_gen'}]}.
+    {move, {literal, {panic, <<"wasm cannot print a generator value dynamically yet">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 81}.
     {test, is_eq_exact, {f, 79}, [{x, 0}, {atom, ok}]}.
     {move, {literal, <<"Ok(">>}, {y, 1}}.
     {jump, {f, 80}}.
@@ -3530,28 +3538,28 @@ import {testing.asserts} from "std";
     {call_ext, 1, {extfunc, erlang, atom_to_list, 1}}.
     {move, {literal, <<"__v__">>}, {x, 1}}.
     {call_ext, 2, {extfunc, string, split, 2}}.
-    {test, is_nonempty_list, {f, 81}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 82}, [{x, 0}]}.
     {get_list, {x, 0}, {x, 1}, {x, 2}}.
     {move, {x, 1}, {y, 2}}.
-    {test, is_nonempty_list, {f, 81}, [{x, 2}]}.
+    {test, is_nonempty_list, {f, 82}, [{x, 2}]}.
     {move, {y, 2}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, list_to_atom, 1}}.
     {move, {x, 0}, {y, 1}}.
-  {label, 81}.
+  {label, 82}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, code, ensure_loaded, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {atom, '__bp_format'}, {x, 1}}.
     {move, {integer, 1}, {x, 2}}.
     {call_ext, 3, {extfunc, erlang, function_exported, 3}}.
-    {test, is_eq_exact, {f, 82}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 83}, [{x, 0}, {atom, true}]}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, nil, {x, 2}}.
     {move, {y, 1}, {x, 0}}.
     {move, {atom, '__bp_format'}, {x, 1}}.
     {call_ext, 3, {extfunc, erlang, apply, 3}}.
     {call_last, 1, {f, 67}, 3}.
-  {label, 82}.
+  {label, 83}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, nil, {x, 1}}.
     {move, {literal, <<"~p">>}, {x, 0}}.
@@ -3568,20 +3576,20 @@ import {testing.asserts} from "std";
     {move, {integer, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test, is_eq_exact, {f, 83}, [{x, 0}, {atom, text}]}.
-    {move, {integer, 2}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
-  {label, 83}.
-    {move, {integer, 3}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {move, {x, 0}, {y, 1}}.
-    {test, is_eq_exact, {f, 84}, [{x, 0}, nil]}.
+    {test, is_eq_exact, {f, 84}, [{x, 0}, {atom, text}]}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
   {label, 84}.
+    {move, {integer, 3}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {move, {x, 0}, {y, 1}}.
+    {test, is_eq_exact, {f, 85}, [{x, 0}, nil]}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
+  {label, 85}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
     {make_fun3, {f, 69}, 0, 0, {x, 0}, {list, []}}.
     {move, {y, 1}, {x, 1}}.
@@ -3635,11 +3643,11 @@ import {testing.asserts} from "std";
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_list, {f, 92}, [{x, 0}]}.
+    {test, is_list, {f, 93}, [{x, 0}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext_last, 2, {extfunc, lists, append, 2}, 2}.
-  {label, 92}.
+  {label, 93}.
     %% unresolved_method: append/2
     {move, {literal, {unresolved_method, append, 2}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.

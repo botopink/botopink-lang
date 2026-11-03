@@ -6,6 +6,8 @@ const std = @import("std");
 const h = @import("helpers.zig");
 const stdWasm = @import("std_wasm");
 const jsPrelude = @import("../js/js_prelude.zig");
+const codegen = @import("../../codegen.zig");
+const runtime = @import("../runtime.zig");
 
 // A `default fn` of a program's contract implemented for a primitive
 // (decision 799: `StringTwice implement Twice for string {}`), and its body is
@@ -484,4 +486,43 @@ test "js: doc comment holding a block-comment close ---- the emitted program sti
         \\
         \\import {io.terminal.print} from "std";
     , "ok\n");
+}
+
+// Front 229 / decision 1104 piece 2 — a `Task` (`Async<T>`) held in an
+// `unknown` slot is a Promise at runtime here (decision 432's `__bp_task`):
+// `js_prelude.zig`'s `task_branch` catches it before `__bp_show`'s final
+// `%O` fallback would answer node's own `Promise { ... }`, and answers the
+// same named panic wasm already gives it (`wat.zig`'s `gcTaggedPrinter`,
+// front 229 s2's third box, a64af21ff) — one text, so no target answers
+// differently. Commonjs-only: erlang and beam lower `Async<T>` eagerly to its
+// settled `T` (`erlang.zig`'s `fnForms` comment), so there is no runtime
+// handle for a task to catch on those two targets — nothing to pin there.
+test "js: front 229 / decision 1104 piece 2 ---- a Task held unknown panics by the name wasm gives it" {
+    const allocator = std.testing.allocator;
+    const src =
+        \\async fn doubled(n: i32) -> Async<i32> { return n * 2; }
+        \\pub fn main() -> void {
+        \\    val t = doubled(1);
+        \\    val u: unknown = t;
+        \\    print(u);
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ;
+    var outputs = try codegen.generateWith(allocator, &.{.{ .path = "", .source = src }}, std.testing.io, h.configs[0], .{ .execute = false });
+    defer {
+        for (outputs.items) |*o| o.result.deinit(allocator);
+        outputs.deinit(allocator);
+    }
+    const o = for (outputs.items) |o| {
+        if (std.mem.eql(u8, o.name, "") or std.mem.eql(u8, o.name, "main")) break o;
+    } else return error.ModuleDidNotCompile;
+    if (o.result.failed()) return error.ModuleDidNotCompile;
+    const got = (try runtime.executeAborting(allocator, .commonJS, o.result.js, "main", std.testing.io)) orelse return error.DidNotAbort;
+    defer allocator.free(got);
+    const want = "panic: wasm cannot print a Task value dynamically yet\n";
+    if (std.mem.indexOf(u8, got, want) == null) {
+        std.debug.print("\n=== commonJS: what the abort wrote ===\n{s}\n=== expected it to contain ===\n{s}\n", .{ got, want });
+        return error.AbortTextMismatch;
+    }
 }

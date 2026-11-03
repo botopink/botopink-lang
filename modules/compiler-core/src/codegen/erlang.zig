@@ -1600,6 +1600,25 @@ const show_helper_form: Ast.Form = .{
             // nested value is (144 B-53).
             resultShowClause("Ok(", "ok"),
             resultShowClause("Error(", "error"),
+            // Front 229 / decision 1104 piece 2 — a generator (`@Iter<T>` /
+            // `@AsyncIter<T>`) is this target's own `{'__bp_gen', Pid}` handle
+            // (`gen_runtime.zig`'s process protocol, decision 105, 144 B-128):
+            // caught here, before the generic tagged-tuple clause below sees
+            // its atom tag and `'__bp_tagged'` falls through to `~p`'s raw
+            // `{'__bp_gen',<0.123.0>}`. The panic text is wasm's, word for
+            // word (`wat.zig`'s `gcTaggedPrinter`, front 229 s2's third box,
+            // a64af21ff) — one text, so no target answers differently. A
+            // `@Async<T>` has no runtime handle to catch here: this target
+            // lowers it eagerly to its settled `T` (the comment at `fnForms`
+            // above), so a task reaching an unknown slot is already its plain
+            // value by the time it would print — nothing to intercept.
+            .{
+                .patterns = &.{ .{ .tuple = &.{ Ast.Expr.a("__bp_gen"), Ast.Expr.v("_") } }, Ast.Expr.v("_") },
+                .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "erlang", .name = "error", .args = &.{
+                    .{ .tuple = &.{ Ast.Expr.a("panic"), .{ .lexeme_binary = "wasm cannot print a generator value dynamically yet" } } },
+                } } } }}),
+                .layout = .inline_,
+            },
             // A tagged value (decision 21): the tag names the module that formats it,
             // and `'__bp_tagged'/2` falls back to `~p` for every other tagged tuple.
             .{

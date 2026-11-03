@@ -36,7 +36,7 @@ import {io.terminal.print} from "std";
 {module, test@main}.
 {exports, [{'_botopink_main', 0}, {main, 1}, {main, 0}, {'__bp_priv__array_drop', 2}, {'__bp_priv__array_range', 2}, {'__bp_priv__array_repeat', 2}, {'__bp_priv__array_rest', 1}, {'__bp_priv__array_take', 2}]}.
 {attributes, []}.
-{labels, 102}.
+{labels, 103}.
 
 {function, 'array_range', 2, 3}.
   {label, 2}.
@@ -173,18 +173,18 @@ import {io.terminal.print} from "std";
     {call, 1, {f, 23}}.
     {move, {y, 1}, {x, 0}}.
     {move, {integer, 2}, {x, 1}}.
-    {call, 2, {f, 52}}.
+    {call, 2, {f, 53}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 23}}.
     {move, {y, 1}, {x, 0}}.
     {move, {integer, 1}, {x, 1}}.
-    {call, 2, {f, 54}}.
+    {call, 2, {f, 55}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 23}}.
     {move, {y, 1}, {x, 0}}.
-    {call, 1, {f, 56}}.
+    {call, 1, {f, 57}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 23}}.
@@ -213,20 +213,20 @@ import {io.terminal.print} from "std";
     {move, {y, 1}, {x, 0}}.
     {move, {integer, 2}, {x, 1}}.
     {move, {integer, 0}, {x, 2}}.
-    {call, 3, {f, 58}}.
+    {call, 3, {f, 59}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 23}}.
     {move, {y, 1}, {x, 0}}.
     {move, {integer, 5}, {x, 1}}.
     {move, {integer, 0}, {x, 2}}.
-    {call, 3, {f, 58}}.
+    {call, 3, {f, 59}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 23}}.
     {move, {y, 1}, {x, 0}}.
     {move, {integer, 1}, {x, 1}}.
-    {call, 2, {f, 62}}.
+    {call, 2, {f, 63}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 23}}.
@@ -245,7 +245,7 @@ import {io.terminal.print} from "std";
     {move, {literal, <<"-">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {call, 2, {f, 80}}.
+    {call, 2, {f, 81}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 23}}.
@@ -274,7 +274,7 @@ import {io.terminal.print} from "std";
     {move, {literal, <<", ">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 4}, {x, 0}}.
-    {call, 2, {f, 80}}.
+    {call, 2, {f, 81}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 23}}.
@@ -282,7 +282,7 @@ import {io.terminal.print} from "std";
     {move, {x, 0}, {x, 1}}.
     {move, {y, 4}, {x, 0}}.
     {move, {integer, 0}, {x, 2}}.
-    {call, 3, {f, 58}}.
+    {call, 3, {f, 59}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 23}}.
@@ -312,7 +312,7 @@ import {io.terminal.print} from "std";
     {move, {literal, <<"|">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 6}, {x, 0}}.
-    {call, 2, {f, 80}}.
+    {call, 2, {f, 81}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 23}}.
@@ -336,7 +336,7 @@ import {io.terminal.print} from "std";
     {move, {y, 8}, {x, 0}}.
     {move, {float, 2.5}, {x, 1}}.
     {move, {integer, 0}, {x, 2}}.
-    {call, 3, {f, 58}}.
+    {call, 3, {f, 59}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 23}}.
@@ -362,102 +362,102 @@ import {io.terminal.print} from "std";
   {label, 11}.
     {call_only, 0, {f, 9}}.
 
-{function, 'array_take', 2, 52}.
-  {label, 51}.
+{function, 'array_take', 2, 53}.
+  {label, 52}.
     {line, [{location, "test@main.erl", 6}]}.
     {func_info, {atom, test@main}, {atom, 'array_take'}, 2}.
-  {label, 52}.
+  {label, 53}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
-    {test, is_ne_exact, {f, 85}, [{y, 1}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 86}, [{y, 1}, {atom, undefined}]}.
     {gc_bif, '+', {f, 0}, 0, [{integer, 0}, {integer, 1}], {x, 0}}.
     {gc_bif, '-', {f, 0}, 1, [{y, 1}, {integer, 0}], {x, 1}}.
     {move, {x, 1}, {x, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call_ext_last, 3, {extfunc, lists, sublist, 3}, 2}.
-  {label, 85}.
+  {label, 86}.
     {move, {integer, 0}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext_last, 2, {extfunc, lists, nthtail, 2}, 2}.
 
-{function, 'array_drop', 2, 54}.
-  {label, 53}.
+{function, 'array_drop', 2, 55}.
+  {label, 54}.
     {line, [{location, "test@main.erl", 7}]}.
     {func_info, {atom, test@main}, {atom, 'array_drop'}, 2}.
-  {label, 54}.
+  {label, 55}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_ne_exact, {f, 87}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 88}, [{x, 0}, {atom, undefined}]}.
     {gc_bif, '+', {f, 0}, 1, [{y, 1}, {integer, 1}], {x, 1}}.
     {gc_bif, '-', {f, 0}, 2, [{x, 0}, {y, 1}], {x, 2}}.
     {move, {y, 0}, {x, 0}}.
     {call_ext_last, 3, {extfunc, lists, sublist, 3}, 2}.
-  {label, 87}.
+  {label, 88}.
     {move, {y, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext_last, 2, {extfunc, lists, nthtail, 2}, 2}.
 
-{function, 'array_rest', 1, 56}.
-  {label, 55}.
+{function, 'array_rest', 1, 57}.
+  {label, 56}.
     {line, [{location, "test@main.erl", 8}]}.
     {func_info, {atom, test@main}, {atom, 'array_rest'}, 1}.
-  {label, 56}.
+  {label, 57}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
-    {test, is_ne_exact, {f, 89}, [{x, 0}, {atom, undefined}]}.
+    {test, is_ne_exact, {f, 90}, [{x, 0}, {atom, undefined}]}.
     {gc_bif, '+', {f, 0}, 1, [{integer, 1}, {integer, 1}], {x, 1}}.
     {gc_bif, '-', {f, 0}, 2, [{x, 0}, {integer, 1}], {x, 2}}.
     {move, {y, 0}, {x, 0}}.
     {call_ext_last, 3, {extfunc, lists, sublist, 3}, 1}.
-  {label, 89}.
+  {label, 90}.
     {move, {integer, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext_last, 2, {extfunc, lists, nthtail, 2}, 1}.
 
-{function, '__bp_priv__array_drop', 2, 93}.
-  {label, 92}.
+{function, '__bp_priv__array_drop', 2, 94}.
+  {label, 93}.
     {line, [{location, "test@main.erl", 10}]}.
     {func_info, {atom, test@main}, {atom, '__bp_priv__array_drop'}, 2}.
-  {label, 93}.
-    {call_only, 2, {f, 54}}.
-
-{function, '__bp_priv__array_range', 2, 95}.
   {label, 94}.
+    {call_only, 2, {f, 55}}.
+
+{function, '__bp_priv__array_range', 2, 96}.
+  {label, 95}.
     {line, [{location, "test@main.erl", 11}]}.
     {func_info, {atom, test@main}, {atom, '__bp_priv__array_range'}, 2}.
-  {label, 95}.
+  {label, 96}.
     {call_only, 2, {f, 3}}.
 
-{function, '__bp_priv__array_repeat', 2, 97}.
-  {label, 96}.
+{function, '__bp_priv__array_repeat', 2, 98}.
+  {label, 97}.
     {line, [{location, "test@main.erl", 12}]}.
     {func_info, {atom, test@main}, {atom, '__bp_priv__array_repeat'}, 2}.
-  {label, 97}.
+  {label, 98}.
     {call_only, 2, {f, 5}}.
 
-{function, '__bp_priv__array_rest', 1, 99}.
-  {label, 98}.
+{function, '__bp_priv__array_rest', 1, 100}.
+  {label, 99}.
     {line, [{location, "test@main.erl", 13}]}.
     {func_info, {atom, test@main}, {atom, '__bp_priv__array_rest'}, 1}.
-  {label, 99}.
-    {call_only, 1, {f, 56}}.
-
-{function, '__bp_priv__array_take', 2, 101}.
   {label, 100}.
+    {call_only, 1, {f, 57}}.
+
+{function, '__bp_priv__array_take', 2, 102}.
+  {label, 101}.
     {line, [{location, "test@main.erl", 14}]}.
     {func_info, {atom, test@main}, {atom, '__bp_priv__array_take'}, 2}.
-  {label, 101}.
-    {call_only, 2, {f, 52}}.
+  {label, 102}.
+    {call_only, 2, {f, 53}}.
 
 {function, '__bp_print', 1, 23}.
   {label, 22}.
@@ -542,6 +542,10 @@ import {io.terminal.print} from "std";
     {test, is_ne_exact, {f, 39}, [{x, 0}, {atom, true}]}.
     {test, is_ne_exact, {f, 39}, [{x, 0}, {atom, false}]}.
     {test, is_ne_exact, {f, 39}, [{x, 0}, {atom, undefined}]}.
+    {test, is_eq_exact, {f, 47}, [{x, 0}, {atom, '__bp_gen'}]}.
+    {move, {literal, {panic, <<"wasm cannot print a generator value dynamically yet">>}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 47}.
     {test, is_eq_exact, {f, 45}, [{x, 0}, {atom, ok}]}.
     {move, {literal, <<"Ok(">>}, {y, 1}}.
     {jump, {f, 46}}.
@@ -625,28 +629,28 @@ import {io.terminal.print} from "std";
     {call_ext, 1, {extfunc, erlang, atom_to_list, 1}}.
     {move, {literal, <<"__v__">>}, {x, 1}}.
     {call_ext, 2, {extfunc, string, split, 2}}.
-    {test, is_nonempty_list, {f, 47}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 48}, [{x, 0}]}.
     {get_list, {x, 0}, {x, 1}, {x, 2}}.
     {move, {x, 1}, {y, 2}}.
-    {test, is_nonempty_list, {f, 47}, [{x, 2}]}.
+    {test, is_nonempty_list, {f, 48}, [{x, 2}]}.
     {move, {y, 2}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, list_to_atom, 1}}.
     {move, {x, 0}, {y, 1}}.
-  {label, 47}.
+  {label, 48}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, code, ensure_loaded, 1}}.
     {move, {y, 1}, {x, 0}}.
     {move, {atom, '__bp_format'}, {x, 1}}.
     {move, {integer, 1}, {x, 2}}.
     {call_ext, 3, {extfunc, erlang, function_exported, 3}}.
-    {test, is_eq_exact, {f, 48}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 49}, [{x, 0}, {atom, true}]}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, nil, {x, 2}}.
     {move, {y, 1}, {x, 0}}.
     {move, {atom, '__bp_format'}, {x, 1}}.
     {call_ext, 3, {extfunc, erlang, apply, 3}}.
     {call_last, 1, {f, 33}, 3}.
-  {label, 48}.
+  {label, 49}.
     {test_heap, 2, 1}.
     {put_list, {y, 0}, nil, {x, 1}}.
     {move, {literal, <<"~p">>}, {x, 0}}.
@@ -663,20 +667,20 @@ import {io.terminal.print} from "std";
     {move, {integer, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test, is_eq_exact, {f, 49}, [{x, 0}, {atom, text}]}.
-    {move, {integer, 2}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
-  {label, 49}.
-    {move, {integer, 3}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {move, {x, 0}, {y, 1}}.
-    {test, is_eq_exact, {f, 50}, [{x, 0}, nil]}.
+    {test, is_eq_exact, {f, 50}, [{x, 0}, {atom, text}]}.
     {move, {integer, 2}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
   {label, 50}.
+    {move, {integer, 3}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {move, {x, 0}, {y, 1}}.
+    {test, is_eq_exact, {f, 51}, [{x, 0}, nil]}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
+  {label, 51}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
     {make_fun3, {f, 35}, 0, 0, {x, 0}, {list, []}}.
     {move, {y, 1}, {x, 1}}.
@@ -720,28 +724,28 @@ import {io.terminal.print} from "std";
     {deallocate, 2}.
     return.
 
-{function, '-bp_indexOf-', 3, 58}.
-  {label, 57}.
+{function, '-bp_indexOf-', 3, 59}.
+  {label, 58}.
     {line, [{location, "test@main.erl", 4}]}.
     {func_info, {atom, test@main}, {atom, '-bp_indexOf-'}, 3}.
-  {label, 58}.
-    {test, is_nonempty_list, {f, 59}, [{x, 0}]}.
+  {label, 59}.
+    {test, is_nonempty_list, {f, 60}, [{x, 0}]}.
     {get_list, {x, 0}, {x, 3}, {x, 4}}.
-    {test, is_eq, {f, 60}, [{x, 3}, {x, 1}]}.
+    {test, is_eq, {f, 61}, [{x, 3}, {x, 1}]}.
     {move, {x, 2}, {x, 0}}.
     return.
-  {label, 60}.
+  {label, 61}.
     {move, {x, 4}, {x, 0}}.
     {gc_bif, '+', {f, 0}, 3, [{x, 2}, {integer, 1}], {x, 2}}.
-    {call_only, 3, {f, 58}}.
-  {label, 59}.
+    {call_only, 3, {f, 59}}.
+  {label, 60}.
     {move, {integer, -1}, {x, 0}}.
     return.
 
-{function, '__bp_tpl_0--t/2-fun-0--fun-1-', 4, 70}.
-  {label, 69}.
-    {func_info, {atom, test@main}, {atom, '__bp_tpl_0--t/2-fun-0--fun-1-'}, 4}.
+{function, '__bp_tpl_0--t/2-fun-0--fun-1-', 4, 71}.
   {label, 70}.
+    {func_info, {atom, test@main}, {atom, '__bp_tpl_0--t/2-fun-0--fun-1-'}, 4}.
+  {label, 71}.
     {allocate, 11, 4}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}]}}.
     {move, {x, 0}, {y, 3}}.
@@ -749,10 +753,10 @@ import {io.terminal.print} from "std";
     {move, {x, 2}, {y, 5}}.
     {move, {x, 3}, {y, 0}}.
     {test_heap, {alloc, [{words, 1}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 70}, 0, 0, {x, 0}, {list, [{y, 0}]}}.
+    {make_fun3, {f, 71}, 0, 0, {x, 0}, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_nonempty_list, {f, 72}, [{x, 0}]}.
+    {test, is_nonempty_list, {f, 73}, [{x, 0}]}.
     {get_list, {x, 0}, {y, 6}, {y, 7}}.
     {move, {y, 6}, {y, 1}}.
     {move, {y, 7}, {y, 2}}.
@@ -765,51 +769,51 @@ import {io.terminal.print} from "std";
     {call_ext, 2, {extfunc, erlang, '=:=', 2}}.
     {move, {x, 0}, {y, 9}}.
     {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 74}, [{x, 0}, {atom, true}]}.
+    {test, is_eq_exact, {f, 75}, [{x, 0}, {atom, true}]}.
     {move, {y, 3}, {y, 10}}.
-    {jump, {f, 73}}.
-  {label, 74}.
-    {move, {y, 9}, {x, 0}}.
-    {test, is_eq_exact, {f, 75}, [{x, 0}, {atom, false}]}.
-    {move, {y, 5}, {y, 10}}.
-    {jump, {f, 73}}.
+    {jump, {f, 74}}.
   {label, 75}.
     {move, {y, 9}, {x, 0}}.
+    {test, is_eq_exact, {f, 76}, [{x, 0}, {atom, false}]}.
+    {move, {y, 5}, {y, 10}}.
+    {jump, {f, 74}}.
+  {label, 76}.
+    {move, {y, 9}, {x, 0}}.
     {case_end, {x, 0}}.
-  {label, 73}.
+  {label, 74}.
     {move, {y, 8}, {x, 0}}.
     {move, {y, 2}, {x, 1}}.
     {move, {y, 10}, {x, 2}}.
     {move, {y, 0}, {x, 3}}.
-    {call_last, 4, {f, 70}, 11}.
-  {label, 72}.
+    {call_last, 4, {f, 71}, 11}.
+  {label, 73}.
     {move, {y, 4}, {x, 0}}.
-    {test, is_eq_exact, {f, 76}, [{x, 0}, nil]}.
+    {test, is_eq_exact, {f, 77}, [{x, 0}, nil]}.
     {move, {y, 5}, {x, 0}}.
     {deallocate, 11}.
     return.
-  {label, 76}.
+  {label, 77}.
     {move, {y, 3}, {x, 0}}.
     {move, {y, 4}, {x, 1}}.
     {move, {y, 5}, {x, 2}}.
     {move, {y, 0}, {x, 3}}.
     {deallocate, 11}.
-    {jump, {f, 69}}.
+    {jump, {f, 70}}.
 
-{function, '__bp_tpl_0-t/2-fun-0-', 2, 66}.
-  {label, 65}.
-    {func_info, {atom, test@main}, {atom, '__bp_tpl_0-t/2-fun-0-'}, 2}.
+{function, '__bp_tpl_0-t/2-fun-0-', 2, 67}.
   {label, 66}.
+    {func_info, {atom, test@main}, {atom, '__bp_tpl_0-t/2-fun-0-'}, 2}.
+  {label, 67}.
     {allocate, 4, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 1}}.
     {move, {x, 1}, {y, 2}}.
     {test_heap, {alloc, [{words, 1}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 70}, 0, 0, {x, 0}, {list, [{y, 2}]}}.
+    {make_fun3, {f, 71}, 0, 0, {x, 0}, {list, [{y, 2}]}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {y, 0}}.
-    {jump, {f, 78}}.
-  {label, 78}.
+    {jump, {f, 79}}.
+  {label, 79}.
     {move, {integer, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {move, {integer, -1}, {x, 2}}.
@@ -818,16 +822,16 @@ import {io.terminal.print} from "std";
     {deallocate, 4}.
     return.
 
-{function, '__bp_tpl_0', 2, 62}.
-  {label, 61}.
-    {func_info, {atom, test@main}, {atom, '__bp_tpl_0'}, 2}.
+{function, '__bp_tpl_0', 2, 63}.
   {label, 62}.
+    {func_info, {atom, test@main}, {atom, '__bp_tpl_0'}, 2}.
+  {label, 63}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 66}, 1, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 67}, 1, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
@@ -836,33 +840,33 @@ import {io.terminal.print} from "std";
     {deallocate, 3}.
     return.
 
-{function, '-bp_stringify-', 1, 82}.
-  {label, 81}.
+{function, '-bp_stringify-', 1, 83}.
+  {label, 82}.
     {line, [{location, "test@main.erl", 4}]}.
     {func_info, {atom, test@main}, {atom, '-bp_stringify-'}, 1}.
-  {label, 82}.
+  {label, 83}.
     {allocate, 0, 1}.
-    {test, is_binary, {f, 83}, [{x, 0}]}.
+    {test, is_binary, {f, 84}, [{x, 0}]}.
     {deallocate, 0}.
     return.
-  {label, 83}.
-    {test, is_integer, {f, 84}, [{x, 0}]}.
-    {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 0}.
   {label, 84}.
+    {test, is_integer, {f, 85}, [{x, 0}]}.
+    {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 0}.
+  {label, 85}.
     {call, 1, {f, 27}}.
     {call_ext_last, 1, {extfunc, unicode, characters_to_binary, 1}, 0}.
 
-{function, '-bp_join-', 2, 80}.
-  {label, 79}.
+{function, '-bp_join-', 2, 81}.
+  {label, 80}.
     {line, [{location, "test@main.erl", 4}]}.
     {func_info, {atom, test@main}, {atom, '-bp_join-'}, 2}.
-  {label, 80}.
+  {label, 81}.
     {allocate, 1, 2}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 1}, {y, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
-    {make_fun3, {f, 82}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 83}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
@@ -879,11 +883,11 @@ import {io.terminal.print} from "std";
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_list, {f, 91}, [{x, 0}]}.
+    {test, is_list, {f, 92}, [{x, 0}]}.
     {move, {y, 0}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext_last, 2, {extfunc, lists, append, 2}, 2}.
-  {label, 91}.
+  {label, 92}.
     %% unresolved_method: append/2
     {move, {literal, {unresolved_method, append, 2}}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, error, 1}}.
