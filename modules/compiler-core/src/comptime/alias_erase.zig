@@ -153,8 +153,12 @@ const Ctx = struct {
 };
 
 /// `target` with each `params[i]` (a bare `.named`) replaced by `args[i]`.
-/// Copies every node it rebuilds into `arena`; shares the leaves.
-fn substitute(arena: std.mem.Allocator, target: ast.TypeRef, params: []const ast.GenericParam, args: []const ast.TypeRef) Error!ast.TypeRef {
+/// Copies every node it rebuilds into `arena`; shares the leaves. `pub` for
+/// `codegen/wat.zig`'s `gcAliasFunctionType` (decision b162wasm-d): a
+/// function-shaped alias written `is_builtin = true` (decision 606 (1))
+/// never reaches `expand`/`expandOuter` (both refuse a builtin generic), so
+/// the wasm GC backend substitutes its own written arguments directly.
+pub fn substitute(arena: std.mem.Allocator, target: ast.TypeRef, params: []const ast.GenericParam, args: []const ast.TypeRef) Error!ast.TypeRef {
     switch (target) {
         .named => |n| {
             for (params, args) |p, a| if (std.mem.eql(u8, p.name, n)) return a;

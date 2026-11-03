@@ -1035,22 +1035,35 @@ fn isAmbientBehaviorName(name: []const u8) bool {
     return false;
 }
 
+/// Every type alias the module and its linked ones declare, by name — read by
+/// `gcExpandResultAliasReturns` (decision 118, the Result-shaped case) and by
+/// `gcReprOfType` (decision b162wasm-d, the function-shaped one). The
+/// prelude's own (`Composition<T>`, `Component<T>`, …) are ambient — no `use`
+/// names them — and so never written into `own` or `linked`; they live in
+/// `primitives.bp`'s compiler section, `preludeCache.builtins()`, the same
+/// source `isAmbientBehaviorName` reads for an ambient behavior.
+fn gcCollectAliases(ar: std.mem.Allocator, own: ast.Program, linked: []const Linked) !aliasErase.Aliases {
+    var aliases: aliasErase.Aliases = .empty;
+    for (own.decls) |d| if (d == .typeAlias) try aliases.put(ar, d.typeAlias.name, d.typeAlias);
+    for (linked) |l| for (l.program.decls) |d| if (d == .typeAlias and !aliases.contains(d.typeAlias.name)) try aliases.put(ar, d.typeAlias.name, d.typeAlias);
+    if (preludeCache.builtins()) |prog| for (prog.decls) |d| if (d == .typeAlias and !aliases.contains(d.typeAlias.name)) try aliases.put(ar, d.typeAlias.name, d.typeAlias);
+    return aliases;
+}
+
 /// Decision 118 — a function's return written through an alias of a
 /// `@Result` (`-> Parser<i32>`, `type Parser<T> = Result<T, ParseError>`)
 /// keeps the alias past `alias_erase` (it activates no effect): a GC module
 /// holds the value as the `$result` it is, so the return is read as the
 /// alias's target. As the word an unknown name is, `return parsePort(s)` was
-/// a refused conversion. The aliases are the module's and its linked ones'.
-fn gcExpandResultAliasReturns(ar: std.mem.Allocator, program: ast.Program, own: ast.Program, linked: []const Linked) !ast.Program {
-    var aliases: aliasErase.Aliases = .empty;
-    for (own.decls) |d| if (d == .typeAlias) try aliases.put(ar, d.typeAlias.name, d.typeAlias);
-    for (linked) |l| for (l.program.decls) |d| if (d == .typeAlias and !aliases.contains(d.typeAlias.name)) try aliases.put(ar, d.typeAlias.name, d.typeAlias);
+/// a refused conversion. `aliases` is the module's and its linked ones'
+/// (`gcCollectAliases`).
+fn gcExpandResultAliasReturns(ar: std.mem.Allocator, program: ast.Program, aliases: *const aliasErase.Aliases) !ast.Program {
     if (aliases.count() == 0) return program;
     var decls: ?[]ast.DeclKind = null;
     for (program.decls, 0..) |d, i| {
         if (d != .@"fn") continue;
         const rt = d.@"fn".returnType orelse continue;
-        const x = aliasErase.expandOuter(ar, rt, &aliases) orelse continue;
+        const x = aliasErase.expandOuter(ar, rt, aliases) orelse continue;
         if (Emitter.resultShapeOfTypeRef(x) == null) continue;
         if (decls == null) decls = try ar.dupe(ast.DeclKind, program.decls);
         decls.?[i].@"fn".returnType = x;
@@ -2332,8 +2345,9 @@ fn emitWatPass(
     const linked = try em.arena().dupe(Linked, linked_in);
     for (linked) |*l| l.program = try scopeCarry.carry(em.arena(), l.program);
     if (plan.mode == .gc) {
-        own_program = try gcExpandResultAliasReturns(em.arena(), own_program, own_program, linked);
-        for (linked) |*l| l.program = try gcExpandResultAliasReturns(em.arena(), l.program, own_program, linked);
+        em.type_aliases = try gcCollectAliases(em.arena(), own_program, linked);
+        own_program = try gcExpandResultAliasReturns(em.arena(), own_program, &em.type_aliases);
+        for (linked) |*l| l.program = try gcExpandResultAliasReturns(em.arena(), l.program, &em.type_aliases);
     }
 
     // The linked modules' declarations come first, minus their entry point,
@@ -4332,6 +4346,13 @@ const Emitter = struct {
     /// Decision 810 (1) — the types of the unit that implement each behavior,
     /// by the behavior's name (`registerTypes`): `v is B` is a test of each.
     behavior_impls: std.StringHashMapUnmanaged(std.ArrayListUnmanaged([]const u8)) = .empty,
+    /// Every type alias the module and its linked ones declare, by name — set
+    /// once for a GC module alongside `gcExpandResultAliasReturns`'
+    /// Result-shaped rewrite (decision 118); `gcReprOfType` reads it to
+    /// resolve a function-shaped alias (`Composition<T> = fn(...) -> ...`,
+    /// decision b162wasm-d) the written alias name still carries past
+    /// `alias_erase` in a return position.
+    type_aliases: aliasErase.Aliases = .empty,
     /// The parameters a lambda about to be lifted is written against when
     /// they come from a declaration rather than a function type — a behavior
     /// literal's method (`expected_fn`'s twin).
@@ -7213,6 +7234,42 @@ const Emitter = struct {
         return memberValType(t);
     }
 
+    /// Decision b162wasm-d — whether `name` is a type alias
+    /// (`self.type_aliases`: the module's, its linked ones', and the
+    /// prelude's ambient ones, `gcCollectAliases`) whose target is a
+    /// function type: `type Composition<T> = fn(scope: Scope, key: Place) ->
+    /// T | Async<T>;`. A bare `Composition<unknown>` parses `is_builtin =
+    /// true` (decision 606 (1), the prelude's wrapper names) exactly as
+    /// `@Result`/`@Component` do, but unlike them — `eagerTypeRef` — it is
+    /// never unwrapped to the `T` it carries: its own value is the closure it
+    /// is. The target's outer shape does not change under argument
+    /// substitution, so the alias as declared answers directly, with no
+    /// alias further expanded (unlike `aliasErase.expandOuter`, which this
+    /// is_builtin-flagged generic would stop `expand` from even trying).
+    fn gcAliasIsFunction(self: *Emitter, name: []const u8) bool {
+        const alias = self.type_aliases.get(name) orelse return false;
+        return alias.target == .function;
+    }
+
+    /// Decision b162wasm-d — the function type `t` names through
+    /// `self.type_aliases`, with `t`'s own arguments substituted for the
+    /// alias's generic parameters (`alias_erase.substitute`, made `pub` for
+    /// this): `Composition<unknown>` resolves to `fn(scope: Scope, key:
+    /// Place) -> unknown | Async<unknown>`, so a lambda returned in its
+    /// place is typed by its declared parameters (`expected_fn`) rather than
+    /// left for `gcFail("a lambda parameter nothing types")`. Null when `t`
+    /// names no such alias.
+    fn gcAliasFunctionType(self: *Emitter, t: ast.TypeRef) ?ast.TypeRef {
+        const name, const args = switch (t) {
+            .named => |n| .{ n, @as([]const ast.TypeRef, &.{}) },
+            .generic => |g| .{ g.name, @as([]const ast.TypeRef, g.args) },
+            else => return null,
+        };
+        const alias = self.type_aliases.get(name) orelse return null;
+        if (alias.target != .function or alias.genericParams.len != args.len) return null;
+        return aliasErase.substitute(self.arena(), alias.target, alias.genericParams, args) catch null;
+    }
+
     /// The reference a GC module holds a value of type `t0` as, null for a
     /// scalar and for a type with no GC form here.
     fn gcReprOfType(self: *Emitter, t0: ast.TypeRef) ?Repr {
@@ -7238,6 +7295,11 @@ const Emitter = struct {
                 // (`gcBehaviorDispatchFunc`). As the word it was in linear
                 // memory, an implementer passed to it was a conversion refused.
                 if (self.behavior_decls.contains(name) or isAmbientBehaviorName(name)) return .{ .ref = .unknown };
+                // Decision b162wasm-d — a function-shaped alias (`type
+                // Composition<T> = fn(...) -> ...;`) is a closure like any
+                // function value, the other explicit alias case alongside
+                // `gcExpandResultAliasReturns`' Result-shaped one.
+                if (self.gcAliasIsFunction(n)) return .{ .ref = .closure };
                 return null;
             },
             .array => |inner| return .{ .ref = .{ .arr = self.gcElemOf(inner.*) } },
@@ -7258,6 +7320,12 @@ const Emitter = struct {
                 };
                 // `Index<string, i32>`: a behavior with its arguments.
                 if (!g.is_builtin and (self.behavior_decls.contains(gname) or isAmbientBehaviorName(gname))) return .{ .ref = .unknown };
+                // Decision b162wasm-d — `Composition<unknown>` itself: a
+                // function-shaped alias parses `is_builtin = true` too
+                // (decision 606 (1)'s bare prelude-wrapper spelling), so this
+                // check, alone, is not guarded by `!g.is_builtin` like the
+                // others above.
+                if (self.gcAliasIsFunction(g.name)) return .{ .ref = .closure };
                 return null;
             },
             .optional => |inner| {
@@ -14626,7 +14694,11 @@ const Emitter = struct {
                         // Coerce to the *declared* result: `fn area(…) -> f64`
                         // whose body multiplies f32 literals produced an f32
                         // and the `(result f64)` rejected the whole module.
-                        if (val.* == .function) self.expected_fn = self.cur_ret_typeref;
+                        // Decision b162wasm-d — a declared result written
+                        // through a function-shaped alias (`-> Composition<unknown>`)
+                        // types the lambda the same way its target would, written
+                        // bare (`gcAliasFunctionType`).
+                        if (val.* == .function) self.expected_fn = if (self.cur_ret_typeref) |rt| (self.gcAliasFunctionType(rt) orelse rt) else null;
                         if (self.cur_ret_typeref) |rt| if (rt == .generic and self.record_generics.contains(rt.generic.name)) {
                             self.expected_ctor = rt;
                         };
