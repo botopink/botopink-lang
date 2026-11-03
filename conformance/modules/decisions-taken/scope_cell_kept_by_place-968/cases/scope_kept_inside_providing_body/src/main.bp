@@ -8,19 +8,19 @@ import {context.run, context.Scope, context.createContext, context.provide, cont
 
 type View(text: string)
 
-type Palette(mode: string)
+type Theme(mode: string)
 
-pub val paletteContext = comptime createContext(Palette(mode: "light"));
+pub val themeContext = comptime createContext(Theme(mode: "light"));
 
 var kept: Scope[] = [];
 
 component fn Reader() -> Component<View> {
-    val t = use context(paletteContext);
+    val t = use context(themeContext);
     return View(text: "reader " + t.mode);
 }
 
 component fn Parent() -> Component<View> {
-    use provide(createContext(Palette(mode: "dark")));
+    use provide(createContext(Theme(mode: "dark")));
     val keep: Component<void> = { scope, key -> kept.push(scope); };
     use keep;
     return View(text: "parent ran");

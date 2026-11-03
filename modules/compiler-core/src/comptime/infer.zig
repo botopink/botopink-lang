@@ -23125,7 +23125,10 @@ fn noteContextDeclaration(env: *Env, v: ast.ValDecl, ty: *T.Type) InferError!voi
         return error.TypeError;
     };
     try env.contextDefaults.put(env.arena, key, here);
-    if (env.reflection) |r| try r.contextDefaults.put(r.arena, key, .{
+    // The key is duped into `r.arena` beside the other fields: `key` may be
+    // freshly built in `env.arena` (144 B-215's package prefix), which does
+    // not outlive this module's analysis the way an AST-owned name would.
+    if (env.reflection) |r| try r.contextDefaults.put(r.arena, try r.arena.dupe(u8, key), .{
         .module = try r.arena.dupe(u8, here.module),
         .name = try r.arena.dupe(u8, here.name),
         .line = here.line,
@@ -23150,11 +23153,18 @@ fn stdImportsContextModule(env: *Env) bool {
 /// backends tell types apart by (decision 170), whichever module reads or
 /// provides it and whatever it imports. Null for a type that names no
 /// declaration (a type variable, a function).
+///
+/// 144 B-215 — the name alone is not the type's identity: a module is its
+/// package plus its path (decisions 170, 337, 603, 635), so the key carries
+/// `env.package` too — two packages' own `Theme` are two identities, never
+/// one, exactly as two packages' own `theme` module are two modules. The root
+/// package is told no name of its own here (`declIdentity`'s same carve-out),
+/// so its contexts keep the bare type name, unprefixed, as before.
 fn contextTypeKey(env: *Env, t: *T.Type) InferError!?[]const u8 {
-    _ = env;
     const d = t.deref();
     if (d.* != .named) return null;
-    return d.named.name;
+    if (env.package.len == 0) return d.named.name;
+    return try std.fmt.allocPrint(env.arena, "{s}@@{s}", .{ env.package, d.named.name });
 }
 
 /// Decisions 378, 379 — a `use` of std's `provide` / `context`: `provide`

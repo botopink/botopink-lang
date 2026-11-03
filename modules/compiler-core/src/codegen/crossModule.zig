@@ -402,7 +402,6 @@ pub const CrossModule = struct {
         arity: ?usize,
     ) Pick {
         if (list.len == 0) return .none;
-        if (list.len == 1) return .{ .one = list[0] };
 
         // The module the import NAMES. A module cannot declare one name twice,
         // so a source that names a module narrows to at most one — unless it is
@@ -414,7 +413,6 @@ pub const CrossModule = struct {
             named_n += 1;
             named_hit = e;
         };
-        if (named_n == 1) return .{ .one = named_hit };
         // A `.key` names one module and never widens (`ImportSource.admits`):
         // when that module declares no `pub` of the name here — a type alias
         // the backends never see is erased from it (`alias_erase`), so
@@ -422,8 +420,14 @@ pub const CrossModule = struct {
         // owner in `plugin` — the import is answered nowhere, not contested
         // among the OTHER modules that declare the name (144 B-213: std's
         // `compiler.Json` and `json.Json` refused an import that named
-        // neither).
+        // neither). This runs BEFORE the single-candidate shortcuts below
+        // (144 B-215's follow-up): with exactly one declaration of the name
+        // in the WHOLE program and it is not in the `.key`-named module, the
+        // rule must still refuse rather than silently widen into it.
         if (named_n == 0) if (source) |src| if (src == .key) return .none;
+
+        if (list.len == 1) return .{ .one = list[0] };
+        if (named_n == 1) return .{ .one = named_hit };
 
         // The PACKAGE the import names, when it names no module: two libraries
         // of one build may each declare a name (a server library's `Response`
@@ -2142,6 +2146,35 @@ test "pick: a package handle picks the one module of that package that declares 
     try testing.expectEqualStrings("web-app/page", (xc.picked("Response", from_app, null) orelse return error.TestExpectedPick).module);
     // A handle naming no package of the build still narrows nothing.
     try testing.expect(xc.picked("Response", .{ .module = "elsewhere" }, null) == null);
+}
+
+test "pick: a `.key` source never widens, even with a single candidate in the whole program (144 B-213 follow-up)" {
+    // `import {plugin.Something};` — `plugin` declares no `Something` (a type
+    // alias erased for the backends, say), and exactly ONE other, unrelated
+    // module in the program declares a real, non-alias `Something`. The
+    // single-candidate shortcuts (`list.len == 1`, then `named_n == 1`) must
+    // not fire ahead of the `.key`-never-widens check: with one candidate
+    // standing and none of it in `plugin`, the answer is still `.none`, never
+    // a silent bind to the one other module the import never named.
+    var owners = std.StringHashMap([]const ExportInfo).init(testing.allocator);
+    defer owners.deinit();
+    const somethings = [_]ExportInfo{.{ .module = "other", .kind = .record, .is_class = true }};
+    try owners.put("Something", &somethings);
+    var xc = pickIndex(&owners);
+    defer {
+        xc.exports.deinit();
+        xc.export_faults.deinit();
+        xc.imported.deinit();
+        xc.atoms.deinit();
+        xc.atom_faults.deinit();
+    }
+    const from_plugin: ast.ImportSource = .{ .key = "plugin" };
+    try testing.expect(xc.pick("Something", from_plugin, null) == .none);
+    try testing.expect(xc.picked("Something", from_plugin, null) == null);
+    // The same single candidate, named by its own module, still answers it —
+    // a `.key` admits its one module, it just never widens past it.
+    const from_other: ast.ImportSource = .{ .key = "other" };
+    try testing.expectEqualStrings("other", (xc.picked("Something", from_other, null) orelse return error.TestExpectedPick).module);
 }
 
 test "ImportSource.inPackage: every module under the handle, bounded by its slash" {

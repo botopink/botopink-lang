@@ -9,19 +9,19 @@ import {context.run, context.Scope, context.createContext, context.provide, cont
 
 type View(text: string)
 
-type Tone(mode: string)
+type Theme(mode: string)
 
 type Tree(child: Component<View>)
 
-pub val toneContext = comptime createContext(Tone(mode: "light"));
+pub val themeContext = comptime createContext(Theme(mode: "light"));
 
 component fn Reader() -> Component<View> {
-    val t = use context(toneContext);
+    val t = use context(themeContext);
     return View(text: "reader " + t.mode);
 }
 
 component fn Parent() -> Component<Tree> {
-    use provide(createContext(Tone(mode: "dark")));
+    use provide(createContext(Theme(mode: "dark")));
     return Tree(child: Reader());
 }
 
