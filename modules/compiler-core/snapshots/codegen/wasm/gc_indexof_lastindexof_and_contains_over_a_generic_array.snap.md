@@ -118,7 +118,8 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
 (module
   (rec
     (type $str (array (mut i8)))
-    (type $arr_i32 (array (mut i32)))
+    (type $arr_i32 (sub (array (mut i32))))
+    (type $arr_bool (sub final $arr_i32 (array (mut i32))))
     (type $arr_f64 (array (mut f64)))
     (type $arr_any (sub (array (mut anyref))))
     (type $tuple (sub final $arr_any (array (mut anyref))))
@@ -265,7 +266,7 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
     i32.const 1
     local.get $m__1
     global.get $__s0
-    call $__new_23
+    call $__new_24
     struct.new $result
     return
       )
@@ -432,7 +433,7 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
     i32.const 1
     local.get $m__3
     global.get $__s0
-    call $__new_23
+    call $__new_24
     struct.new $result
     return
       )
@@ -1330,13 +1331,13 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
     global.set $__s6
     call $__init_types
   )
-  (func $__new_23 (param $f0 (ref null $str)) (param $f1 (ref null $str)) (result (ref null $rec_Failure))
-    global.get $__ti_23
+  (func $__new_24 (param $f0 (ref null $str)) (param $f1 (ref null $str)) (result (ref null $rec_Failure))
+    global.get $__ti_24
     local.get $f0
     local.get $f1
     struct.new $rec_Failure
   )
-  (global $__ti_23 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_24 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tip4 $__tie4)
   (func $__init_types
     global.get $__s6
@@ -1345,8 +1346,8 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_23
-    global.get $__ti_23
+    global.set $__ti_24
+    global.get $__ti_24
     call $__ti_register
   )
   (@custom "botopink.needs" "exceptions\0agc\0a")
@@ -2008,7 +2009,8 @@ test "asserts: errorText answers the empty string for Ok" {
 (module
   (rec
     (type $str (array (mut i8)))
-    (type $arr_i32 (array (mut i32)))
+    (type $arr_i32 (sub (array (mut i32))))
+    (type $arr_bool (sub final $arr_i32 (array (mut i32))))
     (type $arr_f64 (array (mut f64)))
     (type $arr_any (sub (array (mut anyref))))
     (type $tuple (sub final $arr_any (array (mut anyref))))
@@ -2096,7 +2098,7 @@ test "asserts: errorText answers the empty string for Ok" {
     i32.const 1
     local.get $m__1
     global.get $__s0
-    call $__new_23
+    call $__new_24
     struct.new $result
     return
       )
@@ -4267,13 +4269,13 @@ test "asserts: errorText answers the empty string for Ok" {
     global.set $__s35
     call $__init_types
   )
-  (func $__new_23 (param $f0 (ref null $str)) (param $f1 (ref null $str)) (result (ref null $rec_Failure))
-    global.get $__ti_23
+  (func $__new_24 (param $f0 (ref null $str)) (param $f1 (ref null $str)) (result (ref null $rec_Failure))
+    global.get $__ti_24
     local.get $f0
     local.get $f1
     struct.new $rec_Failure
   )
-  (global $__ti_23 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_24 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tip3 $__tie3)
   (func $__init_types
     global.get $__s35
@@ -4282,8 +4284,8 @@ test "asserts: errorText answers the empty string for Ok" {
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_23
-    global.get $__ti_23
+    global.set $__ti_24
+    global.get $__ti_24
     call $__ti_register
   )
   (@custom "botopink.needs" "exceptions\0agc\0a")
@@ -4327,7 +4329,8 @@ import {testing.asserts} from "std";
 (module
   (rec
     (type $str (array (mut i8)))
-    (type $arr_i32 (array (mut i32)))
+    (type $arr_i32 (sub (array (mut i32))))
+    (type $arr_bool (sub final $arr_i32 (array (mut i32))))
     (type $arr_f64 (array (mut f64)))
     (type $arr_any (sub (array (mut anyref))))
     (type $tuple (sub final $arr_any (array (mut anyref))))
@@ -4505,7 +4508,7 @@ import {testing.asserts} from "std";
     call $__print_i32
     i32.const 1
     i32.const 0
-    array.new_fixed $arr_i32 2
+    array.new_fixed $arr_bool 2
     i32.const 1
     call $lastAt__T_i32
     call $__print_i32
@@ -4949,6 +4952,49 @@ import {testing.asserts} from "std";
     )
     i32.const -1
   )
+  (func $__unk_eq_arr_bool (param $a (ref null $arr_bool)) (param $b (ref null $arr_bool)) (result i32)
+    (local $i i32)
+    local.get $a
+    array.len
+    local.get $b
+    array.len
+    i32.ne
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    (block $brk
+    (loop $cont
+    local.get $i
+    local.get $a
+    array.len
+    i32.ge_u
+    br_if $brk
+    local.get $a
+    local.get $i
+    array.get $arr_bool
+    local.get $b
+    local.get $i
+    array.get $arr_bool
+    i32.eq
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $i
+    i32.const 1
+    i32.add
+    local.set $i
+    br $cont
+    )
+    )
+    i32.const 1
+  )
   (func $__unk_eq_s1 (param $a (ref null $result)) (param $b (ref null $result)) (result i32)
     local.get $a
     struct.get $result $tag
@@ -5133,6 +5179,27 @@ import {testing.asserts} from "std";
       )
     )
     local.get $a
+    ref.test (ref null $arr_bool)
+    (if
+      (then
+    local.get $b
+    ref.test (ref null $arr_bool)
+    i32.eqz
+    (if
+      (then
+    i32.const 0
+    return
+      )
+    )
+    local.get $a
+    ref.cast (ref null $arr_bool)
+    local.get $b
+    ref.cast (ref null $arr_bool)
+    call $__unk_eq_arr_bool
+    return
+      )
+    )
+    local.get $a
     ref.test (ref null $result)
     (if
       (then
@@ -5181,6 +5248,9 @@ import {testing.asserts} from "std";
     local.get $b
     ref.test (ref null $arr_i32)
     i32.eqz
+    local.get $b
+    ref.test (ref null $arr_bool)
+    i32.or
     (if
       (then
     i32.const 0

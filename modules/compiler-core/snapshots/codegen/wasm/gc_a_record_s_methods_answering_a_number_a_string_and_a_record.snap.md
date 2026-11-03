@@ -32,7 +32,8 @@ import {io.terminal.print} from "std";
 (module
   (rec
     (type $str (array (mut i8)))
-    (type $arr_i32 (array (mut i32)))
+    (type $arr_i32 (sub (array (mut i32))))
+    (type $arr_bool (sub final $arr_i32 (array (mut i32))))
     (type $arr_f64 (array (mut f64)))
     (type $arr_any (sub (array (mut anyref))))
     (type $tuple (sub final $arr_any (array (mut anyref))))
@@ -99,7 +100,7 @@ import {io.terminal.print} from "std";
     call $__i32_mul_chk
     local.get $self
     struct.get $rec_Counter $f1
-    call $__new_22
+    call $__new_23
     return
   )
   (func $main (export "main")
@@ -107,7 +108,7 @@ import {io.terminal.print} from "std";
     (local $c (ref null $rec_Counter))
     i32.const 4
     global.get $__s4
-    call $__new_22
+    call $__new_23
     local.set $c
     local.get $c
     call $Counter_bump
@@ -1019,13 +1020,13 @@ import {io.terminal.print} from "std";
     global.set $__s10
     call $__init_types
   )
-  (func $__new_22 (param $f0 i32) (param $f1 (ref null $str)) (result (ref null $rec_Counter))
-    global.get $__ti_22
+  (func $__new_23 (param $f0 i32) (param $f1 (ref null $str)) (result (ref null $rec_Counter))
+    global.get $__ti_23
     local.get $f0
     local.get $f1
     struct.new $rec_Counter
   )
-  (global $__ti_22 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_23 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tip1 $__tie1)
   (func $__init_types
     global.get $__s10
@@ -1034,8 +1035,8 @@ import {io.terminal.print} from "std";
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_22
-    global.get $__ti_22
+    global.set $__ti_23
+    global.get $__ti_23
     call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")

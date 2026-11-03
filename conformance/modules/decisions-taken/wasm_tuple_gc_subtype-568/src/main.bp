@@ -39,5 +39,13 @@ fn runCase(comptime name: string) -> void {
 
 pub async fn main() -> Async<Result<void, string>> {
     runCase("generic_tuple_slot");
+    runCase("generic_bool_array_slot");
+    runCase("generic_tuple_bool_element");
+    runCase("generic_nested_array_slot");
+    runCase("generic_nested_bool_array_slot");
+    runCase("named_array_into_generic_array");
+    runCase("generic_bool_array_equality");
+    runCase("bool_array_ops_into_slot");
+    runCase("generic_tuple_unit_enum_element");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

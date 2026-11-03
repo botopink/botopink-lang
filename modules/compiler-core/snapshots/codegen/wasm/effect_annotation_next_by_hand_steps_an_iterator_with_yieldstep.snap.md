@@ -26,7 +26,8 @@ import {io.terminal.print} from "std";
 (module
   (rec
     (type $str (array (mut i8)))
-    (type $arr_i32 (array (mut i32)))
+    (type $arr_i32 (sub (array (mut i32))))
+    (type $arr_bool (sub final $arr_i32 (array (mut i32))))
     (type $arr_f64 (array (mut f64)))
     (type $arr_any (sub (array (mut anyref))))
     (type $tuple (sub final $arr_any (array (mut anyref))))
@@ -242,10 +243,10 @@ import {io.terminal.print} from "std";
       (then
     local.get $__gc0
     struct.get $gen $value
-    call $__new_24
+    call $__new_25
       )
       (else
-    call $__new_22
+    call $__new_23
       )
     )
     call $stepText
@@ -258,10 +259,10 @@ import {io.terminal.print} from "std";
       (then
     local.get $__gc1
     struct.get $gen $value
-    call $__new_24
+    call $__new_25
       )
       (else
-    call $__new_22
+    call $__new_23
       )
     )
     call $stepText
@@ -274,10 +275,10 @@ import {io.terminal.print} from "std";
       (then
     local.get $__gc2
     struct.get $gen $value
-    call $__new_24
+    call $__new_25
       )
       (else
-    call $__new_22
+    call $__new_23
       )
     )
     call $stepText
@@ -1539,17 +1540,17 @@ import {io.terminal.print} from "std";
     global.set $__s10
     call $__init_types
   )
-  (func $__new_24 (param $f0 anyref) (result (ref null $var_YieldStep_Yield))
-    global.get $__ti_24
+  (func $__new_25 (param $f0 anyref) (result (ref null $var_YieldStep_Yield))
+    global.get $__ti_25
     local.get $f0
     struct.new $var_YieldStep_Yield
   )
-  (func $__new_22 (result (ref null $var_YieldStep_Done))
-    global.get $__ti_22
+  (func $__new_23 (result (ref null $var_YieldStep_Done))
+    global.get $__ti_23
     struct.new $var_YieldStep_Done
   )
-  (global $__ti_24 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_22 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_25 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_23 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tip4 $__tie4 $__tip5 $__tie5)
   (func $__init_types
     global.get $__s7
@@ -1558,8 +1559,8 @@ import {io.terminal.print} from "std";
     ref.null func
     i32.const 1
     struct.new $__tinfo
-    global.set $__ti_24
-    global.get $__ti_24
+    global.set $__ti_25
+    global.get $__ti_25
     call $__ti_register
     global.get $__s9
     ref.func $__tip5
@@ -1567,8 +1568,8 @@ import {io.terminal.print} from "std";
     ref.null func
     i32.const 1
     struct.new $__tinfo
-    global.set $__ti_22
-    global.get $__ti_22
+    global.set $__ti_23
+    global.get $__ti_23
     call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")

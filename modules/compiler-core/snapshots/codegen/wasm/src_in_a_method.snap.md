@@ -18,7 +18,8 @@ import {io.terminal.print, compiler} from "std";
 (module
   (rec
     (type $str (array (mut i8)))
-    (type $arr_i32 (array (mut i32)))
+    (type $arr_i32 (sub (array (mut i32))))
+    (type $arr_bool (sub final $arr_i32 (array (mut i32))))
     (type $arr_f64 (array (mut f64)))
     (type $arr_any (sub (array (mut anyref))))
     (type $tuple (sub final $arr_any (array (mut anyref))))
@@ -64,14 +65,14 @@ import {io.terminal.print, compiler} from "std";
     i32.const 25
     global.get $__s1
     global.get $__s2
-    call $__new_22
+    call $__new_23
     return
   )
   (func $main
     (local $__mem0 i32)
     (local $loc (ref null $rec_SourceLocation))
     i32.const 1
-    call $__new_24
+    call $__new_25
     call $Stub_where
     local.set $loc
     local.get $loc
@@ -794,8 +795,8 @@ import {io.terminal.print, compiler} from "std";
     global.set $__s14
     call $__init_types
   )
-  (func $__new_22 (param $f0 (ref null $str)) (param $f1 i32) (param $f2 i32) (param $f3 (ref null $str)) (param $f4 (ref null $str)) (result (ref null $rec_SourceLocation))
-    global.get $__ti_22
+  (func $__new_23 (param $f0 (ref null $str)) (param $f1 i32) (param $f2 i32) (param $f3 (ref null $str)) (param $f4 (ref null $str)) (result (ref null $rec_SourceLocation))
+    global.get $__ti_23
     local.get $f0
     local.get $f1
     local.get $f2
@@ -803,13 +804,13 @@ import {io.terminal.print, compiler} from "std";
     local.get $f4
     struct.new $rec_SourceLocation
   )
-  (func $__new_24 (param $f0 i32) (result (ref null $rec_Stub))
-    global.get $__ti_24
+  (func $__new_25 (param $f0 i32) (result (ref null $rec_Stub))
+    global.get $__ti_25
     local.get $f0
     struct.new $rec_Stub
   )
-  (global $__ti_22 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_24 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_23 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_25 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tip1 $__tie1 $__tip2 $__tie2)
   (func $__init_types
     global.get $__s11
@@ -818,8 +819,8 @@ import {io.terminal.print, compiler} from "std";
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_22
-    global.get $__ti_22
+    global.set $__ti_23
+    global.get $__ti_23
     call $__ti_register
     global.get $__s14
     ref.func $__tip2
@@ -827,8 +828,8 @@ import {io.terminal.print, compiler} from "std";
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_24
-    global.get $__ti_24
+    global.set $__ti_25
+    global.get $__ti_25
     call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")

@@ -118,7 +118,8 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
 (module
   (rec
     (type $str (array (mut i8)))
-    (type $arr_i32 (array (mut i32)))
+    (type $arr_i32 (sub (array (mut i32))))
+    (type $arr_bool (sub final $arr_i32 (array (mut i32))))
     (type $arr_f64 (array (mut f64)))
     (type $arr_any (sub (array (mut anyref))))
     (type $tuple (sub final $arr_any (array (mut anyref))))
@@ -265,7 +266,7 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
     i32.const 1
     local.get $m__1
     global.get $__s0
-    call $__new_23
+    call $__new_24
     struct.new $result
     return
       )
@@ -432,7 +433,7 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
     i32.const 1
     local.get $m__3
     global.get $__s0
-    call $__new_23
+    call $__new_24
     struct.new $result
     return
       )
@@ -1330,13 +1331,13 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
     global.set $__s6
     call $__init_types
   )
-  (func $__new_23 (param $f0 (ref null $str)) (param $f1 (ref null $str)) (result (ref null $rec_Failure))
-    global.get $__ti_23
+  (func $__new_24 (param $f0 (ref null $str)) (param $f1 (ref null $str)) (result (ref null $rec_Failure))
+    global.get $__ti_24
     local.get $f0
     local.get $f1
     struct.new $rec_Failure
   )
-  (global $__ti_23 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_24 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tip4 $__tie4)
   (func $__init_types
     global.get $__s6
@@ -1345,8 +1346,8 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_23
-    global.get $__ti_23
+    global.set $__ti_24
+    global.get $__ti_24
     call $__ti_register
   )
   (@custom "botopink.needs" "exceptions\0agc\0a")
@@ -2209,7 +2210,8 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
 (module
   (rec
     (type $str (array (mut i8)))
-    (type $arr_i32 (array (mut i32)))
+    (type $arr_i32 (sub (array (mut i32))))
+    (type $arr_bool (sub final $arr_i32 (array (mut i32))))
     (type $arr_f64 (array (mut f64)))
     (type $arr_any (sub (array (mut anyref))))
     (type $tuple (sub final $arr_any (array (mut anyref))))
@@ -2464,7 +2466,7 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
   (func $newGate (export "newGate") (result (ref null $rec_Gate))
     (local $__mem0 i32)
     call $gateHandle
-    call $__new_23
+    call $__new_24
     return
   )
   ;; Open `gate`: every task awaiting it answers, and so does every later
@@ -8798,13 +8800,13 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
     global.set $__s47
     call $__init_types
   )
-  (func $__new_23 (param $f0 anyref) (result (ref null $rec_Gate))
-    global.get $__ti_23
+  (func $__new_24 (param $f0 anyref) (result (ref null $rec_Gate))
+    global.get $__ti_24
     local.get $f0
     struct.new $rec_Gate
   )
-  (global $__ti_23 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_27 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_24 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_28 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tip4 $__tie4 $__tip7 $__tie7)
   (func $__init_types
     global.get $__s31
@@ -8813,8 +8815,8 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_27
-    global.get $__ti_27
+    global.set $__ti_28
+    global.get $__ti_28
     call $__ti_register
     global.get $__s35
     ref.func $__tip7
@@ -8822,8 +8824,8 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_23
-    global.get $__ti_23
+    global.set $__ti_24
+    global.get $__ti_24
     call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")
@@ -8869,7 +8871,8 @@ import {io.terminal.print, async} from "std";
 (module
   (rec
     (type $str (array (mut i8)))
-    (type $arr_i32 (array (mut i32)))
+    (type $arr_i32 (sub (array (mut i32))))
+    (type $arr_bool (sub final $arr_i32 (array (mut i32))))
     (type $arr_f64 (array (mut f64)))
     (type $arr_any (sub (array (mut anyref))))
     (type $tuple (sub final $arr_any (array (mut anyref))))

@@ -584,7 +584,8 @@ test "order case over Order" {
 (module
   (rec
     (type $str (array (mut i8)))
-    (type $arr_i32 (array (mut i32)))
+    (type $arr_i32 (sub (array (mut i32))))
+    (type $arr_bool (sub final $arr_i32 (array (mut i32))))
     (type $arr_f64 (array (mut f64)))
     (type $arr_any (sub (array (mut anyref))))
     (type $tuple (sub final $arr_any (array (mut anyref))))
@@ -1029,7 +1030,7 @@ test "order case over Order" {
     array.new_fixed $tuple 2
     array.new_fixed $arr_any 1
     call $__arr_concat_any
-    call $__new_24
+    call $__new_25
     return
   )
   (func $Dict_bump (param $self (ref null $rec_Dict)) (param $key anyref) (param $by anyref) (result (ref null $rec_Dict))
@@ -1127,7 +1128,7 @@ test "order case over Order" {
     i32.const 0
     local.get $__acc0
     call $__arr_slice_any
-    call $__new_24
+    call $__new_25
     return
   )
   (func $Dict_merge (param $self (ref null $rec_Dict)) (param $other (ref null $rec_Dict)) (result (ref null $rec_Dict))
@@ -1293,7 +1294,7 @@ test "order case over Order" {
       )
     )
     local.get $out
-    call $__new_24
+    call $__new_25
     return
   )
   (func $Dict_empty (result (ref null $rec_Dict))
@@ -1301,7 +1302,7 @@ test "order case over Order" {
     (local $__mem1 i32)
     i32.const 0
     array.new_default $arr_any
-    call $__new_24
+    call $__new_25
     return
   )
   (func $Dict_ofEntries (param $entries (ref null $arr_any)) (result (ref null $rec_Dict))
@@ -1315,7 +1316,7 @@ test "order case over Order" {
     (local $e (ref null $arr_any))
     i32.const 0
     array.new_default $arr_any
-    call $__new_24
+    call $__new_25
     local.set $out
     local.get $entries
     local.set $__iter0
@@ -1528,7 +1529,7 @@ test "order case over Order" {
     local.get $x
     array.new_fixed $arr_any 1
     call $__arr_concat_any
-    call $__new_28
+    call $__new_29
       )
     )
     return
@@ -1593,7 +1594,7 @@ test "order case over Order" {
     i32.const 0
     local.get $__acc0
     call $__arr_slice_any
-    call $__new_28
+    call $__new_29
     return
   )
   (func $Set_union (param $self (ref null $rec_Set)) (param $other (ref null $rec_Set)) (result (ref null $rec_Set))
@@ -1605,7 +1606,7 @@ test "order case over Order" {
     call $Set_difference
     struct.get $rec_Set $f0
     call $__arr_concat_any
-    call $__new_28
+    call $__new_29
     return
   )
   (func $Set_intersection (param $self (ref null $rec_Set)) (param $other (ref null $rec_Set)) (result (ref null $rec_Set))
@@ -1667,7 +1668,7 @@ test "order case over Order" {
     i32.const 0
     local.get $__acc0
     call $__arr_slice_any
-    call $__new_28
+    call $__new_29
     return
   )
   (func $Set_difference (param $self (ref null $rec_Set)) (param $other (ref null $rec_Set)) (result (ref null $rec_Set))
@@ -1730,7 +1731,7 @@ test "order case over Order" {
     i32.const 0
     local.get $__acc0
     call $__arr_slice_any
-    call $__new_28
+    call $__new_29
     return
   )
   (func $Set_empty (result (ref null $rec_Set))
@@ -1738,7 +1739,7 @@ test "order case over Order" {
     (local $__mem1 i32)
     i32.const 0
     array.new_default $arr_any
-    call $__new_28
+    call $__new_29
     return
   )
   (func $Set_fromList (param $xs (ref null $arr_any)) (result (ref null $rec_Set))
@@ -1752,7 +1753,7 @@ test "order case over Order" {
     (local $x anyref)
     i32.const 0
     array.new_default $arr_any
-    call $__new_28
+    call $__new_29
     local.set $out
     local.get $xs
     local.set $__iter0
@@ -1820,7 +1821,7 @@ test "order case over Order" {
     local.get $item
     array.new_fixed $arr_any 1
     call $__arr_concat_any
-    call $__new_26
+    call $__new_27
     return
   )
   (func $Queue_dequeue (param $self (ref null $rec_Queue)) (result (ref null $arr_any))
@@ -1842,7 +1843,7 @@ test "order case over Order" {
     call $__arr_slice_any
     local.set $rest
     local.get $rest
-    call $__new_26
+    call $__new_27
     local.get $head
     array.new_fixed $tuple 2
     return
@@ -1864,13 +1865,13 @@ test "order case over Order" {
     (local $__mem1 i32)
     i32.const 0
     array.new_default $arr_any
-    call $__new_26
+    call $__new_27
     return
   )
   (func $Queue_fromList (param $xs (ref null $arr_any)) (result (ref null $rec_Queue))
     (local $__mem0 i32)
     local.get $xs
-    call $__new_26
+    call $__new_27
     return
   )
   ;; ── empty-collection boundary (B1) ──
@@ -3972,24 +3973,24 @@ test "order case over Order" {
     global.set $__s21
     call $__init_types
   )
-  (func $__new_24 (param $f0 (ref null $arr_any)) (result (ref null $rec_Dict))
-    global.get $__ti_24
+  (func $__new_25 (param $f0 (ref null $arr_any)) (result (ref null $rec_Dict))
+    global.get $__ti_25
     local.get $f0
     struct.new $rec_Dict
   )
-  (func $__new_28 (param $f0 (ref null $arr_any)) (result (ref null $rec_Set))
-    global.get $__ti_28
+  (func $__new_29 (param $f0 (ref null $arr_any)) (result (ref null $rec_Set))
+    global.get $__ti_29
     local.get $f0
     struct.new $rec_Set
   )
-  (func $__new_26 (param $f0 (ref null $arr_any)) (result (ref null $rec_Queue))
-    global.get $__ti_26
+  (func $__new_27 (param $f0 (ref null $arr_any)) (result (ref null $rec_Queue))
+    global.get $__ti_27
     local.get $f0
     struct.new $rec_Queue
   )
-  (global $__ti_24 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_28 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_26 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_25 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_29 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_27 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tie2 $__tid2 $__tie11 $__tie12)
   (func $__init_types
     global.get $__s9
@@ -3998,8 +3999,8 @@ test "order case over Order" {
     ref.func $__tid2
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_24
-    global.get $__ti_24
+    global.set $__ti_25
+    global.get $__ti_25
     call $__ti_register
     global.get $__s10
     ref.null func
@@ -4007,8 +4008,8 @@ test "order case over Order" {
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_28
-    global.get $__ti_28
+    global.set $__ti_29
+    global.get $__ti_29
     call $__ti_register
     global.get $__s11
     ref.null func
@@ -4016,8 +4017,8 @@ test "order case over Order" {
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_26
-    global.get $__ti_26
+    global.set $__ti_27
+    global.get $__ti_27
     call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")
@@ -4046,7 +4047,8 @@ import {io.terminal.print} from "std";
 (module
   (rec
     (type $str (array (mut i8)))
-    (type $arr_i32 (array (mut i32)))
+    (type $arr_i32 (sub (array (mut i32))))
+    (type $arr_bool (sub final $arr_i32 (array (mut i32))))
     (type $arr_f64 (array (mut f64)))
     (type $arr_any (sub (array (mut anyref))))
     (type $tuple (sub final $arr_any (array (mut anyref))))
@@ -4458,7 +4460,7 @@ import {io.terminal.print} from "std";
     array.new_fixed $tuple 2
     array.new_fixed $arr_any 1
     call $__arr_concat_any
-    call $__new_24
+    call $__new_25
     return
   )
   (func $Dict_bump (param $self (ref null $rec_Dict)) (param $key anyref) (param $by anyref) (result (ref null $rec_Dict))
@@ -4556,7 +4558,7 @@ import {io.terminal.print} from "std";
     i32.const 0
     local.get $__acc0
     call $__arr_slice_any
-    call $__new_24
+    call $__new_25
     return
   )
   (func $Dict_merge (param $self (ref null $rec_Dict)) (param $other (ref null $rec_Dict)) (result (ref null $rec_Dict))
@@ -4722,7 +4724,7 @@ import {io.terminal.print} from "std";
       )
     )
     local.get $out
-    call $__new_24
+    call $__new_25
     return
   )
   (func $Dict_empty (result (ref null $rec_Dict))
@@ -4730,7 +4732,7 @@ import {io.terminal.print} from "std";
     (local $__mem1 i32)
     i32.const 0
     array.new_default $arr_any
-    call $__new_24
+    call $__new_25
     return
   )
   (func $Dict_ofEntries (param $entries (ref null $arr_any)) (result (ref null $rec_Dict))
@@ -4744,7 +4746,7 @@ import {io.terminal.print} from "std";
     (local $e (ref null $arr_any))
     i32.const 0
     array.new_default $arr_any
-    call $__new_24
+    call $__new_25
     local.set $out
     local.get $entries
     local.set $__iter0
@@ -4982,7 +4984,7 @@ import {io.terminal.print} from "std";
     array.new_fixed $tuple 2
     array.new_fixed $arr_any 1
     call $__arr_concat_any
-    call $__new_24
+    call $__new_25
     return
   )
   (func $Dict_size__K_string__V_i32 (param $self (ref null $rec_Dict)) (result i32)
@@ -6842,12 +6844,12 @@ import {io.terminal.print} from "std";
     global.set $__s17
     call $__init_types
   )
-  (func $__new_24 (param $f0 (ref null $arr_any)) (result (ref null $rec_Dict))
-    global.get $__ti_24
+  (func $__new_25 (param $f0 (ref null $arr_any)) (result (ref null $rec_Dict))
+    global.get $__ti_25
     local.get $f0
     struct.new $rec_Dict
   )
-  (global $__ti_24 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_25 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tie2 $__tid2)
   (func $__init_types
     global.get $__s10
@@ -6856,8 +6858,8 @@ import {io.terminal.print} from "std";
     ref.func $__tid2
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_24
-    global.get $__ti_24
+    global.set $__ti_25
+    global.get $__ti_25
     call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")

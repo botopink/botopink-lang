@@ -8,3 +8,39 @@ out true
 out false
 out true
 out false
+== generic_bool_array_slot
+out Box(value: [true, false])
+out Box(value: [false, false, true])
+== generic_tuple_bool_element
+out Pair(first: #(true, 1), second: "x")
+out true
+out false
+out true
+out true
+== generic_nested_array_slot
+out Box(value: [[1, 2], [3]])
+out Box(value: [["a"], ["b", "c"]])
+== generic_nested_bool_array_slot
+out Box(value: [[true], [false, true]])
+== named_array_into_generic_array
+out Q(items: [7, 8])
+out Q(items: [1.5, 2.5])
+out Q(items: [true, false])
+out [7, 8]
+== generic_bool_array_equality
+out true
+out false
+out false
+out true
+== bool_array_ops_into_slot
+out Box(value: [true, true])
+out Box(value: [true, false])
+out Box(value: [true, false, true, false])
+out Box(value: [false, true, false])
+out Box(value: [false, true])
+out Box(value: [true, false, true])
+out Box(value: [true, false])
+out true,false,true
+== generic_tuple_unit_enum_element
+out true
+out false

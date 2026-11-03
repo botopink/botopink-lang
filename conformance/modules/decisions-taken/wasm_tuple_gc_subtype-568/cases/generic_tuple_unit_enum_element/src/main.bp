@@ -1,0 +1,15 @@
+//// Decision 568 — a tuple holding an all-unit enum's variant, bound to a type parameter,
+//// compares the variant by value.
+
+import {io.terminal.print} from "std";
+
+type Color { Red, Green }
+
+type Pair<A, B>(first: A, second: B)
+
+pub fn main() -> void {
+    print(Pair(first: #(Color.Red, 1), second: 2)
+        == Pair(first: #(Color.Red, 1), second: 2));
+    print(Pair(first: #(Color.Red, 1), second: 2)
+        == Pair(first: #(Color.Green, 1), second: 2));
+}

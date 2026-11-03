@@ -1,0 +1,19 @@
+//// Decisions 568, 1031 (2) — a `bool[]` that an array operation answers (`filter`, `slice`,
+//// `append`, `map`, `reverse`, `unique`) is still an array of bools when a type parameter's slot
+//// takes it.
+
+import {io.terminal.print} from "std";
+
+type Box<T>(value: T)
+
+pub fn main() -> void {
+    val bs: bool[] = [true, false, true];
+    print(Box(value: bs.filter({ b -> b })));
+    print(Box(value: bs.slice(0, 2)));
+    print(Box(value: bs.append([false])));
+    print(Box(value: bs.map({ b -> !b })));
+    print(Box(value: [1, 2].map({ x -> x > 1 })));
+    print(Box(value: bs.reverse()));
+    print(Box(value: bs.unique()));
+    print(bs.join(","));
+}

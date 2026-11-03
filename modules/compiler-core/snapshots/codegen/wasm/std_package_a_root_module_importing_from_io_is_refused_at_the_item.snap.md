@@ -325,7 +325,8 @@ test "path.isInside treats a name starting with two dots as a name" {
 (module
   (rec
     (type $str (array (mut i8)))
-    (type $arr_i32 (array (mut i32)))
+    (type $arr_i32 (sub (array (mut i32))))
+    (type $arr_bool (sub final $arr_i32 (array (mut i32))))
     (type $arr_f64 (array (mut f64)))
     (type $arr_any (sub (array (mut anyref))))
     (type $tuple (sub final $arr_any (array (mut anyref))))
@@ -1310,7 +1311,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $baseParts
     local.get $pieces
     call $applyPieces
-    call $__new_22
+    call $__new_23
     return
   )
   (func $resolveAll (param $segments (ref null $arr_any)) (param $i i32) (param $state (ref null $rec_PathAccum)) (result (ref null $rec_PathAccum))
@@ -1382,7 +1383,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     i32.const 0
     i32.const 0
     array.new_fixed $arr_any 0
-    call $__new_22
+    call $__new_23
     call $resolveAll
     local.set $finalState
     local.get $finalState
@@ -3098,13 +3099,13 @@ test "path.isInside treats a name starting with two dots as a name" {
     call $__init_types
     call $__init_globals
   )
-  (func $__new_22 (param $f0 i32) (param $f1 (ref null $arr_any)) (result (ref null $rec_PathAccum))
-    global.get $__ti_22
+  (func $__new_23 (param $f0 i32) (param $f1 (ref null $arr_any)) (result (ref null $rec_PathAccum))
+    global.get $__ti_23
     local.get $f0
     local.get $f1
     struct.new $rec_PathAccum
   )
-  (global $__ti_22 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_23 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tip2 $__tie2)
   (func $__init_types
     global.get $__s23
@@ -3113,8 +3114,8 @@ test "path.isInside treats a name starting with two dots as a name" {
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_22
-    global.get $__ti_22
+    global.set $__ti_23
+    global.get $__ti_23
     call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")
@@ -3245,7 +3246,8 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
 (module
   (rec
     (type $str (array (mut i8)))
-    (type $arr_i32 (array (mut i32)))
+    (type $arr_i32 (sub (array (mut i32))))
+    (type $arr_bool (sub final $arr_i32 (array (mut i32))))
     (type $arr_f64 (array (mut f64)))
     (type $arr_any (sub (array (mut anyref))))
     (type $tuple (sub final $arr_any (array (mut anyref))))
@@ -3392,7 +3394,7 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
     i32.const 1
     local.get $m__1
     global.get $__s0
-    call $__new_23
+    call $__new_24
     struct.new $result
     return
       )
@@ -3559,7 +3561,7 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
     i32.const 1
     local.get $m__3
     global.get $__s0
-    call $__new_23
+    call $__new_24
     struct.new $result
     return
       )
@@ -4457,13 +4459,13 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
     global.set $__s6
     call $__init_types
   )
-  (func $__new_23 (param $f0 (ref null $str)) (param $f1 (ref null $str)) (result (ref null $rec_Failure))
-    global.get $__ti_23
+  (func $__new_24 (param $f0 (ref null $str)) (param $f1 (ref null $str)) (result (ref null $rec_Failure))
+    global.get $__ti_24
     local.get $f0
     local.get $f1
     struct.new $rec_Failure
   )
-  (global $__ti_23 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_24 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tip4 $__tie4)
   (func $__init_types
     global.get $__s6
@@ -4472,8 +4474,8 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_23
-    global.get $__ti_23
+    global.set $__ti_24
+    global.get $__ti_24
     call $__ti_register
   )
   (@custom "botopink.needs" "exceptions\0agc\0a")
@@ -4904,7 +4906,8 @@ fn wholeOf(v: f64) -> i32 {
 (module
   (rec
     (type $str (array (mut i8)))
-    (type $arr_i32 (array (mut i32)))
+    (type $arr_i32 (sub (array (mut i32))))
+    (type $arr_bool (sub final $arr_i32 (array (mut i32))))
     (type $arr_f64 (array (mut f64)))
     (type $arr_any (sub (array (mut anyref))))
     (type $tuple (sub final $arr_any (array (mut anyref))))
@@ -9297,7 +9300,8 @@ test "fs answers PermissionDenied for an OS permission error" {
 (module
   (rec
     (type $str (array (mut i8)))
-    (type $arr_i32 (array (mut i32)))
+    (type $arr_i32 (sub (array (mut i32))))
+    (type $arr_bool (sub final $arr_i32 (array (mut i32))))
     (type $arr_f64 (array (mut f64)))
     (type $arr_any (sub (array (mut anyref))))
     (type $tuple (sub final $arr_any (array (mut anyref))))

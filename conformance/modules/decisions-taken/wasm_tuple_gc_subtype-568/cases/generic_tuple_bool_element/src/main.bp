@@ -1,0 +1,22 @@
+//// Decisions 568, 1031 (2) — a tuple holding a `bool`, bound to a type parameter, prints its
+//// element as a bool and compares it by value.
+
+import {io.terminal.print} from "std";
+
+type Pair<A, B>(first: A, second: B)
+
+type Box<T>(value: T)
+
+fn id<T>(x: T) -> T {
+    return x;
+}
+
+pub fn main() -> void {
+    print(Pair(first: #(true, 1), second: "x"));
+    print(Pair(first: #(1, false), second: "y")
+        == Pair(first: #(1, false), second: "y"));
+    print(Pair(first: #(1, false), second: "y")
+        == Pair(first: #(1, true), second: "y"));
+    print(Box(value: #(true)) == Box(value: #(true)));
+    print(id(#(1, false)) == #(1, false));
+}

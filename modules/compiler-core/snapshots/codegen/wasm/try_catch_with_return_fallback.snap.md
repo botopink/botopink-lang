@@ -15,7 +15,8 @@ fn safe() -> i32 {
 (module
   (rec
     (type $str (array (mut i8)))
-    (type $arr_i32 (array (mut i32)))
+    (type $arr_i32 (sub (array (mut i32))))
+    (type $arr_bool (sub final $arr_i32 (array (mut i32))))
     (type $arr_f64 (array (mut f64)))
     (type $arr_any (sub (array (mut anyref))))
     (type $tuple (sub final $arr_any (array (mut anyref))))
@@ -51,7 +52,7 @@ fn safe() -> i32 {
     (local $__mem0 i32)
     i32.const 1
     i32.const 500
-    call $__new_22
+    call $__new_23
     struct.new $result
     return
   )
@@ -650,12 +651,12 @@ fn safe() -> i32 {
     global.set $__s5
     call $__init_types
   )
-  (func $__new_22 (param $f0 i32) (result (ref null $rec_NetError))
-    global.get $__ti_22
+  (func $__new_23 (param $f0 i32) (result (ref null $rec_NetError))
+    global.get $__ti_23
     local.get $f0
     struct.new $rec_NetError
   )
-  (global $__ti_22 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_23 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tip1 $__tie1)
   (func $__init_types
     global.get $__s5
@@ -664,8 +665,8 @@ fn safe() -> i32 {
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_22
-    global.get $__ti_22
+    global.set $__ti_23
+    global.get $__ti_23
     call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")

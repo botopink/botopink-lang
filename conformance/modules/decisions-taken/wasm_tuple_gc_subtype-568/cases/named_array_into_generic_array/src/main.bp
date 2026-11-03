@@ -1,0 +1,17 @@
+//// Decisions 568, 1031 (2) — a named array of words, floats or bools passed to a field typed by
+//// a type parameter's array holds the same elements as the literal would, and leaves the named
+//// array as it was.
+
+import {io.terminal.print} from "std";
+
+type Q<T>(items: array<T>)
+
+pub fn main() -> void {
+    val xs = [7, 8];
+    print(Q(items: xs));
+    val fs = [1.5, 2.5];
+    print(Q(items: fs));
+    val bs: bool[] = [true, false];
+    print(Q(items: bs));
+    print(xs);
+}

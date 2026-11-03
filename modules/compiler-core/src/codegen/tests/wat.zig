@@ -4516,6 +4516,53 @@ test "wat: gc ---- a method's own type parameter types its lambda argument" {
     );
 }
 
+// Front 229 s4 — decisions 568, 1031 (2): a `bool[]` is an `$arr_bool`, a
+// GC subtype of `$arr_i32` as `$box_bool` is of `$box_i32`, so a type
+// parameter's slot holding one prints and compares it as bools; a nested
+// array, a tuple's `bool` and a named array into `array<T>` are taken too,
+// and the array operations over a `bool[]` answer an `$arr_bool` (a helper
+// answering `$arr_i32` would trap at the slot's `ref.cast`). Each fell to
+// linear memory ("an array of another shape in a type parameter's slot").
+test "wat: gc ---- a bool array, a nested array and a tuple's bool in a type parameter's slot" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\type Box<T>(value: T)
+        \\type Pair<A, B>(first: A, second: B)
+        \\type Q<T>(items: array<T>)
+        \\pub fn main() -> void {
+        \\    print(Box(value: [true, false]));
+        \\    print(Pair(first: #(true, 1), second: "x"));
+        \\    print(Box(value: [[1, 2], [3]]));
+        \\    print(Box(value: [[true], [false, true]]));
+        \\    val xs = [7, 8];
+        \\    print(Q(items: xs));
+        \\    print(Box(value: [true]) == Box(value: [true]));
+        \\    print(Box(value: [true]) == Box(value: [false]));
+        \\    val bs: bool[] = [true, false, true];
+        \\    print(Box(value: bs.filter({ b -> b })));
+        \\    print(Box(value: bs.slice(0, 2)));
+        \\    print(Box(value: bs.append([false])));
+        \\    print(Box(value: bs.map({ b -> !b })));
+        \\    print(bs.join(","));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\Box(value: [true, false])
+        \\Pair(first: #(true, 1), second: "x")
+        \\Box(value: [[1, 2], [3]])
+        \\Box(value: [[true], [false, true]])
+        \\Q(items: [7, 8])
+        \\true
+        \\false
+        \\Box(value: [true, true])
+        \\Box(value: [true, false])
+        \\Box(value: [true, false, true, false])
+        \\Box(value: [false, true, false])
+        \\true,false,true
+        \\
+    );
+}
+
 test "wat: gc ---- bytes, and the string arrays and optional strings std-wasm answers" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\pub fn main() -> void {

@@ -32,7 +32,8 @@ import {io.terminal.print} from "std";
 (module
   (rec
     (type $str (array (mut i8)))
-    (type $arr_i32 (array (mut i32)))
+    (type $arr_i32 (sub (array (mut i32))))
+    (type $arr_bool (sub final $arr_i32 (array (mut i32))))
     (type $arr_f64 (array (mut f64)))
     (type $arr_any (sub (array (mut anyref))))
     (type $tuple (sub final $arr_any (array (mut anyref))))
@@ -167,19 +168,19 @@ import {io.terminal.print} from "std";
     f64.const 1.5
     struct.new $box_f64
     i32.const 1
-    struct.new $box_i32
+    struct.new $box_bool
     array.new_fixed $tuple 2
     local.set $f1
     f64.const 1.5
     struct.new $box_f64
     i32.const 1
-    struct.new $box_i32
+    struct.new $box_bool
     array.new_fixed $tuple 2
     local.set $f2
     f64.const 1.5
     struct.new $box_f64
     i32.const 0
-    struct.new $box_i32
+    struct.new $box_bool
     array.new_fixed $tuple 2
     local.set $f3
     local.get $f1

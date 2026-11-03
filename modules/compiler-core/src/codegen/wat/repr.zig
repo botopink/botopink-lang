@@ -68,8 +68,10 @@ pub const Repr = union(enum) {
         }
     };
 
-    /// An array's element: a word, an `f64`, or a reference to anything.
-    pub const Elem = enum { i32, f64, any };
+    /// An array's element: a word, a `bool` (a word too, its array a GC
+    /// subtype of the word array's, decisions 568, 1031 (2)), an `f64`, or a
+    /// reference to anything.
+    pub const Elem = enum { i32, bool, f64, any };
 
     pub const string: Repr = .{ .ref = .str };
 

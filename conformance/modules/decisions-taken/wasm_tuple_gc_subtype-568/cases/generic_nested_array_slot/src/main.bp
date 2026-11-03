@@ -1,0 +1,11 @@
+//// Decision 568 — an array of arrays bound to a type parameter prints as the nested arrays it
+//// holds.
+
+import {io.terminal.print} from "std";
+
+type Box<T>(value: T)
+
+pub fn main() -> void {
+    print(Box(value: [[1, 2], [3]]));
+    print(Box(value: [["a"], ["b", "c"]]));
+}

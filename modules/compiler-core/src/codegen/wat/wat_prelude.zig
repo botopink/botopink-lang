@@ -3044,7 +3044,7 @@ const gc_print_items_capture = blk: {
 /// `kind`); `$__print_sig` and `$__eq_sig`, what the core casts those
 /// funcrefs to. The group holds no closure signature (decision 1076 (2)):
 /// each `$sig_<n>` is a singleton group after it (`gcSigDef`).
-pub const GcPrelude = enum(u16) { str, arr_i32, arr_f64, arr_any, tuple, box_i32, box_i64, box_f64, box_bool, box_big, closure, result, exn, task, waiter, hostn, gen, cell, decl, tinfo, print_sig, eq_sig };
+pub const GcPrelude = enum(u16) { str, arr_i32, arr_bool, arr_f64, arr_any, tuple, box_i32, box_i64, box_f64, box_bool, box_big, closure, result, exn, task, waiter, hostn, gen, cell, decl, tinfo, print_sig, eq_sig };
 
 /// Decision 1076 (2) — `$sig_<n>`, the function type of a lambda's entry of
 /// `n` parameters (`$closure` and `n` `anyref`s to an `anyref`): a unit
@@ -3064,7 +3064,11 @@ pub fn gcPreludeRef(p: GcPrelude) ast.ValType {
 
 pub const gc_prelude_defs = [_]ast.TypeDef{
     gc_str_def,
-    .{ .name = "arr_i32", .kind = .{ .array = .{ .ty = .i32, .mutable = true } } },
+    // Open: `$arr_bool` is its subtype (decisions 568, 1031 (2)) — a reader
+    // of a word array takes either; a `bool[]` in an `anyref` slot is told
+    // from an `i32[]` by its type, as `$box_bool` from `$box_i32`.
+    .{ .name = "arr_i32", .kind = .{ .array = .{ .ty = .i32, .mutable = true } }, .final = false },
+    .{ .name = "arr_bool", .kind = .{ .array = .{ .ty = .i32, .mutable = true } }, .super = @intFromEnum(GcPrelude.arr_i32) },
     .{ .name = "arr_f64", .kind = .{ .array = .{ .ty = .f64, .mutable = true } } },
     // Open: `$tuple` is its subtype.
     .{ .name = "arr_any", .kind = .{ .array = .{ .ty = .anyref, .mutable = true } }, .final = false },

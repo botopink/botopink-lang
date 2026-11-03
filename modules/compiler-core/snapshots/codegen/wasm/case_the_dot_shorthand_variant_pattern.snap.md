@@ -20,7 +20,8 @@ import {io.terminal.print} from "std";
 (module
   (rec
     (type $str (array (mut i8)))
-    (type $arr_i32 (array (mut i32)))
+    (type $arr_i32 (sub (array (mut i32))))
+    (type $arr_bool (sub final $arr_i32 (array (mut i32))))
     (type $arr_f64 (array (mut f64)))
     (type $arr_any (sub (array (mut anyref))))
     (type $tuple (sub final $arr_any (array (mut anyref))))
@@ -62,7 +63,7 @@ import {io.terminal.print} from "std";
     (local $r i32)
     (local $__case_0 anyref)
     i32.const 7
-    call $__new_22
+    call $__new_23
     local.set $c
     local.get $c
     local.set $__case_0
@@ -434,12 +435,12 @@ import {io.terminal.print} from "std";
     global.set $__s4
     call $__init_types
   )
-  (func $__new_22 (param $f0 i32) (result (ref null $var_Shape_Circle))
-    global.get $__ti_22
+  (func $__new_23 (param $f0 i32) (result (ref null $var_Shape_Circle))
+    global.get $__ti_23
     local.get $f0
     struct.new $var_Shape_Circle
   )
-  (global $__ti_22 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_23 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tip1 $__tie1)
   (func $__init_types
     global.get $__s4
@@ -448,8 +449,8 @@ import {io.terminal.print} from "std";
     ref.null func
     i32.const 1
     struct.new $__tinfo
-    global.set $__ti_22
-    global.get $__ti_22
+    global.set $__ti_23
+    global.get $__ti_23
     call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")

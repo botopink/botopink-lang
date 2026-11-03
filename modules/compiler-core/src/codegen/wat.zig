@@ -7025,6 +7025,8 @@ const Emitter = struct {
         if ((t == .box and t.box == .bool) or t == .ebox) _ = self.gcTyIndex(.{ .box = .i32 });
         if (t == .env) _ = self.gcTyIndex(.closure);
         if (t == .tuple) _ = self.gcTyIndex(.{ .arr = .any });
+        // `$arr_bool` is a subtype of `$arr_i32` (decisions 568, 1031 (2)).
+        if (t == .arr and t.arr == .bool) _ = self.gcTyIndex(.{ .arr = .i32 });
         self.gc_types.append(self.alloc, t) catch {
             self.gcGap("out of memory");
             return 0;
@@ -7658,9 +7660,13 @@ const Emitter = struct {
     /// The class of an array's elements: a word, a float, or anything else
     /// (a reference, or a scalar in its box).
     fn gcElemOf(self: *Emitter, t: ast.TypeRef) Repr.Elem {
+        // A `bool` is the word `reprOf` answers; its array an `$arr_bool`
+        // (decisions 568, 1031 (2)).
+        if (isBoolTypeRef(t)) return .bool;
         return switch (self.reprOf(t)) {
             .f64 => .f64,
-            .i32, .bool => .i32,
+            .i32 => .i32,
+            .bool => .bool,
             else => .any,
         };
     }
@@ -7746,6 +7752,7 @@ const Emitter = struct {
         const p: GcPrelude = switch (t) {
             .arr => |e| switch (e) {
                 .i32 => .arr_i32,
+                .bool => .arr_bool,
                 .f64 => .arr_f64,
                 .any => .arr_any,
             },
@@ -8043,18 +8050,25 @@ const Emitter = struct {
                 .arr => |e| try defs.append(ar, .{
                     .name = switch (e) {
                         .i32 => "arr_i32",
+                        .bool => "arr_bool",
                         .f64 => "arr_f64",
                         .any => "arr_any",
                     },
-                    .kind = .{ .array = .{ .ty = switch (e) {
-                        .i32 => ValType.i32,
-                        .f64 => ValType.f64,
-                        .any => ValType.anyref,
-                    }, .mutable = true } },
-                    // `$arr_any` is open when a tuple, its subtype, exists.
-                    .final = e != .any or for (self.gc_types.items) |x| {
-                        if (x == .tuple) break false;
-                    } else true,
+                    .kind = .{ .array = .{ .ty = gcElemVt(e), .mutable = true } },
+                    // `$arr_bool` is a subtype of `$arr_i32` (decisions 568,
+                    // 1031 (2)).
+                    .super = if (e == .bool) self.gcTyIndex(.{ .arr = .i32 }) else null,
+                    // `$arr_any` is open when a tuple, its subtype, exists;
+                    // `$arr_i32` when `$arr_bool` does.
+                    .final = switch (e) {
+                        .any => for (self.gc_types.items) |x| {
+                            if (x == .tuple) break false;
+                        } else true,
+                        .i32 => for (self.gc_types.items) |x| {
+                            if (x == .arr and x.arr == .bool) break false;
+                        } else true,
+                        else => true,
+                    },
                 }),
                 .tuple => try defs.append(ar, .{
                     .name = "tuple",
@@ -8280,7 +8294,7 @@ const Emitter = struct {
                     if (cc.receiver) |recv| if (self.primKindAt(cc, c.loc)) |k| if (k == .array) {
                         // `xs.fill(v)`: an array of `v`'s class.
                         if (std.mem.eql(u8, cc.callee, "fill") and cc.args.len == 1 and self.wasmTypeOf(recv.*).isArrRef()) {
-                            const vr = self.wasmTypeOf(cc.args[0].value.*);
+                            const vr = self.gcElemValRepr(cc.args[0].value.*);
                             return .{ .ref = .{ .arr = gcElemClassOf(vr) } };
                         }
                         for ([_][]const u8{ "reverse", "rest", "take", "drop", "slice", "append", "prepend", "fill", "toList", "filter", "unique" }) |m| {
@@ -8384,11 +8398,16 @@ const Emitter = struct {
     fn gcUnboxArr(self: *Emitter, cls: Repr.Elem) anyerror![]const u8 {
         const name: []const u8 = switch (cls) {
             .i32 => "__unbox_arr_i32",
+            .bool => "__unbox_arr_bool",
             .f64 => "__unbox_arr_f64",
             .any => return self.gcFail("an array of no known scalar class to unbox"),
         };
         if (!try self.gcHelperOnce(name)) return name;
-        const er: Repr = if (cls == .f64) .f64 else .i32;
+        const er: Repr = switch (cls) {
+            .f64 => .f64,
+            .bool => .bool,
+            else => .i32,
+        };
         const src_ti = self.gcTyIndex(.{ .arr = .any });
         const src_at = ValType.def(src_ti);
         const dst_ti = self.gcTyIndex(.{ .arr = cls });
@@ -8428,17 +8447,35 @@ const Emitter = struct {
         return name;
     }
 
+    /// The repr of `e` as an array's element: a `bool` told from the word
+    /// `wasmTypeOf` reads it as (decisions 568, 1031 (2)).
+    fn gcElemValRepr(self: *Emitter, e: ast.Expr) Repr {
+        const r = self.wasmTypeOf(e);
+        return if (r == .i32 and self.isBoolExpr(e)) .bool else r;
+    }
+
     fn gcElemClassOf(r: Repr) Repr.Elem {
         return switch (r) {
             .f64 => .f64,
-            .i32, .bool => .i32,
+            .i32 => .i32,
+            .bool => .bool,
             else => .any,
+        };
+    }
+
+    /// The repr of one element of a scalar array class (`.any`'s elements
+    /// are boxed: their repr is the box's reader's, never asked here).
+    fn gcClsRepr(cls: Repr.Elem) Repr {
+        return switch (cls) {
+            .i32, .any => .i32,
+            .bool => .bool,
+            .f64 => .f64,
         };
     }
 
     fn gcElemVt(cls: Repr.Elem) ValType {
         return switch (cls) {
-            .i32 => .i32,
+            .i32, .bool => .i32,
             .f64 => .f64,
             .any => .anyref,
         };
@@ -8473,14 +8510,19 @@ const Emitter = struct {
             }
             if (!self.sameVal(r, self.wasmTypeOf(el))) return null;
         }
-        if (r == .bool) r = .i32;
+        // A `bool` reads as the word it is; an array of them is an
+        // `$arr_bool` (decisions 568, 1031 (2)).
+        if (r == .i32 or r == .bool) {
+            for (al.elems) |el| if (!self.isBoolExpr(el)) return .i32;
+            return .bool;
+        }
         return r;
     }
 
     /// The repr of the elements of the array-valued `e`: its declared element
     /// type, the record it holds, its print shape, its element kind.
     fn gcElemRepr(self: *Emitter, e: ast.Expr) ?Repr {
-        if (self.elemTypeRefOf(e)) |et| return self.reprOf(et);
+        if (self.elemTypeRefOf(e)) |et| return if (isBoolTypeRef(et)) .bool else self.reprOf(et);
         if (self.elemRecordOf(e)) |r| return .{ .ref = .{ .record = r } };
         const sh = (self.printShapeOf(e) catch null) orelse "";
         if (sh.len >= 2 and sh[0] == '[') if (gcShapeRepr(sh[1..])) |r| return r;
@@ -8540,6 +8582,7 @@ const Emitter = struct {
     fn gcArrAt(self: *Emitter, cls: Repr.Elem) anyerror![]const u8 {
         const name: []const u8 = switch (cls) {
             .i32 => "__arr_at_i32",
+            .bool => "__arr_at_bool",
             .f64 => "__arr_at_f64",
             .any => "__arr_at_any",
         };
@@ -8593,6 +8636,7 @@ const Emitter = struct {
     fn gcArrPush(self: *Emitter, cls: Repr.Elem) anyerror![]const u8 {
         const name: []const u8 = switch (cls) {
             .i32 => "__arr_push_i32",
+            .bool => "__arr_push_bool",
             .f64 => "__arr_push_f64",
             .any => "__arr_push_any",
         };
@@ -8713,6 +8757,16 @@ const Emitter = struct {
             };
             if (as0 == null and isEmptyArrayLit(el)) if (declared) |ts| if (i < ts.len) {
                 r = self.reprOf(ts[i]);
+            };
+            // A `bool` reads as the word it is: in `$box_bool`, so the
+            // element prints and compares as one.
+            if (r == .i32 and self.isBoolExpr(el)) r = .bool;
+            // An all-unit enum's ordinal: in its enum's box, a `$box_i32`
+            // that prints by name (as `gcGenericArg`'s scalar).
+            if (r == .i32) if (self.unitEnumOf(el) orelse self.unitEnumOfTypeRef(el)) |en| {
+                try self.lowerCoerced(el, .i32);
+                try self.emit(.{ .struct_new = self.gcTyIndex(.{ .ebox = en }) });
+                continue;
             };
             try self.lowerCoerced(el, r);
             try self.gcBox(r);
@@ -9419,13 +9473,23 @@ const Emitter = struct {
             if (t == .tuple) break true;
         } else false;
         if (has_tuple) try self.gcUnkEqArm(self.gcTy(.tuple), try self.gcUnkEqElems(.tuple), null);
+        // A `bool[]` before an `i32[]`: `$arr_bool` is an `$arr_i32` too
+        // (decisions 568, 1031 (2)).
+        const has_arr_bool = for (self.gc_types.items) |t| {
+            if (t == .arr and t.arr == .bool) break true;
+        } else false;
+        if (has_arr_bool) try self.gcUnkEqArm(self.gcTy(.{ .arr = .bool }), try self.gcUnkEqElems(.{ .arr = .bool }), null);
         var i: usize = 0;
         while (i < self.gc_types.items.len) : (i += 1) {
             const t = self.gc_types.items[i];
             const k: u16 = @intCast(i + 1);
             const vt = ValType.def(k);
             switch (t) {
-                .arr => |e| try self.gcUnkEqArm(vt, try self.gcUnkEqElems(t), if (e == .any and has_tuple) self.gcTy(.tuple) else null),
+                .arr => |e| switch (e) {
+                    .bool => {},
+                    .i32 => try self.gcUnkEqArm(vt, try self.gcUnkEqElems(t), if (has_arr_bool) self.gcTy(.{ .arr = .bool }) else null),
+                    else => try self.gcUnkEqArm(vt, try self.gcUnkEqElems(t), if (e == .any and has_tuple) self.gcTy(.tuple) else null),
+                },
                 .record, .variant, .result => try self.gcUnkEqArm(vt, try self.gcUnkEqStruct(t, k), null),
                 .box => |b| switch (b) {
                     .i64 => try self.gcUnkEqArm(vt, try self.gcUnkEqStruct(t, k), null),
@@ -9498,6 +9562,7 @@ const Emitter = struct {
             .tuple => "__unk_eq_tuple",
             .arr => |e| switch (e) {
                 .i32 => "__unk_eq_arr_i32",
+                .bool => "__unk_eq_arr_bool",
                 .f64 => "__unk_eq_arr_f64",
                 .any => "__unk_eq_arr_any",
             },
@@ -9945,6 +10010,7 @@ const Emitter = struct {
     fn gcArrAtOpt(self: *Emitter, cls: Repr.Elem) anyerror![]const u8 {
         const name: []const u8 = switch (cls) {
             .i32 => "__arr_at_opt_i32",
+            .bool => "__arr_at_opt_bool",
             .f64 => "__arr_at_opt_f64",
             .any => "__arr_at_opt_any",
         };
@@ -9983,6 +10049,7 @@ const Emitter = struct {
         try self.emit(.{ .array_get = .{ .ty = ti } });
         switch (cls) {
             .i32 => try self.gcBox(.i32),
+            .bool => try self.gcBox(.bool),
             .f64 => try self.gcBox(.f64),
             .any => {},
         }
@@ -10003,7 +10070,7 @@ const Emitter = struct {
         const ar = self.wasmTypeOf(recv);
         if (!ar.isArrRef()) return self.gcFail("an at over a value of no known array type");
         const cls = ar.ref.arr;
-        const er: Repr = if (cls == .any) (self.gcElemRepr(recv) orelse return self.gcFail("an array of no known element type")) else if (cls == .f64) .f64 else .i32;
+        const er: Repr = if (cls == .any) (self.gcElemRepr(recv) orelse return self.gcFail("an array of no known element type")) else gcClsRepr(cls);
         try self.lowerCoerced(recv, ar);
         if (idx) |ix| try self.lowerCoerced(ix, .i32) else try self.emit(zero);
         try self.emit(.{ .call = try self.gcArrAtOpt(cls) });
@@ -10178,6 +10245,7 @@ const Emitter = struct {
     fn gcClsSuffix(cls: Repr.Elem) []const u8 {
         return switch (cls) {
             .i32 => "i32",
+            .bool => "bool",
             .f64 => "f64",
             .any => "any",
         };
@@ -10348,7 +10416,7 @@ const Emitter = struct {
             try self.emit(lget("i"));
             try self.emit(.{ .array_get = .{ .ty = ti } });
             switch (cls) {
-                .i32 => {
+                .i32, .bool => {
                     try self.emit(lget("x"));
                     try self.emit(opOf(.i32, "eq"));
                 },
@@ -10382,7 +10450,7 @@ const Emitter = struct {
             try self.gcLoop(loop_seq);
             try self.emit(try self.constInt(-1));
             const xt: ValType = switch (cls) {
-                .i32 => .i32,
+                .i32, .bool => .i32,
                 .f64 => .f64,
                 .any => if (by_eq) .anyref else prelude.gc_str_ref,
             };
@@ -10415,7 +10483,22 @@ const Emitter = struct {
             try self.emit(lget("xs"));
             try self.emit(lget("i"));
             try self.emit(.{ .array_get = .{ .ty = ti } });
-            if (cls == .any) try self.emit(.{ .ref_cast = sti }) else try self.emit(.{ .call = try self.gcI32ToStr() });
+            switch (cls) {
+                .any => try self.emit(.{ .ref_cast = sti }),
+                // A `bool[]` (decisions 568, 1031 (2)): `true` / `false`.
+                .bool => {
+                    var then_c: Capture = .{};
+                    self.open(&then_c);
+                    try self.emitStrLit("true");
+                    const then_seq = self.seal(&then_c, .{ .value = sti });
+                    var else_c: Capture = .{};
+                    self.open(&else_c);
+                    try self.emitStrLit("false");
+                    const else_seq = self.seal(&else_c, .{ .value = sti });
+                    try self.emit(.{ .@"if" = .{ .result = sti, .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
+                },
+                else => try self.emit(.{ .call = try self.gcI32ToStr() }),
+            }
             try self.emit(self.builder().helper(.str_concat));
             try self.emit(lset("acc"));
             try self.emit(lget("i"));
@@ -10540,7 +10623,7 @@ const Emitter = struct {
         const ar = self.wasmTypeOf(recv);
         if (!ar.isArrRef()) return false;
         const cls = ar.ref.arr;
-        const er: Repr = if (cls == .any) (self.gcElemRepr(recv) orelse return false) else if (cls == .f64) .f64 else .i32;
+        const er: Repr = if (cls == .any) (self.gcElemRepr(recv) orelse return false) else gcClsRepr(cls);
         const whole = try self.constInt(std.math.maxInt(i32));
         if (eq(u8, name, "reverse") and cc.args.len == 0) {
             try self.lowerCoerced(recv, ar);
@@ -10574,8 +10657,7 @@ const Emitter = struct {
         // array of `v`'s class (`[1, 2].fill("z")` is `["z", "z"]`).
         if (eq(u8, name, "fill") and cc.args.len == 1) fill: {
             const arg = callArg(cc, 0).?;
-            const vr0 = self.wasmTypeOf(arg);
-            const vr: Repr = if (vr0 == .bool) .i32 else vr0;
+            const vr = self.gcElemValRepr(arg);
             const vcls = gcElemClassOf(vr);
             if (vcls == cls) break :fill;
             const tmp = try std.fmt.allocPrint(self.arena(), "__fill{d}", .{self.loop_seq});
@@ -10623,7 +10705,7 @@ const Emitter = struct {
             return true;
         }
         if (eq(u8, name, "join") and cc.args.len == 1) {
-            if (!(cls == .i32 or (cls == .any and er.isStr()))) return false;
+            if (!(cls == .i32 or cls == .bool or (cls == .any and er.isStr()))) return false;
             try self.lowerCoerced(recv, ar);
             try self.lowerCoerced(callArg(cc, 0).?, Repr.string);
             try self.emit(.{ .call = try self.gcArrOp("join", cls) });
@@ -10636,7 +10718,7 @@ const Emitter = struct {
             // string's content; anything else is refused where it is written.
             const mode = (try self.uniqueMode(recv)) orelse return false;
             const want: Repr.Elem = switch (mode) {
-                0 => .i32,
+                0 => if (cls == .bool) .bool else .i32,
                 1 => .f64,
                 else => .any,
             };
@@ -10717,11 +10799,11 @@ const Emitter = struct {
         try self.emit(lget("xs"));
         try self.emit(lget("i"));
         try self.emit(.{ .array_get = .{ .ty = ta } });
-        if (a != .any) try self.gcBox(if (a == .f64) .f64 else .i32);
+        if (a != .any) try self.gcBox(gcClsRepr(a));
         try self.emit(lget("ys"));
         try self.emit(lget("i"));
         try self.emit(.{ .array_get = .{ .ty = tb } });
-        if (b != .any) try self.gcBox(if (b == .f64) .f64 else .i32);
+        if (b != .any) try self.gcBox(gcClsRepr(b));
         try self.emit(.{ .array_new_fixed = .{ .ty = self.gcTyIndex(.tuple), .n = 2 } });
         try self.emit(.{ .array_set = oi });
         try self.emit(lget("i"));
@@ -10765,7 +10847,7 @@ const Emitter = struct {
         try self.emit(lget("xs"));
         try self.emit(lget("i"));
         try self.emit(.{ .array_get = .{ .ty = ti } });
-        try self.gcBox(if (cls == .f64) .f64 else .i32);
+        try self.gcBox(gcClsRepr(cls));
         try self.emit(.{ .array_set = oi });
         try self.emit(lget("i"));
         try self.emit(one);
@@ -10824,7 +10906,7 @@ const Emitter = struct {
         try self.emit(.{ .array_get = .{ .ty = ti } });
         try self.emit(lget("x"));
         switch (cls) {
-            .i32 => try self.emit(opOf(.i32, "eq")),
+            .i32, .bool => try self.emit(opOf(.i32, "eq")),
             .f64 => {
                 try self.emit(lset("y"));
                 try self.emit(.{ .convert = "i64.reinterpret_f64" });
@@ -10877,7 +10959,7 @@ const Emitter = struct {
         try self.emit(lget("k"));
         try self.emit(.{ .call = try self.gcArrOp("slice", cls) });
         const yt: ValType = switch (cls) {
-            .i32 => .i32,
+            .i32, .bool => .i32,
             .f64 => .f64,
             .any => prelude.gc_str_ref,
         };
@@ -11376,10 +11458,36 @@ const Emitter = struct {
         }
     }
 
+    /// Whether a value of print shape `sh` reaches a type parameter's slot
+    /// printing as it is (decisions 568, 1031 (2)): every element in a box
+    /// its printer knows — a word, a float, a `bool`, a string, an array, a
+    /// tuple, a declared type, an `unknown`, an optional or a failure of
+    /// those —, an all-unit enum only as a tuple's element (in its enum's
+    /// box, `gcTupleLit`); a `u64`, or an all-unit enum's array, never.
+    fn gcShapeSlotOk(sh: []const u8, tuple_elem: bool) bool {
+        if (sh.len == 0) return false;
+        switch (sh[0]) {
+            's', 'i', 'f', 'l', 'b', 'T', 'U' => return true,
+            'E' => return tuple_elem,
+            '[', '?', '!' => return gcShapeSlotOk(sh[1..], false),
+            '(' => {
+                var i: usize = 1;
+                while (i < sh.len and sh[i] != ')') {
+                    const n = gcShapeSpan(sh[i..]);
+                    if (n == 0 or !gcShapeSlotOk(sh[i..], true)) return false;
+                    i += n;
+                }
+                return true;
+            },
+            else => return false,
+        }
+    }
+
     /// The class of the elements of an array whose element shape is `x`.
     fn gcShapeClass(x: []const u8) Repr.Elem {
         return switch (x[0]) {
-            'i', 'b', 'E' => .i32,
+            'i', 'E' => .i32,
+            'b' => .bool,
             'f' => .f64,
             else => .any,
         };
@@ -11787,28 +11895,33 @@ const Emitter = struct {
             try self.gcWhenReturn(&.{ .{ .local_get = "v" }, .{ .ref_cast = vt }, .{ .call = try self.gcTuplePrinter() }, one });
             break;
         };
-        var i: usize = 0;
-        while (i < self.gc_types.items.len) : (i += 1) {
-            const t = self.gc_types.items[i];
-            if (t != .arr) continue;
-            const k: u16 = @intCast(i + 1);
-            const vt = ValType.def(k);
-            const px = try self.gcPrinter(switch (t.arr) {
-                .i32 => "[i",
-                .f64 => "[f",
-                .any => "[U",
-            });
-            var hit: Capture = .{};
-            self.open(&hit);
-            try self.emit(.{ .local_get = "v" });
-            try self.emit(.{ .ref_cast = vt });
-            try self.emit(.{ .call = px });
-            try self.emit(one);
-            try self.emit(.@"return");
-            const hit_seq = self.seal(&hit, .terminated);
-            try self.emit(.{ .local_get = "v" });
-            try self.emit(.{ .ref_test = vt });
-            try self.emit(.{ .@"if" = .{ .then = .{ .seq = hit_seq } } });
+        // `$arr_bool` is tested before `$arr_i32`, its supertype
+        // (decisions 568, 1031 (2)).
+        for ([_]bool{ true, false }) |bools| {
+            var i: usize = 0;
+            while (i < self.gc_types.items.len) : (i += 1) {
+                const t = self.gc_types.items[i];
+                if (t != .arr or (t.arr == .bool) != bools) continue;
+                const k: u16 = @intCast(i + 1);
+                const vt = ValType.def(k);
+                const px = try self.gcPrinter(switch (t.arr) {
+                    .i32 => "[i",
+                    .bool => "[b",
+                    .f64 => "[f",
+                    .any => "[U",
+                });
+                var hit: Capture = .{};
+                self.open(&hit);
+                try self.emit(.{ .local_get = "v" });
+                try self.emit(.{ .ref_cast = vt });
+                try self.emit(.{ .call = px });
+                try self.emit(one);
+                try self.emit(.@"return");
+                const hit_seq = self.seal(&hit, .terminated);
+                try self.emit(.{ .local_get = "v" });
+                try self.emit(.{ .ref_test = vt });
+                try self.emit(.{ .@"if" = .{ .then = .{ .seq = hit_seq } } });
+            }
         }
         try self.emit(zero);
         const body = self.seal(&c, .{ .value = .i32 });
@@ -13107,6 +13220,7 @@ const Emitter = struct {
         }
         const fixed = [_]struct { []const u8, GcTy }{
             .{ "arr_i32", .{ .arr = .i32 } },
+            .{ "arr_bool", .{ .arr = .bool } },
             .{ "arr_f64", .{ .arr = .f64 } },
             .{ "arr_any", .{ .arr = .any } },
             .{ "box_i32", .{ .box = .i32 } },
@@ -21351,7 +21465,7 @@ const Emitter = struct {
                         const ar = self.wasmTypeOf(recv);
                         if (!ar.isArrRef()) return self.gcFail("a push onto a value of no known array type");
                         const cls = ar.ref.arr;
-                        const er: Repr = if (cls == .any) (self.gcElemRepr(recv) orelse return self.gcFail("a push onto an array of no known element type")) else if (cls == .f64) .f64 else .i32;
+                        const er: Repr = if (cls == .any) (self.gcElemRepr(recv) orelse return self.gcFail("a push onto an array of no known element type")) else gcClsRepr(cls);
                         try self.lowerCoerced(recv, ar);
                         try self.lowerCoerced(arg, er);
                         if (cls == .any) try self.gcBox(er);
@@ -21642,6 +21756,7 @@ const Emitter = struct {
             .any => self.gcElemRepr(recv) orelse .i32,
             .f64 => .f64,
             .i32 => .i32,
+            .bool => .bool,
         };
         if (lam.params.len == 0) return self.lambdaTailType(lam.body);
         const p = lam.params[0];
@@ -21701,6 +21816,7 @@ const Emitter = struct {
             .any => self.gcElemRepr(recv) orelse return self.gcFail("a walk over an array of no known element type"),
             .f64 => .f64,
             .i32 => if (elem_bool) .bool else .i32,
+            .bool => .bool,
         };
         if (gcElemClassOf(er) != cls) return self.gcFail("an array whose elements disagree with its class");
         const ti = self.gcTyIndex(.{ .arr = cls });
@@ -22072,6 +22188,7 @@ const Emitter = struct {
         // temporary is an identifier this function reads no shape for.
         if (self.mode == .gc) if (self.gcPeekAwaitedArr(e)) |r| return switch (r.ref.arr) {
             .i32 => "[i",
+            .bool => "[b",
             .f64 => "[f",
             .any => null,
         };
@@ -28099,17 +28216,20 @@ const Emitter = struct {
                 // printer —, an array or a tuple only when its shape has no
                 // word the slot could not name.
                 if (fr.ref == .unknown and vr.ref == .arr) {
-                    // An array of words, floats or strings prints as its
-                    // elements do (`$__print_arrs`); a bool array's words
-                    // would print as numbers, a nested one is ambiguous.
+                    // An array prints as its elements do (`$__print_arrs`):
+                    // a `bool[]` is an `$arr_bool`, a nested array an
+                    // `arr_any` of arrays (`[U`, decisions 568, 1031 (2)).
+                    // A `u64`'s or an all-unit enum's array holds words its
+                    // type cannot tell from an `i32`'s.
                     const sh = (try self.printShapeOf(value)) orelse return self.gcFail("an array in a type parameter's slot of no print shape");
-                    if (!(std.mem.eql(u8, sh, "[i") or std.mem.eql(u8, sh, "[f") or std.mem.eql(u8, sh, "[s"))) return self.gcFail("an array of another shape in a type parameter's slot");
+                    if (!gcShapeSlotOk(sh, false)) return self.gcFail("an array of another shape in a type parameter's slot");
                 }
                 if (fr.ref == .arr or fr.ref == .tuple or (fr.ref == .unknown and vr.ref == .tuple)) {
                     const sh = (try self.printShapeOf(value)) orelse return self.gcFail("a generic container of no print shape");
-                    // Each element prints by its box (`U`): a bool, an
-                    // all-unit enum's ordinal or a `u64` would not.
-                    for (sh) |ch| if (std.mem.indexOfScalar(u8, "sifl[()TU?!", ch) == null) return self.gcFail("a generic container holding words");
+                    // Each element prints by its box (`U`): a `bool` in
+                    // `$box_bool`, an all-unit enum's ordinal (a tuple's
+                    // element) in its enum's box; a `u64` would not.
+                    if (!gcShapeSlotOk(sh, false)) return self.gcFail("a generic container holding words");
                 }
                 try self.lowerCoerced(value, vr);
                 return;
@@ -28119,11 +28239,10 @@ const Emitter = struct {
             // into an `anyref` array, which print by their boxes as their
             // words did by `i` / `f`.
             if (vr.isArrRef() and fr.isArrRef() and fr.ref.arr == .any and vr.ref.arr != .any) {
-                // A literal only: a named array shares its elements with
-                // whoever else holds it, and the boxed copy would not.
-                if (!(value == .collection and value.collection.kind == .arrayLit)) return self.gcFail("a named array of words into a generic array");
+                // A literal or a named array (an `$arr_i32`, `$arr_f64` or
+                // `$arr_bool`, decisions 568, 1031 (2)): its boxed copy.
                 const sh = (try self.printShapeOf(value)) orelse return self.gcFail("a generic array of no print shape");
-                if (!(std.mem.eql(u8, sh, "[i") or std.mem.eql(u8, sh, "[f"))) return self.gcFail("a generic array of words with no box");
+                if (!(std.mem.eql(u8, sh, "[i") or std.mem.eql(u8, sh, "[f") or std.mem.eql(u8, sh, "[b"))) return self.gcFail("a generic array of words with no box");
                 try self.lowerCoerced(value, vr);
                 try self.emit(.{ .call = try self.gcArrBox(vr.ref.arr) });
                 return;
@@ -29788,6 +29907,7 @@ const Emitter = struct {
             const cls = ar.ref.arr;
             const er: Repr = switch (cls) {
                 .i32 => if (self.isBoolExpr(v)) .bool else .i32,
+                .bool => .bool,
                 .f64 => .f64,
                 .any => self.wasmTypeOf(v),
             };
@@ -30767,7 +30887,8 @@ const Emitter = struct {
         if (m == .to_array) {
             const yitem = (try self.genItemOf(recv)) orelse return self.gcFail("a toArray over a generator whose yitem type is not known");
             const er: Repr = if (yitem.repr == .bool) .i32 else yitem.repr;
-            const cls = gcElemClassOf(er);
+            // A `bool` item's array is an `$arr_bool` (decisions 568, 1031 (2)).
+            const cls: Repr.Elem = if (yitem.bool_) .bool else gcElemClassOf(yitem.repr);
             const ti = self.gcTyIndex(.{ .arr = cls });
             const base = try self.gcTemp(gen_r);
             const acc = try self.gcTemp(.{ .ref = .{ .arr = cls } });
@@ -31811,7 +31932,8 @@ const Emitter = struct {
                     self.gcGap("a toArray over a generator whose item type is not known");
                     return .i32;
                 };
-                return .{ .ref = .{ .arr = gcElemClassOf(yitem.repr) } };
+                // A `bool` item's array is an `$arr_bool` (decisions 568, 1031 (2)).
+                return .{ .ref = .{ .arr = if (yitem.bool_) .bool else gcElemClassOf(yitem.repr) } };
             }
             if (e == .loop and self.isGenExpr(e)) return .{ .ref = .gen };
         }
@@ -32011,6 +32133,10 @@ const Emitter = struct {
         if (self.mode == .gc and from == .ref and from.ref == .bigint and to == .ref and to.ref == .unknown) return self.gcBoxBig();
         if (self.mode == .gc and from == .ref and from.ref == .unknown and to == .ref and to.ref == .bigint) return self.gcUnboxBig();
         if (self.mode == .gc and from.isRef() and to == .ref and to.ref == .unknown) return;
+        // A `bool[]` where an array of words is asked (a generic copy over
+        // `T[]` shared by both): an upcast, `$arr_bool` being an `$arr_i32`
+        // (decisions 568, 1031 (2)).
+        if (self.mode == .gc and from.isArrRef() and from.ref.arr == .bool and to.isArrRef() and to.ref.arr == .i32) return;
         // An `unknown` read as the type a test proved it (`if (x is Frame) { val f: Frame = x }`)
         // is a downcast: a cast that traps where the test was wrong.
         if (self.mode == .gc and from == .ref and from.ref == .unknown and to == .ref) switch (to.ref) {
