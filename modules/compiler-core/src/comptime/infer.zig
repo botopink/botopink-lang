@@ -26005,6 +26005,32 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
                 if (call.is_builtin and isPrintBuiltin(call.callee)) for (typedArgs) |a| {
                     try noteTextValue(env, a.value.getLoc(), a.value.getType());
                 };
+                // Decision 1104 — `print` of a value whose static type is a task
+                // (`Async<T>`) or a generator (`Iter<T>`, `AsyncIter<T>`) — directly,
+                // or through a generic parameter the call binds to one (ordinary HM
+                // instantiation already resolved that by here): printing one
+                // observes scheduling state erlang and beam cannot report, so no
+                // fixed text would be honest on every target. Refused at the call,
+                // naming the type. `println` / `debug` (the other names
+                // `isPrintBuiltin` gates) are unaffected — decision 1104 names
+                // `print` alone.
+                if (call.is_builtin and std.mem.eql(u8, call.callee, "print")) for (typedArgs) |a| {
+                    const kind = unifyMod.mentionsTaskOrGen(a.value.getType()) orelse continue;
+                    const rendered = try snapshotMod.typeNameOf(env.arena, a.value.getType().deref());
+                    const rule = if (kind == .task) diagnostics.print_task else diagnostics.print_generator;
+                    const what = if (kind == .task) "a task" else "a generator";
+                    const msg = try std.fmt.allocPrint(
+                        env.arena,
+                        "{s}: `print` of {s} (`{s}`) — printing one observes scheduling state erlang and beam cannot report",
+                        .{ rule, what, rendered },
+                    );
+                    const hint = if (kind == .task)
+                        "A task has no printed text (decision 1104): read its value with `await`, or hold it behind `unknown`, where `print` answers a fixed panic."
+                    else
+                        "A generator has no printed text (decision 1104): read its values with `for` or `.next()`, or hold it behind `unknown`, where `print` answers a fixed panic.";
+                    env.lastError = TypeError.custom(msg, hint).withLoc(a.value.getLoc());
+                    return error.TypeError;
+                };
                 return TypedExpr{ .call = .{ .loc = loc, .type_ = retType, .kind = .{ .call = .{
                     .receiver = null,
                     .callee = call.callee,

@@ -2112,3 +2112,47 @@ test "decision 346: bytes crosses to and from text through fromUtf8 / toUtf8 alo
         }
     }
 }
+
+// ── decision 1104: `print` of a task or a generator ─────────────────────────
+
+test "decision 1104: print of a task/generator through unknown, or nested in another type's generic field, is not refused" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type Box<T>(value: T) {}
+        \\async fn doubled(n: i32) -> Async<i32> { return n * 2; }
+        \\iter fn gen() -> Iter<i32> { yield 1; }
+        \\pub fn main() -> void {
+        \\    val t = doubled(1);
+        \\    val u: unknown = t;
+        \\    print(u);
+        \\    print(Box(value: gen()));
+        \\    print(1, "x", true);
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    );
+}
+
+test "decision 1104: print of a task or a generator, directly, is refused at the call" {
+    const cases = [_]struct { src: []const u8, want: []const u8 }{
+        .{
+            .src = "async fn doubled(n: i32) -> Async<i32> { return n * 2; }\npub fn main() -> void { val t = doubled(1); print(t); }\n\nimport {io.terminal.print} from \"std\";",
+            .want = "print-task",
+        },
+        .{
+            .src = "iter fn gen() -> Iter<i32> { yield 1; }\npub fn main() -> void { print(gen()); }\n\nimport {io.terminal.print} from \"std\";",
+            .want = "print-generator",
+        },
+        .{
+            .src = "async fn doubled(n: i32) -> Async<i32> { return n * 2; }\nfn identity<T>(x: T) -> T { return x; }\npub fn main() -> void { print(identity(doubled(1))); }\n\nimport {io.terminal.print} from \"std\";",
+            .want = "print-task",
+        },
+    };
+    for (cases) |c| {
+        const msg = try typeErrorMessage(std.testing.allocator, c.src);
+        defer std.testing.allocator.free(msg);
+        if (std.mem.indexOf(u8, msg, c.want) == null) {
+            std.debug.print("\n{s}\nanswered: {s}\n", .{ c.src, msg });
+            return error.TestExpectedEqual;
+        }
+    }
+}

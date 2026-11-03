@@ -1315,3 +1315,15 @@ pub const type_parameter_unbound: []const u8 = "type-parameter-unbound";
 /// or a typed `fn` expression. Every function writes its return type, `-> void`
 /// included; refused at its name (a `fn` expression at its `fn`).
 pub const fn_return_missing: []const u8 = "fn-return-missing";
+
+/// Decision 1104 — `print` of a value whose static type is `Async<T>`
+/// (directly, or through a generic parameter the call binds to one):
+/// printing one observes scheduling state erlang and beam cannot report.
+/// Refused at the call, naming the type.
+pub const print_task: []const u8 = "print-task";
+
+/// Decision 1104 — `print` of a value whose static type is `Iter<T>` or
+/// `AsyncIter<T>` (directly, or through a generic parameter the call binds to
+/// one): printing one observes scheduling state erlang and beam cannot
+/// report. Refused at the call, naming the type.
+pub const print_generator: []const u8 = "print-generator";

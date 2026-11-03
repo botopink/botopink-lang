@@ -51,6 +51,32 @@ pub fn mentionsBytes(t: *T.Type) bool {
     };
 }
 
+/// Decision 1104 — a task (`Async<T>`) or a generator (`Iter<T>`,
+/// `AsyncIter<T>`): which of the two `t` IS, at the top level (through an
+/// optional's transparent payload, or a union's membership) — null when `t`
+/// names neither. Unlike `mentionsBigint`/`mentionsBytes`, this does NOT walk
+/// into another named type's own type arguments: a `Box<Iter<i32>>` is not
+/// itself a generator, and printing one through `Box`'s own generic, erased
+/// field keeps its separate, already-decided dynamic panic (front 229 s2's
+/// third box) rather than this static refusal.
+pub const TaskOrGen = enum { task, generator };
+pub fn mentionsTaskOrGen(t: *T.Type) ?TaskOrGen {
+    const d = t.deref();
+    switch (d.*) {
+        .named => |n| {
+            if (std.mem.eql(u8, n.name, "Async")) return .task;
+            if (std.mem.eql(u8, n.name, "Iter") or std.mem.eql(u8, n.name, "AsyncIter")) return .generator;
+            if (std.mem.eql(u8, n.name, "optional") and n.args.len == 1) return mentionsTaskOrGen(n.args[0]);
+            return null;
+        },
+        .union_ => |ms| {
+            for (ms) |m| if (mentionsTaskOrGen(m)) |k| return k;
+            return null;
+        },
+        else => return null,
+    }
+}
+
 /// Decision 1071 (1) — std `compiler`'s reflection records under their
 /// public names, each beside the compiler's own record a body is checked
 /// against (`comptime.zig` `decl_reflection_src`). The two hold the same
