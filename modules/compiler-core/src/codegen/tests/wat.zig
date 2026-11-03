@@ -2319,11 +2319,12 @@ test "wat: refusal ---- is over a type parameter specialises the generic fn per 
 
 // ...and a concrete call that reaches the generic body unspecialised — here
 // `$__display_of` printing a `Box<i32>` through the ONE `Box.display`, whose
-// `shown(self.value)` binds nothing — is refused where it is written
-// (`refuseUnboundTemplateCalls`). It trapped inside `shown`. commonJS prints
-// `Box(n)`.
-test "wat: refusal ---- a generic body reached with nothing bound is refused at the concrete call" {
-    try h.assertWasmRefusedAt(std.testing.allocator,
+// `shown(self.value)` binds nothing — now answers like commonJS, `Box(n)`
+// (decision 900 (3) made a generic body's own print-of-a-type-parameter
+// safe with nothing bound; B-207 removed the guard that used to refuse any
+// call reaching a generic record's own `display` here at all).
+test "wat: gc ---- a generic body reached with nothing bound answers like commonJS" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
         \\fn shown<T>(x: T) -> string {
         \\    if (x is string) return "s";
         \\    return "n";
@@ -2338,28 +2339,30 @@ test "wat: refusal ---- a generic body reached with nothing bound is refused at 
         \\}
         \\
         \\import {io.terminal.print} from "std";
-    , "cannot call the generic `Box.display` here", 11, 11);
+    ,
+        \\Box(n)
+        \\
+    );
 }
 
 // Front 229 — `__print_tagged_raw` walks every declared type, printed
 // dynamically or not. A type whose printer has no GC form (here a generic
-// record's own `display`, which the GC printer does not build) degrades alone:
-// the module stays `.gc`, another type printed through an `unknown` prints,
-// and the build note names the gapped type on stderr. It sent the whole
-// module to `.linear`.
+// record's own field, a function over its own type parameter — B-207's
+// guard on a generic record's own `display` is gone, decision 900 (3) made
+// calling it with nothing bound safe; `gcErasedShape`'s own function-field
+// gap is separate and still open) degrades alone: the module stays `.gc`,
+// another type printed through an `unknown` prints, and the build note names
+// the gapped type on stderr. It used to send the whole module to `.linear`.
 const tagged_printer_degraded_src =
-    \\type Box<T>(value: T) implement Display {
-    \\    pub fn display(self: Self<T>) -> string {
-    \\        return "Box";
-    \\    }
-    \\}
+    \\type Check<T>(message: string, rule: fn(v: T) -> bool) {}
+    \\fn alwaysTrue(v: i32) -> bool { return true; }
     \\type Point(x: i32, y: i32)
     \\fn show(v: unknown) -> void {
     \\    print(v);
     \\}
     \\pub fn main() -> void {
-    \\    val b = Box(value: 7);
-    \\    print(b.value);
+    \\    val c = Check(message: "ok", rule: alwaysTrue);
+    \\    print(c.message);
     \\    show(Point(x: 1, y: 2));
     \\    show(3);
     \\    {tail}
@@ -2372,7 +2375,7 @@ test "wat: gc ---- a declared type with no GC printer degrades alone in the tagg
     const src = try std.mem.replaceOwned(u8, std.testing.allocator, tagged_printer_degraded_src, "{tail}", "");
     defer std.testing.allocator.free(src);
     try h.assertWasmGcRunLog(std.testing.allocator, src,
-        \\7
+        \\ok
         \\Point(x: 1, y: 2)
         \\3
         \\
@@ -2383,7 +2386,7 @@ test "wat: gc ---- a declared type with no GC printer degrades alone in the tagg
 // panic, not a bare trap.
 test "wat: gc ---- printing a value of a type with no GC printer panics by name" {
     const allocator = std.testing.allocator;
-    const src = try std.mem.replaceOwned(u8, allocator, tagged_printer_degraded_src, "{tail}", "show(b);");
+    const src = try std.mem.replaceOwned(u8, allocator, tagged_printer_degraded_src, "{tail}", "show(c);");
     defer allocator.free(src);
     var outputs = try h.generate(allocator, &.{.{ .path = "", .source = src }}, std.testing.io, h.configs[3]);
     defer {
@@ -2395,8 +2398,8 @@ test "wat: gc ---- printing a value of a type with no GC printer panics by name"
     } else return error.ModuleDidNotCompile;
     try std.testing.expect(std.mem.indexOf(u8, o.result.js, "(type $str (array (mut i8)))") != null);
     const got = o.result.run_output orelse "";
-    const want = "panic: wasm cannot print a Box value: a generic record's display";
-    if (std.mem.indexOf(u8, got, "7\nPoint(x: 1, y: 2)\n3\n") == null or std.mem.indexOf(u8, got, want) == null) {
+    const want = "panic: wasm cannot print a Check value: a generic field of no GC shape";
+    if (std.mem.indexOf(u8, got, "ok\nPoint(x: 1, y: 2)\n3\n") == null or std.mem.indexOf(u8, got, want) == null) {
         std.debug.print("\n=== RUN LOG ===\n{s}\n=== expected it to contain ===\n{s}\n", .{ got, want });
         return error.RunLogMismatch;
     }

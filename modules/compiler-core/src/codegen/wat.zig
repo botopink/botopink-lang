@@ -9480,60 +9480,6 @@ const Emitter = struct {
         return name;
     }
 
-    /// `__unk_scalar_print_raw(v)`: a type parameter's own value, inside the
-    /// one generic body a call with nothing bound reaches — `gcErasedRepr`
-    /// erases it to `unknown` too, so it prints by what it actually holds (a
-    /// `box_bool` / `box_i32` / `box_f64` / `box_i64` / a string), the same
-    /// `ref.test` chain `gcUnkPrint` opens with, but with no record, enum,
-    /// array or tuple arm: those fall through to `__print_tagged_raw`
-    /// (`gcTaggedPrinter`), which walks every GC type the module declared and
-    /// calls `gcDeclPrinter` on each one unconditionally — tripping the
-    /// generic-record-display guard for a record the program never actually
-    /// prints through this path (B-207's class of gap, independent of
-    /// decision 900 (3)'s own fix). Anything else traps, as a generic
-    /// parameter bound to a record or an array here needs B-207 first
-    /// regardless.
-    fn gcUnkScalarPrint(self: *Emitter) anyerror![]const u8 {
-        const name = "__unk_scalar_print_raw";
-        if (!try self.gcHelperOnce(name)) return name;
-        const b = self.builder();
-        const bb = self.gcBoxVt(.bool);
-        const bi = self.gcBoxVt(.i32);
-        const bf = self.gcBoxVt(.f64);
-        const bl = self.gcBoxVt(.i64);
-        const str = prelude.gc_str_ref;
-        self.gc_str_used = true;
-        var c: Capture = .{};
-        self.open(&c);
-        var nul: Capture = .{};
-        self.open(&nul);
-        try self.gcPutStr("null");
-        try self.emit(.@"return");
-        const nul_seq = self.seal(&nul, .terminated);
-        try self.emit(.{ .local_get = "v" });
-        try self.emit(.ref_is_null);
-        try self.emit(.{ .@"if" = .{ .then = .{ .seq = nul_seq } } });
-        const Arm = struct { vt: ValType, print: Instr };
-        const arms = [_]Arm{
-            .{ .vt = bb, .print = b.helper(.print_bool_raw) },
-            .{ .vt = bi, .print = b.helper(.print_i32_raw) },
-            .{ .vt = bf, .print = b.helper(.print_f64_raw) },
-            .{ .vt = bl, .print = b.helper(.print_i64_raw) },
-            .{ .vt = str, .print = b.helper(.print_str_raw) },
-        };
-        for (arms) |a| {
-            try self.emit(.{ .local_get = "v" });
-            try self.emit(.{ .ref_test = a.vt });
-            if (a.vt.defIndex() != null and a.vt != str) {
-                const k = a.vt.defIndex().?;
-                try self.gcWhenReturn(&.{ .{ .local_get = "v" }, .{ .ref_cast = a.vt }, .{ .struct_get = .{ .ty = k, .field = 0 } }, a.print });
-            } else try self.gcWhenReturn(&.{ .{ .local_get = "v" }, .{ .ref_cast = a.vt }, a.print });
-        }
-        try self.emit(.@"unreachable");
-        try self.gcHelperFunc(name, &.{wat.Builder.param("v", .anyref)}, null, &.{}, self.seal(&c, .terminated));
-        return name;
-    }
-
     /// `__unk_print_raw(v)`: an `unknown` printed by what it holds (decision 8
     /// §7) — `null`, a number, a bool, a string's text, a record or a variant
     /// by its printer; an array or a tuple has no printed form here and traps,
@@ -11666,10 +11612,10 @@ const Emitter = struct {
         // `display(self) -> string` answers its own text (decision 8 §7).
         if (variant == null) {
             const dsym = try std.fmt.allocPrint(ar, "{s}_display", .{rec});
-            // A generic record's `display` is its one body, which linear
-            // memory reaches only through a call that binds its type
-            // parameters (`refuseUnboundTemplateCalls`): not printed here.
-            if (self.record_generics.contains(rec) and self.fn_sigs.contains(dsym)) return self.gcFail("a generic record's display");
+            // A generic record's `display` is its one body, called whether
+            // the record is generic or not (decision 900 (3), B-207): its own
+            // `shown<T>`-style dispatch now prints a type parameter's value by
+            // what it holds, so calling it with nothing bound is safe.
             if (self.fn_sigs.get(dsym)) |sig| if (sig.params.len == 1 and sig.result != null and sig.result.?.isStr()) {
                 try self.emit(get_v);
                 try self.emit(.{ .call = dsym });
@@ -16556,19 +16502,19 @@ const Emitter = struct {
         }
         // A type parameter's own value, inside the one generic body a call
         // with nothing bound reaches (decision 900 (3)): it prints by what
-        // it actually holds (`gcUnkScalarPrint`) instead of assuming the
-        // slot is always `box_i32`. Checked by the STATIC type (`T`, not
-        // `unknown`), not by the erased repr `gcPrintArg` already passed
-        // over — that repr is the same `unknown` a real `unknown` value
-        // carries, and routing it through `isUnknownExpr`'s printer
-        // (`gcUnkPrint`) above would pull in `__print_tagged_raw`'s
-        // unconditional walk of every declared record (B-207's class of
-        // gap). In `.linear` memory a type parameter's slot is already an
-        // untagged word, same as `unknown`'s own fallback just above — no
-        // narrower form to give it there.
+        // it actually holds, the same dynamic dispatch a real `unknown`
+        // value gets (`gcUnkPrint`) — `__print_tagged_raw`'s walk over every
+        // declared record now degrades per type instead of failing the
+        // whole module on an unrelated one's gap (front 229 s1/s2, B-207),
+        // so routing through it here is safe. Checked by the STATIC type
+        // (`T`, not `unknown`), not by the erased repr `gcPrintArg` already
+        // passed over — that repr is the same `unknown` a real `unknown`
+        // value carries. In `.linear` memory a type parameter's slot is
+        // already an untagged word, same as `unknown`'s own fallback just
+        // above — no narrower form to give it there.
         if (self.mode == .gc and self.isGenericParamExpr(arg)) {
             try self.lowerCoerced(arg, .{ .ref = .unknown });
-            try self.emit(.{ .call = try self.gcUnkScalarPrint() });
+            try self.emit(.{ .call = try self.gcUnkPrint(false) });
             if (last) try self.emit(self.builder().helper(.print_nl));
             return;
         }
