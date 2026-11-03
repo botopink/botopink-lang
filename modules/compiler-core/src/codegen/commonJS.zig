@@ -567,6 +567,14 @@ fn emitProgramOptsX(
         else => {},
     };
 
+    // 144 B-216 — the index right after this module's own normal
+    // source-order imports (its `use` decls, as they are emitted below):
+    // where a reached enum's `require` is inserted, so it follows every
+    // import this module itself wrote, instead of jumping ahead of all of
+    // them (`reachedEnumRequires`, below). Updated as each `.use` is
+    // appended; stays 0 when the module writes no import of its own.
+    var after_imports_idx: usize = 0;
+
     // Build declarations from the transformed program.
     for (program.decls) |decl| {
         switch (decl) {
@@ -589,7 +597,10 @@ fn emitProgramOptsX(
             .behavior => |i| try items.append(arena_alloc, .{ .stmt = try em.buildInterface(i) }),
             .implement => |im| try items.append(arena_alloc, .{ .stmt = try em.buildImplement(im) }),
             .extend => |ex| try items.append(arena_alloc, .{ .stmt = try em.buildExtend(ex) }),
-            .use => |u| try items.append(arena_alloc, .{ .stmt = try em.buildUse(u) }),
+            .use => |u| {
+                try items.append(arena_alloc, .{ .stmt = try em.buildUse(u) });
+                after_imports_idx = items.items.len;
+            },
             // `mod` declares a submodule in the explicit tree; the submodule is
             // emitted as its own module file, so the declaration emits nothing.
             .mod => {},
@@ -607,6 +618,22 @@ fn emitProgramOptsX(
             } } }),
         }
     }
+
+    // 144 B-216 — a reached enum's `require` follows this module's own
+    // normal source-order imports (`after_imports_idx`), instead of
+    // hoisting to index 0 ahead of all of them: a reached enum is read
+    // through a value this module already builds from an import it wrote
+    // itself (`enumMethodOwner`, `shadowedMethodOwner`), so jumping that
+    // require ahead of the module's OWN imports can start loading the
+    // reached enum's owner (and whatever that owner's own source-order
+    // imports reach, transitively) before this module writes anything of
+    // its own — a decorator's `compiler.init` executor, spliced in at its
+    // declaration's position below, may call straight into the reached
+    // binding before it is bound otherwise (`ReferenceError: Cannot access
+    // '…' before initialization`). Inserted here, right after the imports
+    // and before every other declaration (including such an executor) and
+    // before the auto-invoke block below, so both still find it ready.
+    try items.insertSlice(arena_alloc, after_imports_idx, try em.reachedEnumRequires());
 
     // Auto-invoke entry point when `fn main/0` is defined — when the module
     // is the program's entry, so a test unit (decision 513) or another
@@ -631,7 +658,6 @@ fn emitProgramOptsX(
     // and module-level `val`s among them — in one hidden export, which the
     // test unit destructures. Not enumerable, so no `Object.assign` of the
     // module's exports copies it.
-    try items.insertSlice(arena_alloc, 0, try em.reachedEnumRequires());
     if (has_main_0 or tests.items.len > 0) {
         // Every `require` target is a sibling in the one flat folder
         // (decision 1015, `Emitter.requireOf`).

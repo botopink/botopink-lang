@@ -1,3 +1,5 @@
 botopink-cell 2
 == dependency_init_without_import
 out ["web"]
+== reached_enum_require_after_own_imports
+out ["go-describeSignal"]

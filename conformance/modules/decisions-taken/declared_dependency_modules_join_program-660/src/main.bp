@@ -39,5 +39,6 @@ fn runCase(comptime name: string) -> void {
 
 pub async fn main() -> Async<Result<void, string>> {
     runCase("dependency_init_without_import");
+    runCase("reached_enum_require_after_own_imports");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

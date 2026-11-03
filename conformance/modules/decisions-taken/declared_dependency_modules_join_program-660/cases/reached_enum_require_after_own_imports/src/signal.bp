@@ -1,0 +1,13 @@
+//// A fixture library the executor reaches into without an import.
+
+pub type Signal {
+    Go,
+
+    pub fn word(self: Self) -> string {
+        return "go";
+    }
+}
+
+pub fn makeSignal() -> Signal {
+    return Signal.Go;
+}

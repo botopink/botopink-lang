@@ -1,0 +1,16 @@
+//// Unimported (decision 677): its annotated declaration still registers
+//// (joins the init list) before `main` — and calls `.word()` on a `Signal`
+//// value without ever importing `Signal` by name, so its owner (`signal`)
+//// is reached through the cross-module export index alone (144 B-216).
+
+import {signal.makeSignal};
+import {registry.record};
+import {compiler} from "std";
+
+pub fn registered(syntax decl: unknown) -> void {
+    val name = compiler.name(decl)!;
+    compiler.init({ -> record(makeSignal().word() + "-" + name) });
+}
+
+#[registered]
+pub fn describeSignal() -> void {}

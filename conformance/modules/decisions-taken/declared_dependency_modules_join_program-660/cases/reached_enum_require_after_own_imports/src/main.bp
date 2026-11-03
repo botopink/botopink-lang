@@ -1,0 +1,10 @@
+import {io.terminal.print} from "std";
+pub mod registry;
+pub mod signal;
+pub mod shapes;
+import {registry.entries};
+import {shapes.describeSignal};
+
+pub fn main() -> void {
+    print(entries());
+}
