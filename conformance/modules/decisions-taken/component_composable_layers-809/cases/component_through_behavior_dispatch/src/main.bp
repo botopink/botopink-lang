@@ -1,0 +1,35 @@
+//// Decision 809 (1), (4) — a type's method answering `Component<R>` resolves
+//// exactly as a plain function of the same body does: `StyledProperty`
+//// implements `Styleable` with `toStyled`, which only delegates to `wrap`,
+//// the same `wrap` a caller may call directly on the same value — `t`'s own
+//// fields must read back the same whichever path runs it (B-211).
+
+import {context.run, io.terminal.print} from "std";
+
+type Styled(className: string, rules: string)
+
+component fn styledConstant(className: string, rules: string) -> Component<Styled> {
+    return Styled(className: className, rules: rules);
+}
+
+behavior Styleable<T> {
+    fn toStyled(self: Self<T>) -> Component<T>;
+}
+
+type StyledProperty(className: string, rules: string) implement Styleable<Styled> {
+    fn toStyled(self: Self) -> Component<Styled> {
+        return wrap(self);
+    }
+}
+
+fn wrap(x: StyledProperty) -> Component<Styled> {
+    return styledConstant(x.className, x.rules);
+}
+
+pub async fn main() -> Async<void> {
+    val t = StyledProperty(className: "box", rules: "color:red");
+    val direct = await run(wrap(t));
+    val dispatched = await run(t.toStyled());
+    print(direct.className, direct.rules);
+    print(dispatched.className, dispatched.rules);
+}

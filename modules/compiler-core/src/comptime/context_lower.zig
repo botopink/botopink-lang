@@ -1013,12 +1013,21 @@ pub fn lower(arena: std.mem.Allocator, program: ast.Program, env_const: *const E
 /// marker goes with the written return, as a top-level fn's `effect` does:
 /// the method is then a plain function making the lambda (decision 791 (1)),
 /// and only the lambda runs asynchronously when its body awaits (375).
+///
+/// B-211 — a bodyless declaration takes its effect from the written wrapper
+/// alone (no marker to write), but a WRITTEN body does not (decision 570, as
+/// a free fn's doesn't): `ast.EffectKind.ofMethod` is the one answer both the
+/// checker (`infer.zig`'s `methodEffect`) and this lowering read, so an
+/// unmarked method answering `Component<R>` stays a plain function returning
+/// the whole value — scope-wrapping it here without the checker's matching
+/// `componentReturns` auto-resolve answered the wrapped, unresolved
+/// composition instead of its value (fields missing on every reader).
 fn lowerMethod(low: *Lowering, m: *ast.BehaviorMethod) !void {
-    const component = writesComponent(m.returnType);
+    const component = ast.EffectKind.ofMethod(m.returnType, m.body, m.marker) == .component;
     const renders = writtenRenders(m.returnType);
     if (component) {
         m.returnType = try low.lambdaTypeOf(renders);
-        if (m.marker == .component) m.marker = null;
+        m.marker = null;
     }
     const body = m.body orelse return;
     if (component) {
