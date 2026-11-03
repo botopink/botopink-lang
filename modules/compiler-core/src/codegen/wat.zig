@@ -8808,7 +8808,6 @@ const Emitter = struct {
 
     /// `try r`: an `Error` leaves the function with `r` itself, an `Ok` is its payload.
     fn gcTryPropagate(self: *Emitter, inner: ast.Expr) anyerror!void {
-        if (self.regions.items.len > 0) return self.gcFail("a try in a `try … catch` region");
         if (self.gen_item == null and self.yield_target != null and !(self.gen_repr.isArrRef() and self.gen_repr.ref.arr == .any)) return self.gcFail("a try inside a sequence of words");
         const sh = self.resultShapeOf(inner) orelse return self.gcFail("a try over a Result of no known shape");
         const pr = self.reprOf(sh.ok orelse return self.gcFail("a Result of no known Ok type"));
@@ -8821,7 +8820,19 @@ const Emitter = struct {
         try self.emit(.{ .struct_get = .{ .ty = rti, .field = 0 } });
         var then_c: Capture = .{};
         self.open(&then_c);
-        if (self.gen_item != null) {
+        if (self.regions.items.len > 0) {
+            // Decision 595 — same as the linear lowering's `lowerTryPropagate`:
+            // the region's handler takes the failure, branching out of the
+            // region's body with the failed `$result` in its own local.
+            const rg = &self.regions.items[self.regions.items.len - 1];
+            if (rg.err_tr == null) if (self.resultShapeOf(inner)) |ih| {
+                rg.err_tr = ih.err;
+            };
+            try self.emit(.{ .local_get = slot });
+            try self.emit(.{ .local_set = rg.err });
+            try self.runDefers(rg.defer_floor);
+            try self.emitC(.{ .br = rg.fail }, "to the region's handler");
+        } else if (self.gen_item != null) {
             // Decision 122 in a generator machine (144 B-142): the Error is
             // the last item — answered now, the handle ended behind it (no
             // resume point: the expression holding the `try` is never
@@ -16238,10 +16249,11 @@ const Emitter = struct {
     ///
     /// No exception: a failing `try` branches (518 untouched). The handler
     /// is lowered outside the region: its own `try`s belong to the region
-    /// around this one (595 (6)). A GC module lowers in linear memory.
+    /// around this one (595 (6)). A GC module lowers the same shape with a
+    /// `$result` ref in place of the linear `err` slot (`gcLowerRegion`).
     fn lowerRegion(self: *Emitter, tc: anytype) anyerror!void {
-        if (self.mode == .gc) return self.gcFail("a `try … catch` region");
         if (self.machine != null) return self.refuse(tc.expr.getLoc(), "the wasm backend has no lowering yet for a `try … catch` region in a task", .{});
+        if (self.mode == .gc) return self.gcLowerRegion(tc);
         const ar = self.arena();
         const n = self.region_seq;
         self.region_seq += 1;
@@ -16265,6 +16277,38 @@ const Emitter = struct {
         self.open(&outer_c);
         try self.emit(.{ .block = .{ .kind = .block, .label = fail, .body = body_seq } });
         if (tc.binder) |bn| try self.bindRegionError(bn, err, rg.err_tr);
+        try self.lowerValueAs(tc.handler.*, repr);
+        const outer_seq = self.seal(&outer_c, .{ .value = ty });
+        try self.emit(.{ .block = .{ .kind = .block, .label = done, .result = ty, .body = outer_seq } });
+    }
+
+    /// Front 229 s3 — `lowerRegion`'s GC form: the same two-block shape, a
+    /// `$result` ref (`gcTryPropagate`'s region branch) in place of the
+    /// linear lowering's `err` slot address, unwrapped by `gcBindResultErr`.
+    fn gcLowerRegion(self: *Emitter, tc: anytype) anyerror!void {
+        const ar = self.arena();
+        const n = self.region_seq;
+        self.region_seq += 1;
+        const done = try std.fmt.allocPrint(ar, "__rg_done{d}", .{n});
+        const fail = try std.fmt.allocPrint(ar, "__rg_fail{d}", .{n});
+        const err = try std.fmt.allocPrint(ar, "__rg_err{d}", .{n});
+        try self.declareLocal(err, .{ .ref = .result });
+        const repr = self.wasmTypeOf(tc.expr.*);
+        const ty = self.vtOf(repr);
+
+        var body_c: Capture = .{};
+        self.open(&body_c);
+        try self.regions.append(self.alloc, .{ .fail = fail, .err = err, .defer_floor = self.defer_stack.items.len });
+        const lowered = self.lowerValueAs(tc.expr.*, repr);
+        const rg = self.regions.pop().?;
+        try lowered;
+        try self.emit(.{ .br = done });
+        const body_seq = self.seal(&body_c, .terminated);
+
+        var outer_c: Capture = .{};
+        self.open(&outer_c);
+        try self.emit(.{ .block = .{ .kind = .block, .label = fail, .body = body_seq } });
+        if (tc.binder) |bn| try self.gcBindResultErr(bn, err, rg.err_tr orelse return self.gcFail("a catch binder over a Result of no known Error type"));
         try self.lowerValueAs(tc.handler.*, repr);
         const outer_seq = self.seal(&outer_c, .{ .value = ty });
         try self.emit(.{ .block = .{ .kind = .block, .label = done, .result = ty, .body = outer_seq } });

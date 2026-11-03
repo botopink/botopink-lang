@@ -4339,6 +4339,51 @@ test "wat: gc ---- a @Result: its constructors, a case over it, try and unwrapOr
     );
 }
 
+// Front 229 s3 — `lowerRegion`'s GC form (`gcLowerRegion`): a `try { … }
+// catch { e -> … }` region used to fall the whole module back to linear
+// memory (`gcFail("a \`try … catch\` region")`). It lowers the same shape as
+// the linear backend — the region's own `$result` ref branched to the
+// handler, defers run before the branch, a binder optional.
+test "wat: gc ---- a try … catch region: multiple tries, a defer, a binder and none" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn half(n: i32) -> Result<i32, string> {
+        \\    if (n % 2 == 0) {
+        \\        return n / 2;
+        \\    }
+        \\    throw "odd";
+        \\}
+        \\
+        \\fn twice(n: i32) -> i32 {
+        \\    return try {
+        \\        defer print("deferred");
+        \\        val a = try half(n);
+        \\        val b = try half(a);
+        \\        b
+        \\    } catch { e ->
+        \\        print("caught: " + e);
+        \\        -1
+        \\    };
+        \\}
+        \\
+        \\fn unbound(n: i32) -> i32 {
+        \\    return try {
+        \\        try half(n)
+        \\    } catch {
+        \\        -99
+        \\    };
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    print(twice(8));
+        \\    print(twice(3));
+        \\    print(unbound(4));
+        \\    print(unbound(3));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    );
+}
+
 test "wat: gc ---- bytes, and the string arrays and optional strings std-wasm answers" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\pub fn main() -> void {
