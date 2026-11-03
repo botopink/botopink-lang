@@ -1663,6 +1663,75 @@ test "wat: prim method ---- a prelude default's host helpers are std-wasm's, its
     );
 }
 
+// Front 229's last open box (`conformance/modules/case`'s build, blocked by
+// it entirely): a variant's `i64` (or `u64` / `u32`) payload, lowered in
+// linear memory, had stayed the plain 4-byte word every slot is otherwise —
+// `lowerEnumCtor`'s construction refused the narrowing outright
+// (`the wasm backend would narrow this i64 value to an i32 slot it does not
+// fit`), and `bindPayloadName`'s read side and the variant's print
+// descriptor (`appendNameAndFields`) both assumed the same, under the
+// comment "a variant's payload holds only an i32 word, the one an i64 slot
+// is ever given" — wrong once a payload is declared one. A record's field
+// already boxed into its own 8-byte cell (`fieldCellIn` / `lowerCellWord`);
+// a variant's payload now does the same. `Many(vs)`'s own GC gap (decision
+// 1097 — a ref-to-ref conversion `emitConvert` has no case for) sends this
+// module to the fallback this bug needed to reach: the GC lowering already
+// boxes an `i64` payload correctly (`reprOf`, `lowerCoerced`) and never met
+// it.
+test "wat: decision 1097 ---- a variant's `i64` payload is its own cell in the linear fallback, constructed, printed and matched back" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\import {io.terminal.print} from "std";
+        \\
+        \\type Node {
+        \\    Many(vs: i32[]),
+        \\    One(v: i32),
+        \\}
+        \\
+        \\type Boxed {
+        \\    Wide(value: i64),
+        \\    Small(value: i32),
+        \\}
+        \\
+        \\fn flatten(n: Node) -> i32[] {
+        \\    var out: i32[] = [];
+        \\    case n {
+        \\        Many(vs) {
+        \\            for (vs) { k ->
+        \\                out.push(k);
+        \\            }
+        \\        }
+        \\        _ {
+        \\            out.push(0 - 1);
+        \\        }
+        \\    }
+        \\    return out;
+        \\}
+        \\
+        \\fn unwrap(b: Boxed) -> i64 {
+        \\    case b {
+        \\        Wide(value: w) -> return w;
+        \\        Small(value: s) -> return s.toI64();
+        \\    }
+        \\}
+        \\
+        \\fn main() -> void {
+        \\    print(flatten(Node.Many(vs: [1, 2])));
+        \\    val w = Boxed.Wide(value: 9999999999);
+        \\    print(w);
+        \\    print(Boxed.Small(value: 3));
+        \\    print(unwrap(w) + 1);
+        \\    print(unwrap(Boxed.Small(value: 3)));
+        \\}
+    ,
+        \\[1, 2]
+        \\Boxed.Wide(value: 9999999999)
+        \\Boxed.Small(value: 3)
+        \\10000000000
+        \\3
+        \\
+    );
+}
+
 // `Array.pop` and `Array.lastIndexOf` left the trap list: `pop` answers the
 // `?T` `at(-1)` does and rebinds the local to a copy one shorter, as `push`
 // rebinds it to a grown one; `lastIndexOf` walks `indexOf`'s equality from

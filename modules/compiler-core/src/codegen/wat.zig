@@ -19172,12 +19172,18 @@ const Emitter = struct {
             try self.emit(.{ .local_set = n });
             return;
         }
-        // payload slots are 4 bytes: a float field's holds its cell
-        const slot_float = local_ty.isFloat();
+        // payload slots are 4 bytes: a float or an `i64` field holds its cell
+        // (as a named record's field does, `fieldCellIn` / `emitFromCell`) —
+        // read by the field's OWN declared type (`field_ty`), never the
+        // shared pattern local's (`local_ty`): a sibling arm's payload of
+        // another width may have declared that local first (`value` bound
+        // over `Wide(value: i64)` and `Small(value: i32)` alike), and this
+        // arm's slot is still laid out as its own field says.
+        const slot_cell = if (field_ty) |t| cellOfTypeRef(t) else .none;
         try self.emit(.{ .local_get = subj });
         try self.emit(.{ .load = .{ .offset = @intCast((slot + 1) * 4) } });
-        if (slot_float) try self.emitFromFloatSlot();
-        try self.emitConvert(if (slot_float) .f64 else .i32, local_ty);
+        try self.emitFromCell(slot_cell);
+        try self.emitConvert(slot_cell.ty(), local_ty);
         try self.emit(.{ .local_set = n });
     }
 
@@ -28526,15 +28532,22 @@ const Emitter = struct {
                     try self.emit(.{ .store = .{ .offset = off } });
                     continue;
                 }
-                // A float's slot holds its cell, which only a payload declared
-                // a float is read as: under a type parameter (`Some(v: T)`) a
-                // binder and the printer took the cell's address for the value.
-                const declared_float = switch (vf.typeRef) {
-                    .named => |n| isFloatTypeName(n),
-                    else => false,
-                };
-                if (self.wasmTypeOf(arg.value.*).isFloat() and !declared_float)
-                    return self.refuse(arg.value.getLoc(), "the wasm backend cannot hold an `f64` in payload `{s}`: its declared type is not one, and its readers take a word", .{vf.name});
+                // A float or an `i64` payload's slot holds its cell, which
+                // only a payload declared one of those is read as: under a
+                // type parameter (`Some(v: T)`) a binder and the printer took
+                // the cell's address for the value (`lowerRecordCtor`'s rule
+                // for a named record's field — payloads had kept the older,
+                // float-only half of it, an `i64` payload narrowed to the
+                // word its slot is).
+                const declared_cell = cellOfTypeRef(vf.typeRef);
+                if (declared_cell != .none) {
+                    try self.emit(.{ .local_get = base });
+                    try self.lowerCellWord(arg.value.*, declared_cell);
+                    try self.emit(.{ .store = .{ .offset = off } });
+                    continue;
+                }
+                if (Cell.of(self.wasmTypeOf(arg.value.*)) != .none)
+                    return self.refuse(arg.value.getLoc(), "the wasm backend cannot hold an `{s}` in payload `{s}`: its declared type is not one, and its readers take a word", .{ self.wasmTypeOf(arg.value.*).name(), vf.name });
                 try self.storeSlotExpr(base, off, arg.value.*);
             } else {
                 try self.storeSlotConst(base, off, 0);
@@ -28746,7 +28759,7 @@ const Emitter = struct {
         const fields = self.records.get(name) orelse return null;
         var out: std.ArrayListUnmanaged(u8) = .empty;
         try out.append(self.arena(), 'R');
-        try self.appendNameAndFields(&out, name, fields, self.record_field_typerefs.get(name), true, self.record_generics.get(name) orelse &.{});
+        try self.appendNameAndFields(&out, name, fields, self.record_field_typerefs.get(name), self.record_generics.get(name) orelse &.{});
         const seg = try self.internString(out.items);
         const addr = seg.offset + 4;
         try self.type_descs.put(name, addr);
@@ -28897,7 +28910,7 @@ const Emitter = struct {
         }
         var out: std.ArrayListUnmanaged(u8) = .empty;
         try out.append(self.arena(), 'V');
-        try self.appendNameAndFields(&out, key, names.items, refs.items, false, self.enum_generics.get(ename) orelse &.{});
+        try self.appendNameAndFields(&out, key, names.items, refs.items, self.enum_generics.get(ename) orelse &.{});
         const seg = try self.internString(out.items);
         const addr = seg.offset + 4;
         try self.type_descs.put(key, addr);
@@ -28913,10 +28926,6 @@ const Emitter = struct {
         name: []const u8,
         fields: []const []const u8,
         refs: ?[]const ast.TypeRef,
-        /// A record's `i64` field holds a cell (`l`, `u` for a `u64`); a
-        /// variant's payload holds only an `i32` word, the one an `i64` slot
-        /// is ever given.
-        record: bool,
         /// The type parameters of the declaration: a field written as one (or
         /// as an array or tuple of one) is shaped `G`, its construction site
         /// recording the shape, see `genericShapes`.
@@ -28933,14 +28942,19 @@ const Emitter = struct {
             try out.append(a, @intCast(fname.len));
             try out.appendSlice(a, fname);
             const tref: ?ast.TypeRef = if (refs) |rs| (if (i < rs.len) rs[i] else null) else null;
+            // A record's `i64` field holds a cell (`l`, `u` for a `u64`), and
+            // so does a variant's payload of the same declared type — the
+            // write side stores the cell's address in either slot
+            // (`lowerEnumCtor`), so the printer must read it back the same
+            // way wherever it holds one.
             const wide: ?u8 = if (tref) |t| switch (t) {
                 .named => |n| i64CellCode(n),
                 else => null,
             } else null;
-            if (record) if (wide) |c| {
+            if (wide) |c| {
                 try out.append(a, c);
                 continue;
-            };
+            }
             if (tref) |t| if (isGenericField(t, generics)) {
                 try out.append(a, 'G');
                 continue;
