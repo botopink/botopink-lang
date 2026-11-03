@@ -2549,6 +2549,37 @@ test "wat: gc ---- a bare pattern name two enums declare resolves through the ma
     );
 }
 
+// Front 229 s8 — `[first, ..rest]` over an array parameter: the subject is a
+// true GC array reference (`(ref $arr_i32)`), so `..rest` is the native
+// `gcArrOp("slice", …)` `xs[a..b]` already uses, not std-wasm's `array.slice`
+// (a linear-memory-only function, decision 442 (2), which has no GC form).
+// Every arm of the pattern — the length test, a bound element, the rest — is
+// `array.len` / `array.get` / the native slice, never a linear `load`, so the
+// whole module stays `.gc` (`assertWasmGcRunLog` fails on a `.linear` fallback).
+test "wat: gc ---- a list pattern's ..rest over an array parameter is the array's own native slice" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\fn size(items: i32[]) -> string {
+        \\    return case items {
+        \\        [] -> "empty";
+        \\        [x] -> "one";
+        \\        [first, ..rest] -> "first=" + first.toString() + " rest=" + rest.length().toString();
+        \\    };
+        \\}
+        \\pub fn main() -> void {
+        \\    print(size([]));
+        \\    print(size([1]));
+        \\    print(size([1, 2, 3]));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\empty
+        \\one
+        \\first=1 rest=2
+        \\
+    );
+}
+
 // Front 229 s2's third box — `$closure` and `$result` held in an `unknown`
 // slot (a generic field's erasure, the same mechanism B-207 fixed) used to
 // fall through `__print_tagged_raw` to its bare `unreachable`; they answer as
@@ -6950,11 +6981,24 @@ test "wat: gc ---- a 0-argument function named like a linked enum's payload vari
 }
 
 // Front 229 s1 — a function of the module's own that nothing reaches and
-// that still writes linear memory (a list pattern, `[a, b]`) is a stub that
-// traps, naming why and where; the module keeps its GC form. Reached, the
-// same function sends the module to linear memory, and the build note
-// (decision 1097) names the function and the line.
-test "wat: front 229 s1 ---- a module's own unreached function with no GC form is a stub, the module stays GC" {
+// that still writes linear memory is a stub that traps, naming why and
+// where; the module keeps its GC form. Reached, the same function sends the
+// module to linear memory, and the build note (decision 1097) names the
+// function and the line.
+//
+// Front 229 s8 closed the fixture these two cases used until now — a list
+// pattern over an array parameter, `[a, b]` — which this suite's own list-
+// pattern fixtures (`assert pattern ---- with list pattern` et al.) now show
+// compiling in full GC form (`array.len` / `array.get`, never a linear
+// `load`). These two cases are kept as regression cover for that fix (its
+// exact previous fixture, now green) rather than deleted outright, but they
+// no longer exercise the stub/fallback MECHANISM itself (decision 1097) —
+// this repository has no other construct left on hand that reaches
+// `finishGc`'s "touches memory" class without an immediate `gcFail` first
+// (every remaining linear-memory-only construct found while fixing s8 aborts
+// emission right away, which is not stub-eligible). A future gap of that
+// exact shape should get its own fixture restoring that coverage.
+test "wat: front 229 s1 ---- a list pattern over an array parameter is no longer a stub: front 229 s8 gave it a GC form" {
     const io = std.testing.io;
     const alloc = std.testing.allocator;
     var outputs = try h.generate(alloc, &.{.{ .path = "", .source =
@@ -6979,12 +7023,14 @@ test "wat: front 229 s1 ---- a module's own unreached function with no GC form i
         if (std.mem.eql(u8, o.name, "") or std.mem.eql(u8, o.name, "main")) break o;
     } else return error.ModuleDidNotCompile;
     const wat_text = o.result.js;
-    try std.testing.expect(std.mem.indexOf(u8, wat_text, "(func $unused (param $xs (ref null $arr_i32)) (result i32)\n    unreachable ;; unreached here: a value written to linear memory (no GC form yet) at ") != null);
-    try std.testing.expect(std.mem.indexOf(u8, wat_text, ":2:5\n") != null);
+    // No stub: `unused` keeps its body, a real GC array op, never `unreachable`.
+    try std.testing.expect(std.mem.indexOf(u8, wat_text, "(func $unused (param $xs (ref null $arr_i32)) (result i32)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, wat_text, "array.len") != null);
+    try std.testing.expect(std.mem.indexOf(u8, wat_text, "unreachable ;; unreached here: a value written to linear memory") == null);
     try std.testing.expectEqualStrings("1\n", o.result.run_output orelse "");
 }
 
-test "wat: front 229 s1 ---- a reached function with no GC form falls the module back, named and located" {
+test "wat: front 229 s1 ---- a reached list pattern over an array parameter no longer falls the module back: front 229 s8" {
     const io = std.testing.io;
     const alloc = std.testing.allocator;
     _ = watCodegen.takeLinearNote();
@@ -7010,10 +7056,8 @@ test "wat: front 229 s1 ---- a reached function with no GC form falls the module
         if (std.mem.eql(u8, o.name, "") or std.mem.eql(u8, o.name, "main")) break o;
     } else return error.ModuleDidNotCompile;
     try std.testing.expectEqualStrings("3\n", o.result.run_output orelse "");
-    const note = watCodegen.takeLinearNote();
-    try std.testing.expect(std.mem.startsWith(u8, note, "wasm: "));
-    try std.testing.expect(std.mem.indexOf(u8, note, " lowered .linear: a value written to linear memory (no GC form yet) in `sum2` at ") != null);
-    try std.testing.expect(std.mem.endsWith(u8, note, ":2:5"));
+    // No fallback note at all: the module stayed `.gc` end to end.
+    try std.testing.expectEqualStrings("", watCodegen.takeLinearNote());
 }
 
 // B-206 — the final fallthrough of `emitWat`'s retry chain (`own_dependency`,

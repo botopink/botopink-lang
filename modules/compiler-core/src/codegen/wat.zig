@@ -18470,8 +18470,15 @@ const Emitter = struct {
     /// pattern answered `1`), so `[x]` took `[]`'s arm at exit 0.
     fn emitListPatternTest(self: *Emitter, l: anytype, subj: []const u8, loc: ast.Loc) anyerror!void {
         if (!self.arr_locals.contains(subj)) return self.refuse(loc, "the wasm backend tests a list pattern against an array subject only", .{});
+        const ek = self.arr_elem_locals.get(subj) orelse .i32;
+        const gc = self.mode == .gc;
+        const cls = elemClassOf(ek);
         try self.emit(.{ .local_get = subj });
-        try self.emitC(.{ .load = .{} }, "element count");
+        if (gc) {
+            try self.emit(.array_len);
+        } else {
+            try self.emitC(.{ .load = .{} }, "element count");
+        }
         try self.emit(try self.constInt(@as(i32, @intCast(l.elems.len))));
         try self.emit(opOf(.i32, if (l.spread == null) "eq" else "ge_u"));
         for (l.elems, 0..) |el, i| {
@@ -18479,12 +18486,17 @@ const Emitter = struct {
                 .numberLit => |n| n,
                 else => continue,
             };
-            if (self.arr_elem_locals.get(subj) == .f64 or numLitType(n).isFloat())
+            if (ek == .f64 or numLitType(n).isFloat())
                 return self.refuse(loc, "the wasm backend cannot test a float list element against a pattern", .{});
             var then_c: Capture = .{};
             self.open(&then_c);
             try self.emit(.{ .local_get = subj });
-            try self.emit(.{ .load = .{ .offset = @intCast((i + 1) * 4) } });
+            if (gc) {
+                try self.emit(try self.constInt(@as(i32, @intCast(i))));
+                try self.emit(.{ .array_get = .{ .ty = self.gcTyIndex(.{ .arr = cls }) } });
+            } else {
+                try self.emit(.{ .load = .{ .offset = @intCast((i + 1) * 4) } });
+            }
             try self.emit(try numLitConst(self.arena(), n));
             try self.emit(opOf(.i32, "eq"));
             const then_seq = self.seal(&then_c, .{ .value = .i32 });
@@ -18496,22 +18508,46 @@ const Emitter = struct {
         }
     }
 
+    /// The GC array class (`arr_i32` / `arr_f64` / `arr_any`) a list
+    /// pattern's `ElemKind` reads and writes as.
+    fn elemClassOf(ek: ElemKind) Repr.Elem {
+        return switch (ek) {
+            .i32 => .i32,
+            .f64 => .f64,
+            .str => .any,
+        };
+    }
+
     /// Bind a list pattern's names: each `bind` from its slot, a named spread
-    /// to the rest of the array (std-wasm's `array.slice`).
+    /// to the rest of the array. In a GC module the subject is a true array
+    /// reference (`front 229 s8`): each slot is `array.get`, not a linear
+    /// load, and the rest is `gcArrOp("slice", …)` — the same native slice
+    /// `lowerIndex` already gives `xs[a..b]` — never std-wasm's `array.slice`,
+    /// which only ever answers a linear module's own pointer-and-slot-words
+    /// array (std-wasm's program face, decision 442 (2): it has no GC form).
     fn bindListPattern(self: *Emitter, l: anytype, subj: []const u8) anyerror!void {
         const ek = self.arr_elem_locals.get(subj) orelse .i32;
         const sh = self.print_shape_locals.get(subj);
+        const gc = self.mode == .gc;
+        const cls = elemClassOf(ek);
         for (l.elems, 0..) |el, i| {
             const name = switch (el) {
                 .bind => |b| b,
                 else => continue,
             };
             const float = ek == .f64;
-            const n = try self.bindName(name, if (float) .f64 else .i32);
+            const want: Repr = if (gc and ek == .str) Repr.string else if (float) .f64 else .i32;
+            const n = try self.bindName(name, want);
             try self.emit(.{ .local_get = subj });
-            try self.emit(.{ .load = .{ .offset = @intCast((i + 1) * 4) } });
-            if (float) try self.emitFromFloatSlot();
-            try self.emitConvert(if (float) .f64 else .i32, self.locals.get(n) orelse .i32);
+            if (gc) {
+                try self.emit(try self.constInt(@as(i32, @intCast(i))));
+                try self.emit(.{ .array_get = .{ .ty = self.gcTyIndex(.{ .arr = cls }) } });
+                if (ek == .str) try self.emit(.{ .ref_cast = prelude.gc_str_ref });
+            } else {
+                try self.emit(.{ .load = .{ .offset = @intCast((i + 1) * 4) } });
+                if (float) try self.emitFromFloatSlot();
+            }
+            try self.emitConvert(want, self.locals.get(n) orelse want);
             try self.emit(.{ .local_set = n });
             if (sh) |shape| if (shape.len > 1) try self.noteTupleElemLocal(n, shape[1..]);
             if (ek == .str) try self.str_locals.put(n, {});
@@ -18519,11 +18555,16 @@ const Emitter = struct {
         }
         const rest = l.spread orelse return;
         if (rest.len == 0) return;
-        const n = try self.bindName(rest, .i32);
+        const rest_ty: Repr = if (gc) .{ .ref = .{ .arr = cls } } else .i32;
+        const n = try self.bindName(rest, rest_ty);
         try self.emit(.{ .local_get = subj });
         try self.emit(try self.constInt(@as(i32, @intCast(l.elems.len))));
         try self.emit(try self.constInt(std.math.maxInt(i32)));
-        try self.emitStdCall("array.slice");
+        if (gc) {
+            try self.emit(.{ .call = try self.gcArrOp("slice", cls) });
+        } else {
+            try self.emitStdCall("array.slice");
+        }
         try self.emit(.{ .local_set = n });
         try self.arr_locals.put(n, {});
         try self.arr_elem_locals.put(n, ek);
