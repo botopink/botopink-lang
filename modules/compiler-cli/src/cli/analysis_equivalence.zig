@@ -38,6 +38,7 @@ const libs = @import("./libs.zig");
 const code_cache = @import("./code_cache.zig");
 const analysis_store = @import("./analysis_store.zig");
 const unit_cache = @import("./unit_cache.zig");
+const build_cmd = @import("./build.zig");
 const test_scratch = @import("test_scratch");
 const source_stamp = @import("source_stamp");
 
@@ -252,7 +253,10 @@ const Fixture = struct {
             .loaded = loaded,
             .deps = deps,
             .all = try std.mem.concat(arena, Module, &.{ deps, loaded.modules }),
-            .cfg = .{ .build_root = ".botopinkbuild", .packages = try libs.packagesOf(arena, proj, deps), .wasm_artifact = true },
+            // The units on as `build` has them (`build.wasm_units`): a
+            // `wasi` build's every module a unit, a dependency's cached unit
+            // imported from as an emitted one (decision 1032 (6)).
+            .cfg = .{ .build_root = ".botopinkbuild", .packages = try libs.packagesOf(arena, proj, deps), .wasm_artifact = true, .wasm_units = build_cmd.wasm_units },
             .keys = keys.keys,
             .logs = keys.logs,
             .runtime = keys.runtime,
@@ -413,7 +417,9 @@ test "level B: build cold, build (writes), build (reads) — every file the same
         // shelf, rival, and each std module crowded reaches — each one's
         // analysis staged, and its units written once the emit returned.
         try testing.expect(writes.stats.entries_staged >= 3);
-        try testing.expect(writes.units_written >= 3);
+        // On wasm, with the units on, a std module is no unit of its own
+        // (linked into its importer, decision 1072 (2)): shelf's and rival's.
+        try testing.expect(writes.units_written >= @as(usize, if (v.target == .wasm and build_cmd.wasm_units) 2 else 3));
         try testing.expectEqual(@as(usize, 0), writes.units_read);
         var reads = try invoke(gpa, io, &crowded, v, root, crowded.keys);
         defer reads.deinit(gpa);

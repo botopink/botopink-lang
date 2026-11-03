@@ -1436,7 +1436,12 @@ linked from such a unit (`Emitter.foreign_vals`; written with a scalar type its 
 read, so what only it calls is not linked) and drops that unit's `_`-named statements; each
 `global.get` / `global.set` of it becomes a call of the imported accessor (`readThroughAccessor`, a
 thunk `$__val_<sym>` casting back when abstract). Anything else (a generic function or method, a
-linear module's) stays linked. Inside each unit's `__bp_init` the type infos are built before the
+linear module's) stays linked. A dependency unit the unit cache answered (decision 1008 (2)) is
+registered from its bytes (`ProgramUnit.face`); its face lists every function its lowering exported,
+so an importer imports from it only what `crossesUnit` / `memberCrosses` let cross, read from the
+linked module's declarations (`linkedCrosses`) — the importer's bytes are the same whether the
+dependency's unit was emitted in the build or read back (decision 509 (3); `level_b.sh`, and
+`cli/analysis_equivalence.zig`'s level B test with the units on). Inside each unit's `__bp_init` the type infos are built before the
 `val`s, and the frame runs the units' in dependency order (the core, std's, the program's). `botopink.units` merges what the
 program units it links or runs name: the core, every std unit any of them imports, the program units in
 dependency order, the module itself. `tests/wat.zig` `units ---- each module of a program is a unit`

@@ -3372,9 +3372,9 @@ fn unitBoundary(
     var imports: std.ArrayListUnmanaged(Item) = .empty;
     // The functions linked from another program unit: its functions, then
     // its methods (decision 1055 (8)).
-    var candidates: std.ArrayListUnmanaged(struct { sym: []const u8, from: usize }) = .empty;
+    var candidates: std.ArrayListUnmanaged(struct { sym: []const u8, from: usize, member: ?Member = null }) = .empty;
     for (decls, owner) |d, from| if (from < linked.len and d == .@"fn") try candidates.append(ar, .{ .sym = d.@"fn".name, .from = from });
-    for (extras.methods) |um| if (um.from < linked.len) try candidates.append(ar, .{ .sym = um.sym, .from = um.from });
+    for (extras.methods) |um| if (um.from < linked.len) try candidates.append(ar, .{ .sym = um.sym, .from = um.from, .member = um.member });
     for (candidates.items) |c| {
         const from = c.from;
         const l = linked[from];
@@ -3392,7 +3392,15 @@ fn unitBoundary(
         if (want) |w| {
             if (!sameFuncType(have, w)) continue;
         } else {
-            // A cached unit: the export line its face carries.
+            // A cached unit (decision 1008 (2)): its face lists every
+            // function its lowering exported, but only those its own
+            // emission lets cross (`unitBoundary`'s rule, read from its
+            // declarations) are imported — the rest are linked here as
+            // they are when the unit is emitted in this build, so the
+            // importer's bytes never depend on whether the dependency's
+            // unit was a cache hit (decision 509 (3)).
+            if (!linkedCrosses(l, bare, c.member)) continue;
+            // The export line its face carries.
             const line = runtimeUnit.exportLine(ar, bare, have) catch |err| switch (err) {
                 error.OutOfMemory => return error.OutOfMemory,
                 else => continue,
@@ -3498,6 +3506,19 @@ fn memberCrosses(m: Member, decls: []const ast.DeclKind) bool {
     for (m.params) |p| if (!unitCrossable(selfAs(p.typeRef, m.target), decls, 0)) return false;
     if (m.returnType) |r| if (!unitCrossable(selfAs(r, m.target), decls, 0)) return false;
     return true;
+}
+
+/// Whether the function `bare` (or, `member` set, that method) of the linked
+/// program unit `l` crosses into an importer: the rule `unitBoundary` applies
+/// to the unit's own declarations when it emits it, applied to the same
+/// declarations as the importer links them.
+fn linkedCrosses(l: Linked, bare: []const u8, member: ?Member) bool {
+    if (member) |m| return memberCrosses(m, l.program.decls);
+    for (l.program.decls) |d| if (d == .@"fn" and std.mem.eql(u8, d.@"fn".name, bare)) {
+        const f = d.@"fn";
+        return f.isPub and !isMain0(f) and crossesUnit(f, l.program.decls);
+    };
+    return false;
 }
 
 fn selfAs(t: ast.TypeRef, target: []const u8) ast.TypeRef {
