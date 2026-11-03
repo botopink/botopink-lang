@@ -21,3 +21,5 @@ out 4
 out corner
 out 7
 out no name
+== import_qualified_type_alias_beside_std_name
+out "hi"

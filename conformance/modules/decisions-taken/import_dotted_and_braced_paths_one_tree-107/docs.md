@@ -3,6 +3,7 @@
 [cases/import_alias_fn_value_beside_local/src/main.bp](cases/import_alias_fn_value_beside_local/src/main.bp)
 [cases/import_group_modifier/src/main.bp](cases/import_group_modifier/src/main.bp)
 [cases/import_name_collision/src/main.bp](cases/import_name_collision/src/main.bp)
+[cases/import_qualified_type_alias_beside_std_name/src/main.bp](cases/import_qualified_type_alias_beside_std_name/src/main.bp)
 [cases/import_tree/src/main.bp](cases/import_tree/src/main.bp)
 [cases/import_type_method_result/src/main.bp](cases/import_type_method_result/src/main.bp)
 

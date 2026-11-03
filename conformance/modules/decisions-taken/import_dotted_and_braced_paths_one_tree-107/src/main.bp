@@ -43,5 +43,6 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("import_tree");
     runCase("import_alias_fn_value_beside_local");
     runCase("import_type_method_result");
+    runCase("import_qualified_type_alias_beside_std_name");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

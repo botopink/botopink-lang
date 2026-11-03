@@ -1,0 +1,17 @@
+//// Decision 107 — a qualified item names the module its prefix spells, and only that module:
+//// `import {plugin.Json};` binds this package's `plugin.Json`, a type alias, even while std's
+//// `compiler` and `json` modules — both in the program — each declare a `pub` `Json` of their own.
+//// The import says which module it means, so nothing about it is ambiguous, on every target.
+
+pub mod plugin;
+
+import {io.terminal.print, json.quote} from "std";
+import {plugin.Json};
+
+fn label(s: string) -> Json {
+    return quote(s);
+}
+
+pub fn main() -> void {
+    print(label("hi"));
+}

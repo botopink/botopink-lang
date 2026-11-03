@@ -415,6 +415,15 @@ pub const CrossModule = struct {
             named_hit = e;
         };
         if (named_n == 1) return .{ .one = named_hit };
+        // A `.key` names one module and never widens (`ImportSource.admits`):
+        // when that module declares no `pub` of the name here — a type alias
+        // the backends never see is erased from it (`alias_erase`), so
+        // `import {plugin.Json};` over `pub type Json = string;` leaves no
+        // owner in `plugin` — the import is answered nowhere, not contested
+        // among the OTHER modules that declare the name (144 B-213: std's
+        // `compiler.Json` and `json.Json` refused an import that named
+        // neither).
+        if (named_n == 0) if (source) |src| if (src == .key) return .none;
 
         // The PACKAGE the import names, when it names no module: two libraries
         // of one build may each declare a name (a server library's `Response`
