@@ -5959,8 +5959,8 @@ const Emitter = struct {
                 },
                 else => return null,
             },
-            // `Shape.Square(side: 4)`, and the bare `Square(side: 4)` whose
-            // name uniquely finds a payload-bearing variant.
+            // `Shape.Square(side: 4)`: a variant is built through its enum
+            // (`callKind`; a bare one is no expression, decision 587).
             .call => |c| switch (c.kind) {
                 .call => |cc| {
                     if (self.callKind(cc) == .enum_ctor) return .variant;
@@ -14048,14 +14048,16 @@ const Emitter = struct {
             for (vs) |v| if (std.mem.eql(u8, v.name, cc.callee)) return .enum_ctor;
         };
         if (self.records.contains(cc.callee)) return .record_ctor;
+        // A variant is built through its enum: the receiver names it. A call
+        // with no receiver is never a construction — the checker refuses a
+        // bare variant in expression position (decision 587,
+        // `infer.refuseBareVariant`), so a receiverless call that type-checked
+        // resolved to a function, a local or a record. A capitalised name
+        // never decides the kind: `NotFound()` calling the program's own
+        // function was taken for std `FsError.NotFound(path)`'s constructor
+        // because `findVariant` matched the name (front 229 s9).
         if (receiverName(cc)) |rcv| {
             if (self.enums.contains(rcv)) return .enum_ctor;
-        } else if (cc.callee.len > 0 and std.ascii.isUpper(cc.callee[0])) {
-            // `Variant(...)` with no receiver: an enum payload constructor when
-            // the (capitalised) name uniquely names a payload-bearing variant.
-            if (self.findVariant(cc.callee)) |fv| {
-                if (fv.variant.fields.len > 0) return .enum_ctor;
-            }
         }
         return .plain;
     }

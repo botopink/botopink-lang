@@ -6902,6 +6902,53 @@ test "wat: gc ---- a behavior named like a std `compiler` reflection record disp
     );
 }
 
+// Front 229 s9 — a call with no receiver whose callee is named like a
+// payload-bearing variant of an enum the module links (`Lookup.NotFound(path:
+// string)`) is the function the checker resolved it to: a bare variant is no
+// expression (decision 587), so such a call that type-checked never builds a
+// variant. `callKind` took the capitalised name for the variant's constructor
+// (`findVariant`), built a `Lookup` with no payload where `print` expected a
+// string, and the module fell to `.linear` printing the garbage variant.
+test "wat: gc ---- a 0-argument function named like a linked enum's payload variant is a plain call, not a construction" {
+    try h.assertWasmGcRunLogModules(std.testing.allocator, &.{
+        .{ .path = "errs", .source =
+        \\pub type Lookup { NotFound(path: string), Denied }
+        \\
+        \\pub fn describe(l: Lookup) -> string {
+        \\    return case l {
+        \\        NotFound(p) -> "missing " + p;
+        \\        Denied -> "denied";
+        \\    };
+        \\}
+        },
+        .{ .path = "pages", .source =
+        \\pub fn NotFound() -> string {
+        \\    return "page";
+        \\}
+        },
+        .{ .path = "main", .source =
+        \\mod errs;
+        \\mod pages;
+        \\
+        \\import {errs.Lookup, errs.describe};
+        \\import {pages.NotFound as pageNotFound};
+        \\import {pages.NotFound};
+        \\import {io.terminal.print} from "std";
+        \\
+        \\pub fn main() -> void {
+        \\    print(NotFound());
+        \\    print(pageNotFound());
+        \\    print(describe(Lookup.NotFound("x")));
+        \\}
+        },
+    },
+        \\page
+        \\page
+        \\missing x
+        \\
+    );
+}
+
 // Front 229 s1 — a function of the module's own that nothing reaches and
 // that still writes linear memory (a list pattern, `[a, b]`) is a stub that
 // traps, naming why and where; the module keeps its GC form. Reached, the

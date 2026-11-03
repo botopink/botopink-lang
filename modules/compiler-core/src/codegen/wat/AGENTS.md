@@ -2615,6 +2615,14 @@ answered, and each was a red wasm cell of `conformance`:
   `Bp__Token__Layout.Size(…)` — what a section path desugars to — built the
   RECORD `Size` when one of that name was in scope, and `.Layout.Size.Large`
   answered the section's first arm (`display:block`).
+- **A call with no receiver is never a construction** (`callKind`): the
+  checker refuses a bare variant in expression position (decision 587,
+  `infer.refuseBareVariant`), so a receiverless call that type-checked is a
+  function, a local or a record. `callKind` used to take a capitalised name
+  for a payload variant's constructor when `findVariant` matched it:
+  `NotFound()` calling the program's own function built std
+  `FsError.NotFound(path)` (`modules/import/cases/import_same_fn_name_two_aliases`,
+  front 229 s9).
 - **A `_`-named top-level statement runs at module load**, in `$__init_globals`
   in source order with the named `val`s (`deferred_stmts`); it was dropped. A
   synthetic statement that only calls `main()` is skipped, as on the BEAM.
