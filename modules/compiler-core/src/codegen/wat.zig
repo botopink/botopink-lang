@@ -14243,8 +14243,22 @@ const Emitter = struct {
             },
             .collection => |col| switch (col.kind) {
                 .grouped => |inner| try self.declareNestedLocals(inner.*),
+                // Front 229 s5 — this pre-pass runs ahead of `lowerCase`, so
+                // `subject_enums` holds nothing yet: without its own hint, a
+                // bare pattern name two enums declare (`Red`) hit the
+                // ambiguous branch of `findVariant` and sent the whole
+                // module to `.linear` for every target, even though the
+                // checker already resolved the name against this subject's
+                // own type. Read that same type here (`enumOfSubject`, which
+                // reads `typeRefOf`) so the declare pass agrees with the
+                // lowering pass that follows it.
                 .case => |cse| for (cse.arms) |arm| {
-                    try self.declarePatternLocals(arm.pattern);
+                    {
+                        const prev_hint = self.case_enum_hint;
+                        self.case_enum_hint = if (cse.subjects.len > 0) self.enumOfSubject(cse.subjects[0]) else null;
+                        defer self.case_enum_hint = prev_hint;
+                        try self.declarePatternLocals(arm.pattern);
+                    }
                     try self.declareNestedLocals(arm.body);
                 },
                 else => {},
@@ -19005,9 +19019,18 @@ const Emitter = struct {
         // type, which a union has none of, so `d.name` printed an address.
         const prev_record = self.arm_record;
         defer self.arm_record = prev_record;
-        self.arm_record = switch (arms[idx].pattern) {
-            .ident => |n| if (!isVariantPath(n) and self.findVariant(n) == null and self.records.contains(n)) n else null,
-            else => null,
+        self.arm_record = blk: {
+            // Front 229 s5 — `bindPattern` above set and already restored its
+            // own `case_enum_hint`; read the subject's enum again here so
+            // this `findVariant` agrees with that one on a bare name two
+            // enums declare, instead of hitting the no-hint ambiguous branch.
+            const prev_hint = self.case_enum_hint;
+            self.case_enum_hint = self.subject_enums.get(subj);
+            defer self.case_enum_hint = prev_hint;
+            break :blk switch (arms[idx].pattern) {
+                .ident => |n| if (!isVariantPath(n) and self.findVariant(n) == null and self.records.contains(n)) n else null,
+                else => null,
+            };
         };
         if (arms[idx].guard) |g| {
             try self.emitGuardChain(arms, subj, idx, g);

@@ -2496,6 +2496,59 @@ test "wat: gc ---- equality over a field typed unknown compares structurally, no
     );
 }
 
+// Front 229 s5 — two enums declaring the same bare variant name (`Red`) used
+// to be a module-wide GC gap (`findVariant`'s flat ambiguous-name search, no
+// expected type consulted) the moment a `case` pattern wrote the name bare
+// at a site the checker had already disambiguated through the subject's own
+// type, falling the whole module to `.linear`. The pre-pass that declares a
+// pattern's wasm locals (`declareNestedLocals`'s `.case` branch) and the
+// chain that decides whether a bound name is a record binder
+// (`emitArmChain`) now read that same subject type (`enumOfSubject` /
+// `subject_enums`, the way `bindPattern` and `emitPatternTest` already did)
+// instead of asking `findVariant` to pick among every enum's claimants.
+test "wat: gc ---- a bare pattern name two enums declare resolves through the matched subject's own type" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\type Color {
+        \\    Red,
+        \\    Green,
+        \\    Blue,
+        \\}
+        \\type Status {
+        \\    Red,
+        \\    Green,
+        \\}
+        \\fn colorName(c: Color) -> string {
+        \\    return case c {
+        \\        Red -> "red";
+        \\        Green -> "green";
+        \\        Blue -> "blue";
+        \\    };
+        \\}
+        \\fn statusName(s: Status) -> string {
+        \\    return case s {
+        \\        Red -> "status-red";
+        \\        Green -> "status-green";
+        \\    };
+        \\}
+        \\pub fn main() -> void {
+        \\    val c: Color = .Red;
+        \\    val s: Status = .Red;
+        \\    print(colorName(c));
+        \\    print(statusName(s));
+        \\    print(colorName(Color.Green));
+        \\    print(statusName(Status.Green));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\red
+        \\status-red
+        \\green
+        \\status-green
+        \\
+    );
+}
+
 // Front 229 s2's third box — `$closure` and `$result` held in an `unknown`
 // slot (a generic field's erasure, the same mechanism B-207 fixed) used to
 // fall through `__print_tagged_raw` to its bare `unreachable`; they answer as
