@@ -1980,9 +1980,63 @@ threadlocal var gc_only: bool = false;
 /// The comptime units (`comptimeUnits`): only these modules are emitted, the
 /// rest answered by the comptime unit cache or reached by no comptime module.
 threadlocal var emit_only: ?*const std.StringHashMapUnmanaged(void) = null;
-/// Under `gc_only`, the first gap the module being lowered met (a static
-/// text), named in its refusal (`emitGcOnly`).
-threadlocal var first_gap: ?[]const u8 = null;
+/// Decision 1097 — why the last `.gc` pass failed (`recordGcFailure`): its
+/// first gap with where it was met, else its refusal, else the error. Read
+/// by `emitWat` for the build note and by `emitGcOnly` for its refusal.
+threadlocal var gc_failure_buf: [1024]u8 = undefined;
+threadlocal var gc_failure: []const u8 = "";
+
+/// Keeps why a `.gc` pass of `em` failed (`gc_failure`): its first gap,
+/// named and located (`Emitter.gcGapText`), else the refusal it met with its
+/// location, else nothing (the caller names the error). `own_src` is the
+/// module's own path, where a refusal in linked code is located (`refuse`).
+/// A pass that ends in `Replan` is lowered again (`emitWatIn`), which
+/// records its own.
+fn recordGcFailure(em: *Emitter, own_src: []const u8) void {
+    const ar = em.arena();
+    const text: []const u8 = if (em.gc_gap != null)
+        em.gcGapText(ar) catch return
+    else if (em.refusal) |r| blk: {
+        const l = r.loc orelse break :blk r.message;
+        const file = if (em.foreign_origin != null or em.src_path.len == 0) (if (own_src.len > 0) own_src else em.module_name) else em.src_path;
+        break :blk std.fmt.allocPrint(ar, "{s} at {s}:{d}:{d}", .{ r.message, file, l.line, l.col }) catch return;
+    } else if (em.missing_external) |m|
+        std.fmt.allocPrint(ar, "a host-backed function with no wasm binding (`{s}`)", .{m.name}) catch return
+    else
+        "";
+    const n = @min(text.len, gc_failure_buf.len);
+    @memcpy(gc_failure_buf[0..n], text[0..n]);
+    gc_failure = gc_failure_buf[0..n];
+}
+
+/// What `recordGcFailure` kept, owned by `alloc`.
+fn takeGcFailure(alloc: std.mem.Allocator) ![]u8 {
+    const out = try alloc.dupe(u8, gc_failure);
+    gc_failure = "";
+    return out;
+}
+
+/// The build note decision 1097 rules: a module lowered `.linear` names the
+/// first construct that forced it — printed to the host build's stderr, never
+/// folded into an output, so no snapshot or case answer carries it. A unit
+/// test prints nothing (its build is no host build).
+fn printLinearNote(module_name: []const u8, why: []const u8) void {
+    const note = std.fmt.bufPrint(&linear_note_buf, "wasm: {s} lowered .linear: {s}", .{ module_name, if (why.len > 0) why else "(unattributed)" }) catch linear_note_buf[0..];
+    last_linear_note = note;
+    if (@import("builtin").is_test) return;
+    std.debug.print("{s}\n", .{note});
+}
+
+threadlocal var linear_note_buf: [1200]u8 = undefined;
+/// The last build note `printLinearNote` wrote, for the unit tests (a test
+/// build prints none); empty once read by `takeLinearNote`.
+threadlocal var last_linear_note: []const u8 = "";
+
+pub fn takeLinearNote() []const u8 {
+    const n = last_linear_note;
+    last_linear_note = "";
+    return n;
+}
 
 /// Decision 1032 (6) P4 — a program or library module emitted as a unit of
 /// its own: its `botopink.units` lines and the functions it exports, each by
@@ -2161,13 +2215,20 @@ fn emitWat(
     refused: ?*?Emitter.Refusal,
 ) !Emitted {
     if (gc_only) return emitGcOnly(alloc, module_name, src_path, own_program_in, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, missing, refused);
+    gc_failure = "";
     if (emitWatIn(.gc, false, alloc, module_name, src_path, own_program_in, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, null, null)) |gc| {
         return gc;
     } else |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
-        else => if (gc_debug) std.debug.print("GCERR {s} :: {s}\n", .{ module_name, @errorName(err) }),
+        else => {
+            if (gc_debug) std.debug.print("GCERR {s} :: {s}\n", .{ module_name, @errorName(err) });
+            if (gc_failure.len == 0) gc_failure = @errorName(err);
+        },
     }
+    const why = try takeGcFailure(alloc);
+    defer alloc.free(why);
     if (emitWatIn(.linear, false, alloc, module_name, src_path, own_program_in, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, missing, refused)) |lin| {
+        printLinearNote(module_name, why);
         return lin;
     } else |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
@@ -2177,21 +2238,33 @@ fn emitWat(
             // again with only what it reaches of its dependencies (of its own
             // declarations too, when it is a dependency's). Its own refusal
             // stands when that refuses as well.
+            // The module was lowered `.linear` and that lowering refused
+            // it: the note says why it left `.gc` (decision 1097).
             const own_dependency = if (build_packages) |p| p.idOf(module_name).package_in_path else false;
-            if (linked_in.len == 0 and !own_dependency) return err;
+            if (linked_in.len == 0 and !own_dependency) {
+                printLinearNote(module_name, why);
+                return err;
+            }
             if (emitWatIn(.gc, true, alloc, module_name, src_path, own_program_in, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, null, null)) |gc| {
                 clearSlots(alloc, missing, refused);
                 return gc;
-            } else |e| if (e == error.OutOfMemory) return e;
+            } else |e| {
+                if (e == error.OutOfMemory) return e;
+                if (gc_failure.len == 0) gc_failure = @errorName(e);
+            }
+            const retry_why = try takeGcFailure(alloc);
+            defer alloc.free(retry_why);
             var retry_missing: ?moduleOutput.MissingExternal = null;
             var retry_refused: ?Emitter.Refusal = null;
             if (emitWatIn(.linear, true, alloc, module_name, src_path, own_program_in, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, &retry_missing, &retry_refused)) |lin| {
                 clearSlots(alloc, missing, refused);
+                printLinearNote(module_name, retry_why);
                 return lin;
             } else |e| {
                 if (retry_refused) |r| alloc.free(r.message);
                 if (e == error.OutOfMemory) return e;
             }
+            printLinearNote(module_name, retry_why);
             return err;
         },
     }
@@ -2215,10 +2288,12 @@ fn emitGcOnly(
     missing: ?*?moduleOutput.MissingExternal,
     refused: ?*?Emitter.Refusal,
 ) !Emitted {
-    first_gap = null;
+    gc_failure = "";
     const first = emitWatIn(.gc, false, alloc, module_name, src_path, own_program_in, rewrites, own_instance_lowerings, linked_in, cross, external_lookup, artifact, missing, refused);
     const err = if (first) |gc| return gc else |e| e;
     if (err == error.OutOfMemory) return err;
+    const first_why = try takeGcFailure(alloc);
+    defer alloc.free(first_why);
     const own_dependency = if (build_packages) |p| p.idOf(module_name).package_in_path else false;
     if (linked_in.len > 0 or own_dependency) {
         var retry_missing: ?moduleOutput.MissingExternal = null;
@@ -2234,7 +2309,7 @@ fn emitGcOnly(
     const located = (if (missing) |m| m.* != null else false) or (if (refused) |r| r.* != null else false);
     if (!located) if (refused) |slot| {
         slot.* = .{
-            .message = try std.fmt.allocPrint(alloc, "the comptime unit of `{s}` needs a lowering the WasmGC generator does not have ({s}); comptime has no linear memory", .{ module_name, first_gap orelse @errorName(err) }),
+            .message = try std.fmt.allocPrint(alloc, "the comptime unit of `{s}` needs a lowering the WasmGC generator does not have ({s}); comptime has no linear memory", .{ module_name, if (first_why.len > 0) first_why else @errorName(err) }),
             .loc = null,
         };
     };
@@ -2317,6 +2392,7 @@ fn emitWatPass(
     if (rt) |r| em.next_data_offset = r.end;
     em.rt = rt;
     errdefer if (gc_debug and plan.mode == .gc) std.debug.print("GCWHY {s} :: {s}\n", .{ module_name, em.gc_gap orelse "(none)" });
+    errdefer if (plan.mode == .gc) recordGcFailure(&em, src_path);
     errdefer if (missing) |slot| {
         slot.* = em.missing_external;
     };
@@ -2545,11 +2621,6 @@ fn emitWatPass(
         em.skip_wrappers = &plan.skip;
     }
     em.exceptions = em.needs.contains(.exceptions);
-    // Front 164 s2 P4 — a module this backend refused takes every module that
-    // links it down with it (`relocateLinkedRefusals`): the GC pass lowers only
-    // what the module reaches, so it would not meet the refusal; the module is
-    // lowered in linear memory, which links everything, as it always did.
-    if (plan.mode == .gc) if (refused_modules) |rm| for (linked) |l| if (rm.contains(l.name)) return em.gcFail("a linked module this backend refused");
     // Decision 1055 (6) — with the units on, a `val` linked from another
     // program unit is that unit's, read through its accessor: its initialiser
     // is not lowered here (written with a scalar type, it is not even read,
@@ -2590,6 +2661,19 @@ fn emitWatPass(
         const own_dependency = if (build_packages) |p| p.idOf(module_name).package_in_path else false;
         try pruneUnreached(ar0, &decls, &owner, linked.len, !(plan.reached_only and own_dependency), prune_renames);
     }
+    // Front 164 s2 P4, front 229 s1 — a module this backend refused takes an
+    // importer down with it only when the importer reaches one of its
+    // declarations (`relocateLinkedRefusals`): the GC pass lowers only what
+    // is reached, so it would not meet the refusal, and the module is
+    // lowered in linear memory, which links everything, as it always did. A
+    // refused module whose declarations nothing reaches stops nothing
+    // (decision 531's rule, read before the fallback rather than after it).
+    if (plan.mode == .gc) if (refused_modules) |rm| for (owner.items) |from| {
+        if (from >= linked.len or !rm.contains(linked[from].name)) continue;
+        const why = try std.fmt.allocPrint(ar0, "a declaration of `{s}`, a module this backend refused", .{linked[from].name});
+        em.gcGapAt(.{ .loc = linked[from].via, .src = src_path }, why);
+        return error.GcFallback;
+    };
     if (plan.mode == .gc) try em.gcKeyTypes(decls.items, owner.items, linked, module_name, &spliced);
     const program: ast.Program = .{ .decls = decls.items };
     try em.registerTypes(program);
@@ -2705,9 +2789,6 @@ fn emitWatPass(
             },
             else => {},
         };
-        // Front 164 s2 P2b — the functions a linked module's declarations
-        // brought (`finishGc` may stub one nothing reaches).
-        if (em.mode == .gc and from < linked.len) for (em.items.items[before..]) |it| if (it == .func) try em.gc_linked_fns.put(em.alloc, it.func.name, {});
     }
     em.foreign_origin = null;
     em.src_path = src_path;
@@ -3118,13 +3199,19 @@ fn emitWatPass(
     var program_range = [2]usize{ program_lo, program_hi };
     if (plan.skip.count() > 0) try reach.dropCallers(ar, &items, plan.skip, &program_range);
 
-    if (em.mode == .gc) try em.finishGc(&items, program_range[0], program_range[1]);
-
     // Decision 1032 (6) P4 — with the units on, a `wasi` build's module is a
     // unit: it exports its own `pub` functions and imports, from the program
     // unit that declares it, each function of another one that unit exports
     // with the type this one lowered it to (decision 1037's boundary).
     const units_entry = artifact == .component and rt != null;
+    if (em.mode == .gc) {
+        // What the boundary exports after `finishGc` is reached, as an
+        // export is: the unit's own methods (decision 1055 (8)) — a function
+        // nothing in this unit calls is still another unit's to call.
+        var boundary_roots: std.ArrayListUnmanaged([]const u8) = .empty;
+        if (units_entry) for (unit_methods.items) |um| if (um.from == linked.len) try boundary_roots.append(ar, um.sym);
+        try em.finishGc(&items, program_range[0], program_range[1], boundary_roots.items);
+    }
     var unit_exports: std.StringHashMapUnmanaged(wat.FuncType) = .empty;
     var unit_vals: std.StringHashMapUnmanaged(UnitVal) = .empty;
     if (units_entry and em.mode == .gc) try unitBoundary(ar, &items, own_program, decls.items, owner.items, linked, &unit_exports, .{
@@ -3897,6 +3984,11 @@ const Emitter = struct {
     /// yet, met where no error can be returned (`vtOf`); the module is then
     /// lowered in linear memory.
     gc_gap: ?[]const u8 = null,
+    /// Decision 1097 — where `gc_gap` was met: the statement or call being
+    /// lowered, in the file `src` names, and the function `finishGc` found
+    /// writing linear memory when that is what forced it.
+    gc_gap_site: GapSite = .{},
+    gc_gap_fn: ?[]const u8 = null,
     /// Numbers the temporaries `emitStdCall` marshals through.
     gc_seq: u32 = 0,
     /// Front 164 s2 P2 — the types of a `.gc` module's group after `$str`
@@ -3948,9 +4040,13 @@ const Emitter = struct {
     /// `$__unk_eq` calls `$__unk_eq_ref`, written after the lowering over the
     /// module's types (decision 569).
     gc_unk_eq_used: bool = false,
-    /// Front 164 s2 P2b — the functions a linked module's declarations
-    /// brought into a GC module.
-    gc_linked_fns: std.StringHashMapUnmanaged(void) = .empty,
+    /// Front 229 s1 — the first linear-memory access (`.load`, `.store`, …)
+    /// the `.gc` lowering wrote in the function being lowered (`emit`), and,
+    /// per function emitted since, where its first one was written
+    /// (`item`): what `finishGc` names when that function sends the module
+    /// to linear memory, and what the stub of one nothing reaches says.
+    fn_mem_site: ?GapSite = null,
+    gc_mem_sites: std.StringHashMapUnmanaged(GapSite) = .empty,
     /// The helper functions a GC module's arrays asked for (`gcArrAt`, …), by symbol.
     gc_helpers: std.StringHashMapUnmanaged(void) = .empty,
     /// The functions that move values between GC memory and std-wasm's linear
@@ -4637,6 +4733,17 @@ const Emitter = struct {
     /// handed to the diagnostic (`codegenEmit`).
     pub const Refusal = struct { message: []u8, loc: ?ast.Loc };
 
+    /// Where a `.gc` gap was met (decision 1097): a location in the file
+    /// `src` names (the package-relative path of the declaration being
+    /// lowered; empty when unknown), of the loaded package `pkg` when the
+    /// declaration is a loaded package's (decisions 787, 792).
+    const GapSite = struct { loc: ?ast.Loc = null, src: []const u8 = "", pkg: ?[]const u8 = null };
+
+    /// The site being lowered: the statement, in the declaration's file.
+    fn hereSite(self: *Emitter, loc: ?ast.Loc) GapSite {
+        return .{ .loc = loc, .src = self.src_path, .pkg = self.loaded_pkg };
+    }
+
     /// Stop the emit at a construct this backend cannot lower: records the
     /// located message and answers the error every lowering path propagates.
     /// Written `return self.refuse(loc, "…", .{…})`.
@@ -4788,7 +4895,7 @@ const Emitter = struct {
         self.gc_block_locals.deinit(self.alloc);
         self.gc_printers.deinit(self.alloc);
         self.gc_pr_funcs.deinit(self.alloc);
-        self.gc_linked_fns.deinit(self.alloc);
+        self.gc_mem_sites.deinit(self.alloc);
         self.gc_helpers.deinit(self.alloc);
         self.gc_marshal_funcs.deinit(self.alloc);
         self.enums.deinit();
@@ -6670,11 +6777,26 @@ const Emitter = struct {
     // layout indents further.
 
     fn emit(self: *Emitter, instr: Instr) !void {
+        self.noteMemSite(instr);
         try self.cur.?.append(self.arena(), .{ .instr = instr });
+    }
+
+    /// Front 229 s1 — the first linear-memory access a `.gc` lowering writes
+    /// in the function being lowered, at the statement being lowered — the
+    /// user's own line, which a lowering of a generated helper keeps (it is
+    /// the line that asked for it), in the file of the declaration being
+    /// lowered (`src_path`).
+    fn noteMemSite(self: *Emitter, instr: Instr) void {
+        if (self.mode != .gc or self.fn_mem_site != null) return;
+        switch (instr) {
+            .load, .store, .memory_copy, .memory_fill, .memory_size, .memory_grow => self.fn_mem_site = self.hereSite(self.stmt_loc),
+            else => {},
+        }
     }
 
     /// An instruction with a trailing `;; comment`.
     fn emitC(self: *Emitter, instr: Instr, comment: []const u8) !void {
+        self.noteMemSite(instr);
         try self.cur.?.append(self.arena(), .{ .instr = instr, .comment = comment });
     }
 
@@ -6683,10 +6805,12 @@ const Emitter = struct {
     }
 
     fn emitAt(self: *Emitter, indent: u8, instr: Instr) !void {
+        self.noteMemSite(instr);
         try self.cur.?.append(self.arena(), .{ .instr = instr, .indent = indent });
     }
 
     fn emitAtC(self: *Emitter, indent: u8, instr: Instr, comment: []const u8) !void {
+        self.noteMemSite(instr);
         try self.cur.?.append(self.arena(), .{
             .instr = instr,
             .indent = indent,
@@ -6710,6 +6834,12 @@ const Emitter = struct {
 
     /// Append a top-level form.
     fn item(self: *Emitter, it: Item) !void {
+        // Front 229 s1 — a function that writes linear memory keeps where its
+        // first access was written (`noteMemSite`).
+        if (it == .func) if (self.fn_mem_site) |site| if (touchesMemory(it.func.body)) {
+            try self.gc_mem_sites.put(self.alloc, it.func.name, site);
+            self.fn_mem_site = null;
+        };
         try self.items.append(self.arena(), it);
     }
 
@@ -7118,13 +7248,65 @@ const Emitter = struct {
         return error.GcFallback;
     }
 
+    /// `gcFail` met at `site` rather than at the statement being lowered.
+    fn gcFailAt(self: *Emitter, site: GapSite, why: []const u8) error{GcFallback} {
+        self.gcGapAt(site, why);
+        return error.GcFallback;
+    }
+
     /// Front 164 s2 — the `.gc` lowering meets something it has no GC form
     /// for: the module is lowered in linear memory (`emitWat`).
     fn gcGap(self: *Emitter, why: []const u8) void {
-        if (gc_debug and self.gc_gap == null) std.debug.print("GCGAP {s} at {d}:{d} in {s}\n", .{ why, if (self.stmt_loc) |l| l.line else 0, if (self.stmt_loc) |l| l.col else 0, self.module_name });
+        self.gcGapAt(self.hereSite(self.stmt_loc), why);
+    }
+
+    /// `gcGap` met at `site` (decision 1097: the first gap is the one the
+    /// build note names, with where it was met).
+    fn gcGapAt(self: *Emitter, site: GapSite, why: []const u8) void {
+        if (gc_debug and self.gc_gap == null) std.debug.print("GCGAP {s} at {d}:{d} in {s}\n", .{ why, if (site.loc) |l| l.line else 0, if (site.loc) |l| l.col else 0, self.module_name });
         if (gc_debug and self.gc_gap == null and std.c.getenv("GCTRACE") != null) std.debug.dumpCurrentStackTrace(.{});
-        if (self.gc_gap == null) self.gc_gap = why;
-        if (gc_only and first_gap == null) first_gap = why;
+        if (self.gc_gap == null) {
+            self.gc_gap = why;
+            self.gc_gap_site = site;
+        }
+    }
+
+    /// The text a `.gc` gap is named by (decision 1097): `<what> in `<fn>`
+    /// at <file>:<line>:<col>`, each part when known. `file` is the module's
+    /// own name when the declaration's path is unknown.
+    fn gcGapText(self: *Emitter, ar: std.mem.Allocator) ![]const u8 {
+        return self.gapText(ar, self.gc_gap orelse return "", self.gc_gap_site, self.gc_gap_fn);
+    }
+
+    fn gapText(self: *Emitter, ar: std.mem.Allocator, why: []const u8, site: GapSite, func: ?[]const u8) ![]const u8 {
+        var out: std.ArrayListUnmanaged(u8) = .empty;
+        try out.appendSlice(ar, why);
+        if (func) |f| try out.print(ar, " in `{s}`", .{f});
+        if (site.loc) |l| {
+            try out.appendSlice(ar, " at ");
+            // A loaded package's file is named by the package's own path
+            // (`cases/<case>/src/main.bp`): its name spells it
+            // (`load.packageName`).
+            if (site.pkg) |pkg| if (std.mem.startsWith(u8, pkg, @import("../comptime/load.zig").package_prefix)) {
+                const enc = pkg[@import("../comptime/load.zig").package_prefix.len..];
+                var i: usize = 0;
+                while (i < enc.len) {
+                    if (std.mem.startsWith(u8, enc[i..], "__")) {
+                        try out.append(ar, '/');
+                        i += 2;
+                    } else if (std.mem.startsWith(u8, enc[i..], "_x") and i + 4 <= enc.len) {
+                        try out.append(ar, std.fmt.parseInt(u8, enc[i + 2 .. i + 4], 16) catch '?');
+                        i += 4;
+                    } else {
+                        try out.append(ar, enc[i]);
+                        i += 1;
+                    }
+                }
+                try out.append(ar, '/');
+            };
+            try out.print(ar, "{s}:{d}:{d}", .{ if (site.src.len > 0) site.src else self.module_name, l.line, l.col });
+        }
+        return out.items;
     }
 
     /// The neutral value of `r` a context pushes where it needs one: `0`, or
@@ -7153,24 +7335,42 @@ const Emitter = struct {
     /// no linear-memory access (a value there has no GC form yet), and every
     /// function but std-wasm's type-checks (`wat/typecheck.zig`). A module
     /// that fails either is lowered in linear memory.
-    fn finishGc(self: *Emitter, items: *std.ArrayListUnmanaged(Item), program_lo: usize, program_hi: usize) !void {
+    /// `roots`: the functions something the module is given after this
+    /// check enters by — a type's `$__tinfo` slot (`gcInitTypes`), a unit's
+    /// own method its boundary exports (`unitBoundary`) — reached as an
+    /// export is.
+    fn finishGc(self: *Emitter, items: *std.ArrayListUnmanaged(Item), program_lo: usize, program_hi: usize, roots: []const []const u8) !void {
         const ar = self.arena();
-        // A function a linked module brought that touches linear memory and
-        // that nothing reaches (a linked type's method no call names — std's
-        // `Dict.fold` over a closure) is a stub that traps: the rest of the
-        // module keeps its GC form (front 164 s2 P2b). A reached one, or one
-        // of the module's own, sends the module to linear memory.
+        // A function that touches linear memory and that nothing reaches (a
+        // linked type's method no call names — std's `Dict.fold` over a
+        // closure —, a function of the module's own nothing calls) is a stub
+        // that traps, naming what it would have needed: the rest of the
+        // module keeps its GC form (front 164 s2 P2b, front 229 s1). A
+        // reached one sends the module to linear memory, named and located
+        // (decision 1097).
         var live: ?std.StringHashMapUnmanaged(void) = null;
         defer if (live) |*l| l.deinit(self.alloc);
         for (items.items[program_lo..program_hi]) |*it| if (it.* == .func and touchesMemory(it.func.body)) {
-            if (live == null) live = try reach.reached(self.alloc, items.items, self.task_edges.items);
-            if (it.func.exports.len > 0 or live.?.contains(it.func.name) or !self.gc_linked_fns.contains(it.func.name)) {
-                self.gcGap("touchesMemory");
+            if (live == null) {
+                var tinfo_roots: std.ArrayListUnmanaged([]const u8) = .empty;
+                try tinfo_roots.appendSlice(ar, roots);
+                for (self.gc_tinfos.items) |ti| {
+                    if (ti.print) |p| try tinfo_roots.append(ar, p);
+                    try tinfo_roots.append(ar, ti.eq);
+                    if (ti.display) |d| try tinfo_roots.append(ar, d);
+                }
+                live = try reach.reachedFrom(self.alloc, items.items, self.task_edges.items, tinfo_roots.items);
+            }
+            const site = self.gc_mem_sites.get(it.func.name) orelse GapSite{};
+            const why = "a value written to linear memory (no GC form yet)";
+            if (it.func.exports.len > 0 or live.?.contains(it.func.name)) {
+                if (self.gc_gap == null) self.gc_gap_fn = it.func.name;
+                self.gcGapAt(site, why);
                 if (gc_debug) std.debug.print("GCFN {s}\n", .{it.func.name});
                 return error.GcFallback;
             }
             const stub = try ar.alloc(Line, 1);
-            stub[0] = .{ .instr = .@"unreachable", .comment = "unreached here; no GC form yet" };
+            stub[0] = .{ .instr = .@"unreachable", .comment = try std.fmt.allocPrint(ar, "unreached here: {s}", .{try self.gapText(ar, why, site, null)}) };
             it.func.body = .{ .lines = stub, .stack = .terminated };
             it.func.locals = &.{};
         };
@@ -7219,7 +7419,15 @@ const Emitter = struct {
         typecheck.checkModule(self.alloc, .{ .items = items.items }, isLinkedStdFunc, &diag) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             else => {
-                self.gcGap("typecheck");
+                // Decision 1097 — what failed and in which function, outside
+                // `gc_debug` too: the build note names it.
+                if (self.gc_gap == null) self.gc_gap_fn = if (diag.func.len > 0) diag.func else null;
+                self.gcGapAt(.{}, if (diag.what.len == 0)
+                    "the GC module does not type-check"
+                else if (diag.detail.len > 0)
+                    try std.fmt.allocPrint(ar, "the GC module does not type-check: {s} (`{s}`)", .{ diag.what, diag.detail })
+                else
+                    try std.fmt.allocPrint(ar, "the GC module does not type-check: {s}", .{diag.what}));
                 if (gc_debug) std.debug.print("GCTC {s} :: {s} {s} got {d} want {d} ({s})\n", .{ diag.func, diag.what, diag.detail, diag.got, diag.want, @errorName(err) });
                 if (gc_debug and std.c.getenv("GCDUMP") != null) {
                     var dump: std.Io.Writer.Allocating = .init(self.alloc);
@@ -7230,6 +7438,11 @@ const Emitter = struct {
                 return error.GcFallback;
             },
         };
+        // A gap recorded by what ran after the check above (a value type
+        // `vtOf` had no GC form for, answered with a stand-in so the lowering
+        // could go on) still sends the module to linear memory: no module
+        // leaves with a stand-in type in it.
+        if (self.gc_gap != null) return error.GcFallback;
     }
 
     /// The representation of a value written as type `t`. In linear memory it
@@ -10802,7 +11015,7 @@ const Emitter = struct {
         try self.emit(.{ .local_set = "top" });
         for (params, 0..) |t, k| {
             const pn = try std.fmt.allocPrint(ar, "p{d}", .{k});
-            ps[k] = wat.Builder.param(pn, self.vtOf(try stdRepr(t)));
+            ps[k] = wat.Builder.param(pn, self.vtOf(try self.stdRepr(t)));
             try self.emit(.{ .local_get = pn });
             switch (t) {
                 .string => try self.emit(self.builder().helper(.gc_to_lin_str)),
@@ -10820,7 +11033,7 @@ const Emitter = struct {
         }
         try self.emit(.{ .local_get = "top" });
         try self.emit(.{ .global_set = heap_ptr });
-        const rvt = self.vtOf(try stdRepr(result));
+        const rvt = self.vtOf(try self.stdRepr(result));
         const fbody = self.seal(&c, .{ .value = rvt });
         try self.gc_marshal_funcs.append(self.alloc, .{ .func = try self.builder().func(.{
             .name = sym,
@@ -11037,7 +11250,7 @@ const Emitter = struct {
     }
 
     /// The value type a value of shape `sh` has.
-    fn gcShapeVt(self: *Emitter, sh: []const u8) ValType {
+    fn gcShapeVt(self: *Emitter, sh: []const u8) error{GcFallback}!ValType {
         switch (sh[0]) {
             'R' => return self.gcTy(.result),
             'i', 'b', 'E' => return .i32,
@@ -11050,12 +11263,10 @@ const Emitter = struct {
             'T', 'U', 'F' => return .anyref,
             '[' => return self.gcTy(.{ .arr = gcShapeClass(sh[1..]) }),
             '(' => return self.gcTy(.{ .arr = .any }),
-            '?' => return if (gcShapeIsScalar(sh[1..])) .anyref else self.gcShapeVt(sh[1..]),
+            '?' => return if (gcShapeIsScalar(sh[1..])) .anyref else try self.gcShapeVt(sh[1..]),
             '!' => return .anyref,
-            else => {
-                self.gcGap("a print shape with no GC form");
-                return .anyref;
-            },
+            // No stand-in type: the lowering stops here, named.
+            else => return self.gcFail("a print shape with no GC form"),
         }
     }
 
@@ -11079,7 +11290,7 @@ const Emitter = struct {
                 try self.emit(.{ .struct_get = .{ .ty = k, .field = 0 } });
             },
             else => {
-                const vt = self.gcShapeVt(sh);
+                const vt = try self.gcShapeVt(sh);
                 if (vt != .anyref) try self.emit(.{ .ref_cast = vt });
             },
         }
@@ -11123,7 +11334,7 @@ const Emitter = struct {
 
     fn gcGenShapePrinter(self: *Emitter, sym: []const u8, sh: []const u8) anyerror!void {
         const ar = self.arena();
-        const vt = self.gcShapeVt(sh);
+        const vt = try self.gcShapeVt(sh);
         var c: Capture = .{};
         self.open(&c);
         var locals: std.ArrayListUnmanaged(wat.Local) = .empty;
@@ -11755,6 +11966,7 @@ const Emitter = struct {
     }
 
     fn resetFnState(self: *Emitter, result_type: ?Repr) void {
+        self.fn_mem_site = null;
         self.locals.clearRetainingCapacity();
         self.eq_local_types.clearRetainingCapacity();
         self.generic_fn_aliases.clearRetainingCapacity();
@@ -12485,7 +12697,12 @@ const Emitter = struct {
         };
         const call = try self.stdCallLinked(name);
         if (self.mode == .linear) return self.emit(call);
-        const ex = gcStdSig(name) orelse return self.gcFail(name);
+        // Decision 1097 — named at the call that needs it, the std function
+        // being what it calls.
+        const ex = gcStdSig(name) orelse return self.gcFailAt(
+            self.hereSite(self.call_loc orelse self.stmt_loc),
+            try std.fmt.allocPrint(self.arena(), "a call of std-wasm's `{s}`, which has no GC marshal", .{name}),
+        );
         // Decision 1021 (10) — a `bigint` function is called through a
         // wrapper of its own: the equalities and printers the module writes
         // after its functions call one too, and have no locals to marshal in.
@@ -12494,7 +12711,7 @@ const Emitter = struct {
         var i = ex.params.len;
         while (i > 0) {
             i -= 1;
-            slots[i] = try self.gcTemp(try stdRepr(ex.params[i]));
+            slots[i] = try self.gcTemp(try self.stdRepr(ex.params[i]));
             try self.emit(.{ .local_set = slots[i] });
         }
         const top = try self.gcTemp(.i32);
@@ -12713,8 +12930,9 @@ const Emitter = struct {
     }
 
     /// The value a std-wasm parameter or answer of type `t` is in a GC
-    /// module; a shape the marshal has no form for yet falls back.
-    fn stdRepr(t: GcStd) !Repr {
+    /// module; a shape the marshal has no form for yet falls back, named
+    /// (`gcFail`, decision 1097).
+    fn stdRepr(self: *Emitter, t: GcStd) !Repr {
         return switch (t) {
             .string, .opt_string => Repr.string,
             .bytes, .opt_bytes => .{ .ref = .bytes },
@@ -12724,7 +12942,7 @@ const Emitter = struct {
             .string_array => .{ .ref = .{ .arr = .any } },
             .opt_i32 => .{ .ref = .unknown },
             .bigint, .opt_bigint => .{ .ref = .bigint },
-            .void => error.GcFallback,
+            .void => self.gcFailAt(self.hereSite(self.call_loc orelse self.stmt_loc), "a std-wasm value typed `void`, which the GC marshal has no form for"),
         };
     }
 
@@ -19707,7 +19925,7 @@ const Emitter = struct {
         const export_name = stdMethodExport("string", cc.callee) orelse return;
         if (stdLeaves.find(export_name) != null) return;
         const ex = gcStdSig(export_name) orelse return;
-        try self.emitConvert(res, try stdRepr(ex.result));
+        try self.emitConvert(res, try self.stdRepr(ex.result));
     }
 
     /// `"a+b".tailShout()` over a program's `behavior String { default fn
@@ -20427,7 +20645,7 @@ const Emitter = struct {
         for (ex.params[1..], 0..) |t, k| {
             // In a GC module each argument is the value its parameter is
             // marshalled from (`emitStdCall`); in linear memory every one is a word.
-            const want: Repr = if (self.mode == .gc) try stdRepr(gcStdTy(t) orelse return self.gcFail("a std-wasm parameter with no marshal")) else .i32;
+            const want: Repr = if (self.mode == .gc) try self.stdRepr(gcStdTy(t) orelse return self.gcFail("a std-wasm parameter with no marshal")) else .i32;
             try self.lowerCoerced(callArg(cc, k).?, want);
         }
         try self.emitStdCall(export_name);

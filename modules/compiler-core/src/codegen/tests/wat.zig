@@ -430,6 +430,12 @@ test "wat: string len reads length prefix" {
         \\    val s = "hello";
         \\    return s.len;
         \\}
+        \\
+        \\fn main() -> void {
+        \\    print(n());
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -6306,4 +6312,71 @@ test "wat: units ---- decision 1055 (6): a module val initialised once, methods 
     const out = try runUnitsFrame(a, ar, pu.entry, pu.program);
     const want = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "../../conformance/modules/decisions-taken/wasm_unit_per_module_linked-1021/snapshot/main.snap", ar, .limited(1 << 20));
     try std.testing.expectEqualStrings(try snapSection(ar, want, "wasm_val_methods_cross_units"), out);
+}
+
+// Front 229 s1 — a function of the module's own that nothing reaches and
+// that still writes linear memory (a list pattern, `[a, b]`) is a stub that
+// traps, naming why and where; the module keeps its GC form. Reached, the
+// same function sends the module to linear memory, and the build note
+// (decision 1097) names the function and the line.
+test "wat: front 229 s1 ---- a module's own unreached function with no GC form is a stub, the module stays GC" {
+    const io = std.testing.io;
+    const alloc = std.testing.allocator;
+    var outputs = try h.generate(alloc, &.{.{ .path = "", .source =
+        \\fn unused(xs: i32[]) -> i32 {
+        \\    return case xs {
+        \\        [a, b] -> a + b;
+        \\        _ -> 0;
+        \\    };
+        \\}
+        \\
+        \\fn main() -> void {
+        \\    print(1);
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    }}, io, h.configs[3]);
+    defer {
+        for (outputs.items) |*o| o.result.deinit(alloc);
+        outputs.deinit(alloc);
+    }
+    const o = for (outputs.items) |o| {
+        if (std.mem.eql(u8, o.name, "") or std.mem.eql(u8, o.name, "main")) break o;
+    } else return error.ModuleDidNotCompile;
+    const wat_text = o.result.js;
+    try std.testing.expect(std.mem.indexOf(u8, wat_text, "(func $unused (param $xs (ref null $arr_i32)) (result i32)\n    unreachable ;; unreached here: a value written to linear memory (no GC form yet) at ") != null);
+    try std.testing.expect(std.mem.indexOf(u8, wat_text, ":2:5\n") != null);
+    try std.testing.expectEqualStrings("1\n", o.result.run_output orelse "");
+}
+
+test "wat: front 229 s1 ---- a reached function with no GC form falls the module back, named and located" {
+    const io = std.testing.io;
+    const alloc = std.testing.allocator;
+    _ = watCodegen.takeLinearNote();
+    var outputs = try h.generate(alloc, &.{.{ .path = "", .source =
+        \\fn sum2(xs: i32[]) -> i32 {
+        \\    return case xs {
+        \\        [a, b] -> a + b;
+        \\        _ -> 0;
+        \\    };
+        \\}
+        \\
+        \\fn main() -> void {
+        \\    print(sum2([1, 2]));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    }}, io, h.configs[3]);
+    defer {
+        for (outputs.items) |*o| o.result.deinit(alloc);
+        outputs.deinit(alloc);
+    }
+    const o = for (outputs.items) |o| {
+        if (std.mem.eql(u8, o.name, "") or std.mem.eql(u8, o.name, "main")) break o;
+    } else return error.ModuleDidNotCompile;
+    try std.testing.expectEqualStrings("3\n", o.result.run_output orelse "");
+    const note = watCodegen.takeLinearNote();
+    try std.testing.expect(std.mem.startsWith(u8, note, "wasm: "));
+    try std.testing.expect(std.mem.indexOf(u8, note, " lowered .linear: a value written to linear memory (no GC form yet) in `sum2` at ") != null);
+    try std.testing.expect(std.mem.endsWith(u8, note, ":2:5"));
 }

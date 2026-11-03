@@ -21,6 +21,12 @@ const task_dispatch = "__task_resume";
 /// The names of the functions reachable from the module's roots. A call of the
 /// task dispatcher to a step is no edge; `edges` are.
 pub fn reached(alloc: std.mem.Allocator, items: []const wat.Item, edges: []const Edge) !Names {
+    return reachedFrom(alloc, items, edges, &.{});
+}
+
+/// `reached`, with `roots` — functions something outside `items` enters by
+/// (a type info's slot, an export a later pass adds) — roots too.
+pub fn reachedFrom(alloc: std.mem.Allocator, items: []const wat.Item, edges: []const Edge, roots: []const []const u8) !Names {
     var funcs: std.StringHashMapUnmanaged(*const wat.Func) = .empty;
     defer funcs.deinit(alloc);
     for (items) |*it| switch (it.*) {
@@ -31,6 +37,7 @@ pub fn reached(alloc: std.mem.Allocator, items: []const wat.Item, edges: []const
     errdefer seen.deinit(alloc);
     var work: std.ArrayListUnmanaged([]const u8) = .empty;
     defer work.deinit(alloc);
+    try work.appendSlice(alloc, roots);
     for (items) |it| switch (it) {
         .func => |f| if (f.exports.len > 0) try work.append(alloc, f.name),
         .start => |n| try work.append(alloc, n),

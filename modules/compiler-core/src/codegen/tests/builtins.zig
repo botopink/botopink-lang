@@ -74,6 +74,14 @@ test "js: assert pattern ---- with list pattern" {
         \\    val assert [first, ..] = items catch throw "not a list";
         \\    return;
         \\}
+        \\fn main() -> void {
+        \\    case f() {
+        \\        Ok(_) -> print("ok");
+        \\        Error(e) -> print(e);
+        \\    }
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -119,6 +127,14 @@ test "js: assert pattern ---- with empty list" {
         \\    val assert [] = list catch throw "not empty";
         \\    return;
         \\}
+        \\fn main() -> void {
+        \\    case f() {
+        \\        Ok(_) -> print("ok");
+        \\        Error(e) -> print(e);
+        \\    }
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 
@@ -129,6 +145,14 @@ test "js: assert pattern ---- with multiple element list" {
         \\    val assert [1, 2, 3] = numbers catch throw "not matching";
         \\    return;
         \\}
+        \\fn main() -> void {
+        \\    case f() {
+        \\        Ok(_) -> print("ok");
+        \\        Error(e) -> print(e);
+        \\    }
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
     );
 }
 

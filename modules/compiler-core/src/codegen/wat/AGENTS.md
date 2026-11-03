@@ -165,9 +165,19 @@ one of its types and no declaration holds any, so the read finds the record's sl
 generic record (`Declared<unknown>[]`) gives its lambda parameter the record (`elemRecordOfTypeRef`).
 The GC pass lowers only the declarations the module can reach by name (`pruneUnreached`): a linked module
 brings all of its own, and one without a GC form sent a module that never named it to linear memory. A
-function a linked declaration brought that still touches linear memory (std's `Dict.fold`, over a closure)
-and that nothing reaches (`reach.zig`, no export) is a stub that traps (`finishGc`, `gc_linked_fns`); one of
-the module's own, or a reached one, sends the module to linear memory (P2b). The
+function that still touches linear memory (std's `Dict.fold` over a closure, a function of the module's own
+nothing calls) and that nothing reaches (`reach.zig` `reachedFrom`: an export, the start, a `$__tinfo` slot,
+a unit's own method its boundary exports) is a stub that traps, its `unreachable` naming what it would have
+needed and where (`finishGc`, P2b, front 229 s1); a reached one sends the module to linear memory. A linked
+module this backend refused (`refused_modules`) sends an importer to linear memory only when a declaration of
+it survives `pruneUnreached` (front 229 s1). **Every fallback is named** (decision 1097): the first gap a `.gc`
+pass meets keeps where it was met (`gcGapAt`: the statement or call being lowered, in the declaration's file;
+the first linear-memory access of each function, `noteMemSite` / `gc_mem_sites`; the function a type check
+failed in, `typecheck.Diag`), `recordGcFailure` keeps it past the pass, and `emitWat` prints `wasm: <module>
+lowered .linear: <feature>[ in `<fn>`][ at <file>:<line>:<col>]` to stderr (`printLinearNote`; never in an
+output, so no snapshot or case answer moves; a test build prints none, `takeLinearNote` reads it), also when the
+linear lowering then refuses the module; a comptime unit's refusal (`emitGcOnly`) names the same text. A gap
+recorded after the last check (`vtOf`'s stand-in type) still falls the module back (`finishGc`'s last line). The
 linear pass links everything, as it always did, unless the whole lowering refused the module: its retry
 lowers what is reached (`Plan.reached_only`, decision 531, below). A local name that means a mangled function
 (`linkRenames`) reaches it when it is read as a value too (`__bp_run(__bp_run__<pkg>)`, a self-checking module's
