@@ -1,0 +1,37 @@
+//// Decisions 908, 812 (1) — a child is resolved inside the body whose cell
+//// holds its contexts; a child run outside that cell is not the model's
+//// child. `Parent` provides `dark` and returns `Tree(child: Reader())`; a
+//// plain function, outside `Parent`'s body, resolves that child over the
+//// scope `Parent` was handed: `Parent`'s provide wrote `Parent`'s own cell,
+//// never the one it was handed, so `Reader` reads the declared default.
+
+import {context.run, context.Scope, context.createContext, context.provide, context.context, io.terminal.print} from "std";
+
+type View(text: string)
+
+type Tone(mode: string)
+
+type Tree(child: Component<View>)
+
+pub val toneContext = comptime createContext(Tone(mode: "light"));
+
+component fn Reader() -> Component<View> {
+    val t = use context(toneContext);
+    return View(text: "reader " + t.mode);
+}
+
+component fn Parent() -> Component<Tree> {
+    use provide(createContext(Tone(mode: "dark")));
+    return Tree(child: Reader());
+}
+
+async fn later(tree: Tree, scope: Scope) -> Async<string> {
+    return (await run(tree.child, scope)).text;
+}
+
+pub async fn main() -> Async<void> {
+    val root = Scope.root();
+    defer root.close();
+    val tree = await run(Parent(), root);
+    print(await later(tree, root));
+}

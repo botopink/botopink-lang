@@ -1,0 +1,36 @@
+//// Decisions 809 (8), 968 (2)/(3) — a kept `(child, scope)` keeps that
+//// child's cell: `Parent` provides `dark`, then `use`s a lambda over
+//// `(scope, key)` that keeps the scope it is handed inside `Parent`'s body —
+//// a cell below the provide. `Reader`, resolved later over that kept scope,
+//// after the render has returned, reads `dark`.
+
+import {context.run, context.Scope, context.createContext, context.provide, context.context, io.terminal.print} from "std";
+
+type View(text: string)
+
+type Palette(mode: string)
+
+pub val paletteContext = comptime createContext(Palette(mode: "light"));
+
+var kept: Scope[] = [];
+
+component fn Reader() -> Component<View> {
+    val t = use context(paletteContext);
+    return View(text: "reader " + t.mode);
+}
+
+component fn Parent() -> Component<View> {
+    use provide(createContext(Palette(mode: "dark")));
+    val keep: Component<void> = { scope, key -> kept.push(scope); };
+    use keep;
+    return View(text: "parent ran");
+}
+
+pub async fn main() -> Async<void> {
+    val root = Scope.root();
+    defer root.close();
+    print((await run(Parent(), root)).text);
+    for (kept) { scope ->
+        print((await run(Reader(), scope)).text);
+    }
+}

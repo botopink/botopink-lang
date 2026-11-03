@@ -1,0 +1,32 @@
+//// Decisions 966 (5), 968 (2)/(3), 812 (1) — each body opens its own cell, a
+//// child of the cell it is handed. `Provider` and `Reader` are resolved one
+//// after the other over one cell opened outside any body
+//// (`root.childAt(…)`): `Provider`'s `use provide` writes `Provider`'s own
+//// cell, and `Reader`'s cell, its sibling, takes the pre-opened cell's
+//// contexts — none — so `Reader` reads the declared default.
+
+import {context.run, context.Place, context.Scope, context.createContext, context.provide, context.context, io.terminal.print} from "std";
+
+type View(text: string)
+
+type Theme(mode: string)
+
+pub val themeContext = comptime createContext(Theme(mode: "light"));
+
+component fn Provider() -> Component<View> {
+    use provide(createContext(Theme(mode: "dark")));
+    return View(text: "provider ran");
+}
+
+component fn Reader() -> Component<View> {
+    val t = use context(themeContext);
+    return View(text: "reader " + t.mode);
+}
+
+pub async fn main() -> Async<void> {
+    val root = Scope.root();
+    defer root.close();
+    val cell = root.childAt(Place.key("kept"));
+    print((await run(Provider(), cell)).text);
+    print((await run(Reader(), cell)).text);
+}

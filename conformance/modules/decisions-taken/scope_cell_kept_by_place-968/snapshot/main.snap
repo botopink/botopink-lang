@@ -1,0 +1,9 @@
+botopink-cell 2
+== sibling_bodies_over_pre_opened_cell
+out provider ran
+out reader light
+== scope_kept_inside_providing_body
+out parent ran
+out reader dark
+== child_resolved_outside_providing_body
+out reader light
