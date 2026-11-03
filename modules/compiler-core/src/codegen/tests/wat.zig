@@ -4425,6 +4425,26 @@ test "wat: gc ---- spawn_all over thunks answering scalars, i32 and f64" {
     );
 }
 
+// Front 229 s4 — decision 985's wasm half: a lambda argument of a method's
+// specialisation is written against the copy's substituted parameter types,
+// the method's own type parameter included (`fold<A>`'s `A` bound to `f64`
+// by `initial: 0.0`, `methodLambdaExpectations` over `mspec_methods`). The
+// accumulator was left untyped ("a lambda parameter nothing types") and the
+// module fell to linear memory, which refused the `f64` in an `i32` slot.
+test "wat: gc ---- a method's own type parameter types its lambda argument" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\pub fn main() -> void {
+        \\    val counts: Dict<string, i32> = Dict.empty();
+        \\    val d = counts.insert("a", 2).insert("b", 1);
+        \\    print(d.fold(0.5, { acc, k, v -> acc * 2.0 }));
+        \\    print(d.fold("", { acc, k, v -> acc + k }));
+        \\    print(d.mapValues({ v -> 2.0 }));
+        \\}
+        \\
+        \\import {collections.Dict, io.terminal.print} from "std";
+    );
+}
+
 test "wat: gc ---- bytes, and the string arrays and optional strings std-wasm answers" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\pub fn main() -> void {

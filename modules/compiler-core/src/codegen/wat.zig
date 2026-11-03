@@ -4387,6 +4387,11 @@ const Emitter = struct {
     /// type parameters (`specializeMethod`); the specialised copies to emit.
     generic_methods: std.StringHashMapUnmanaged(GenericMethod) = .empty,
     mspec_pending: std.ArrayListUnmanaged(GenericMethod) = .empty,
+    /// A method specialisation's symbol → its copy, every type parameter the
+    /// call bound substituted (the method's own included: `fold<A>`'s `A`
+    /// bound to `f64` by `initial: 0.0`). `methodLambdaExpectations` reads a
+    /// lambda argument's parameter types from it (decision 985).
+    mspec_methods: std.StringHashMapUnmanaged(ast.BehaviorMethod) = .empty,
     /// While a method specialisation is emitted: its owner and the owner's
     /// type parameters it substituted. `fieldTypeIn` / `fieldTypeRefIn`
     /// answer a field of the owner declared as one of them by its
@@ -4951,6 +4956,7 @@ const Emitter = struct {
         self.spec_names.deinit(self.alloc);
         self.generic_methods.deinit(self.alloc);
         self.mspec_pending.deinit(self.alloc);
+        self.mspec_methods.deinit(self.alloc);
         self.field_lambdas.deinit(self.alloc);
         self.unknown_subjects.deinit(self.alloc);
         self.u64_subjects.deinit(self.alloc);
@@ -27794,6 +27800,7 @@ const Emitter = struct {
         var left_own: std.ArrayListUnmanaged(ast.GenericParam) = .empty;
         for (m.genericParams) |gp| if (!Local.has(subs.items, gp.name)) try left_own.append(ar, gp);
         copy.genericParams = left_own.items;
+        try self.mspec_methods.put(self.alloc, out, copy);
         try self.registerInterfaceSigs(gm.owner, left_owner.items, &.{copy});
         try self.mspec_pending.append(self.alloc, .{
             .owner = gm.owner,
@@ -27844,6 +27851,23 @@ const Emitter = struct {
     /// written as the argument is written against them. Inference saw `T`
     /// there and typed nothing the lambda's body could read.
     fn methodLambdaExpectations(self: *Emitter, sym: []const u8, cc: anytype) !?[]const ?ast.TypeRef {
+        // Decision 985 — a specialisation: its copy has every bound type
+        // parameter substituted, the method's own as well as the owner's
+        // (`Dict<string, i32>.fold(0.0, { acc, k, v -> … })` writes the lambda
+        // against `fn(acc: f64, key: string, value: i32) -> f64`).
+        if (self.mspec_methods.get(sym)) |m| {
+            const ar = self.reg_arena.allocator();
+            const out = try ar.alloc(?ast.TypeRef, cc.args.len);
+            @memset(out, null);
+            var pi: usize = 0;
+            for (m.params) |p| {
+                if (std.mem.eql(u8, p.name, "self")) continue;
+                defer pi += 1;
+                if (pi >= out.len) break;
+                if (p.typeRef == .function) out[pi] = p.typeRef;
+            }
+            return out;
+        }
         const gm = self.generic_methods.get(sym) orelse return null;
         const recv = cc.receiver orelse return null;
         const tr = self.typeRefOf(recv.*) orelse return null;

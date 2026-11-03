@@ -913,6 +913,12 @@ resolves as the integer's (`primKindAt` reads a parameter's `local_typerefs`), `
 types the answer `Bag<string>`, and a composite field read through that receiver is
 `Array<string>` (`recvTypeArgRef` writes the receiver's arguments into `Array<T>`). It was
 `cannot resolve the call toString/0` (`conformance/modules/generic/cases/generic_method_lambda_param_typed`).
+A call that `specializeMethod` sends to a copy reads the copy's own parameter types instead
+(`mspec_methods`, decision 985): every type parameter the call bound is substituted there, the
+method's own included, so `Dict<string, i32>.fold(0.0, { acc, k, v -> acc + 2.0 })` writes `acc`
+as an `f64` — left untyped, it was "a lambda parameter nothing types" and the module fell to
+linear memory, which refused the `f64` in an `i32` slot (cell
+`generic_method_own_parameter_takes_shape`).
 
 **A function in a generic record's field answers its declared return**
 (`ctorTypeRef` + `fnRefTypeRef`, `recvTypeArgRef`, `genericRetByFnArg`):
