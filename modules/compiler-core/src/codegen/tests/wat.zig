@@ -6831,3 +6831,74 @@ test "wat: front 229 s1 ---- a reached function with no GC form falls the module
     try std.testing.expect(std.mem.indexOf(u8, note, " lowered .linear: a value written to linear memory (no GC form yet) in `sum2` at ") != null);
     try std.testing.expect(std.mem.endsWith(u8, note, ":2:5"));
 }
+
+// B-206 — the final fallthrough of `emitWat`'s retry chain (`own_dependency`,
+// `reached_only`) returns the FIRST `.linear` attempt's own refusal (`err`,
+// read from the outer `missing`/`refused` slots): the advisory build note
+// (`printLinearNote`, decision 1097) must name that SAME attempt's reason
+// (`why`), never the last reached-only retry's (`retry_why`) — the note
+// otherwise describes a different refusal than the one actually returned.
+// `lib/root`'s own standalone pass is a dependency's (`own_dependency`): the
+// first `.gc` and `.linear` attempts keep every own declaration (own_roots)
+// and fail in `gapA` (an `async fn`'s `try … catch` region, refused in every
+// mode — decision 595, `self.machine != null`); the reached-only retries
+// prune `gapA` away — nothing but the module's own `val` roots anything —
+// and fail instead in `gapB`, which the `val` reaches. The note must still
+// name `gapA`, the attempt whose refusal is actually returned.
+test "wat: gc ---- the fallback note names the attempt whose refusal is returned, not a reached-only retry's (B-206)" {
+    const alloc = std.testing.allocator;
+    _ = watCodegen.takeLinearNote();
+    var cfg = h.configs[3];
+    cfg.packages = .{ .root = "test", .deps = &.{"lib"} };
+    const modules = [_]codegen.Module{
+        .{ .path = "lib/root", .package = "lib", .source =
+        \\async fn gapA() -> Async<i32> {
+        \\    return try {
+        \\        try half(1)
+        \\    } catch {
+        \\        -1
+        \\    };
+        \\}
+        \\
+        \\async fn gapB() -> Async<i32> {
+        \\    return try {
+        \\        try half(2)
+        \\    } catch {
+        \\        -2
+        \\    };
+        \\}
+        \\
+        \\fn half(n: i32) -> Result<i32, string> {
+        \\    if (n % 2 == 0) {
+        \\        return n / 2;
+        \\    }
+        \\    throw "odd";
+        \\}
+        \\
+        \\val _boot = gapB();
+        },
+    };
+    var outputs = try codegen.generateWith(alloc, &modules, std.testing.io, cfg, .{ .execute = false });
+    defer {
+        for (outputs.items) |*o| o.result.deinit(alloc);
+        outputs.deinit(alloc);
+    }
+    const o = for (outputs.items) |o| {
+        if (std.mem.eql(u8, o.name, "lib/root")) break o;
+    } else return error.ModuleNotEmitted;
+    const diag = o.result.diagnostic orelse return error.UnexpectedSuccess;
+    // The returned diagnostic is the FIRST `.linear` attempt's own refusal,
+    // from `gapA` (line 2) — the reached-only retries' own `gapB` (line 10)
+    // never reaches the outer slots.
+    try std.testing.expect(diag == .type);
+    try std.testing.expect(std.mem.indexOf(u8, diag.type.message, "try … catch") != null);
+    const diag_loc = diag.type.loc orelse return error.NoLocation;
+    try std.testing.expectEqual(@as(u32, 2), diag_loc.line);
+    const note = watCodegen.takeLinearNote();
+    try std.testing.expect(std.mem.startsWith(u8, note, "wasm: "));
+    // The note must name the SAME attempt as the returned diagnostic
+    // (`gapA`, at line 2), never the last reached-only retry's own reason
+    // (`gapB`, at line 10 — the only thing the module's `val` still roots).
+    try std.testing.expect(std.mem.endsWith(u8, note, ":2:16"));
+    try std.testing.expect(std.mem.indexOf(u8, note, ":10:") == null);
+}

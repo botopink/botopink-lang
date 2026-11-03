@@ -2264,7 +2264,14 @@ fn emitWat(
                 if (retry_refused) |r| alloc.free(r.message);
                 if (e == error.OutOfMemory) return e;
             }
-            printLinearNote(module_name, retry_why);
+            // The module is returned refused as `err`, the first `.linear`
+            // attempt's own refusal (`missing`/`refused`, still the outer
+            // slots' — the GC retries used their own local slots and never
+            // reached here with their refusal kept): the note must name that
+            // same attempt's reason (`why`), not the last reached-only
+            // retry's (`retry_why`), or it would describe a different
+            // refusal than the one surfaced.
+            printLinearNote(module_name, why);
             return err;
         },
     }
