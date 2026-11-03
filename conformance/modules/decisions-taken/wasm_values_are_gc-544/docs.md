@@ -1,5 +1,15 @@
 # Decision 544 — WasmGC for a wasm program's values: what it waits on, and what std-wasm becomes
 
-The loop makes two million short-lived values — a string and a record per iteration — and keeps only two counters, printing `10888890` and `7999992` on every target. On wasm every value the program makes is a WasmGC value (the program declares `needs: [.Gc]`), held by the host's collector: what an iteration made is collected once nothing reaches it, so the loop runs in bounded memory however long it is. Under the linear-memory model the decision retires, the same loop allocated from a bump heap that was never freed and ended in a trap when the heap was exhausted — the known limit of a long task.
+On wasm every value a program makes is a WasmGC value (the program declares `needs: [.Gc]`), held by the host's
+collector: a value is collected once nothing reaches it, so a program whose values die runs in bounded memory however
+long it runs. Under the linear-memory model the decision retires, every value stayed in a bump heap that was never
+freed, and a long task ended in a trap when the heap was exhausted. Four programs whose values all die young answer
+alike on every target: a loop making a string and a record per iteration, ten million short-lived strings, a deep
+recursion run many times, and a server's request loop. The bound itself is proven beside the compiler: each program
+completes on wasm under a fixed memory cap at ten times the iterations at which the linear-memory model exhausts that
+cap (`modules/compiler-core/src/codegen/tests/wat_memory.zig`).
 
-[draft/main.bp](draft/main.bp)
+[cases/short_lived_values_loop/src/main.bp](cases/short_lived_values_loop/src/main.bp)
+[cases/ten_million_allocations/src/main.bp](cases/ten_million_allocations/src/main.bp)
+[cases/deep_recursion_rounds/src/main.bp](cases/deep_recursion_rounds/src/main.bp)
+[cases/request_loop/src/main.bp](cases/request_loop/src/main.bp)

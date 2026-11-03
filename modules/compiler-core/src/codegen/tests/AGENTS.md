@@ -4,7 +4,9 @@
 > Parent: [`../AGENTS.md`](../AGENTS.md) (owns the per-file breakdown)
 
 Codegen tests, split by feature (`values.zig` etc. for codegen, `wat.zig` for the
-WAT backend, `test_units.zig` for decision 513 — on every target a module's
+WAT backend, `wat_memory.zig` for front 230 s1's bounded-memory oracle — decision 544's
+conformance cases run under the runner's fixed `memory_limit` cap (`../wat/AGENTS.md` § Under the GC
+model: the store limiter), `test_units.zig` for decision 513 — on every target a module's
 production bytes are equal under `build` and `test`, and only a module of the
 package under test has a test unit, `externals.zig` for `#[@external(.<Target>(…))]` FFI declarations,
 `comptime_module.zig` for `erlang.emitComptimeModule`, `resolved_print.zig` for

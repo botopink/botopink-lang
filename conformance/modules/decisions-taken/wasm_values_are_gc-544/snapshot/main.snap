@@ -1,0 +1,10 @@
+botopink-cell 2
+== short_lived_values_loop
+out 10888890
+out 7999992
+== ten_million_allocations
+out 48888890
+== deep_recursion_rounds
+out 9778600
+== request_loop
+out 3488890

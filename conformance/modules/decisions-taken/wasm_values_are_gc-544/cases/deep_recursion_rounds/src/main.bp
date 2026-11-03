@@ -1,0 +1,22 @@
+import {io.terminal} from "std";
+
+/// Every level makes a string that lives until the level returns: 5000 of
+/// them are live at the bottom, and none once the round is over.
+fn descend(n: i32) -> i32 {
+    if (n == 0) {
+        return 0;
+    }
+    val label = "level " + n.toString();
+    return label.length + descend(n - 1);
+}
+
+/// A million calls: 200 rounds of a recursion 5000 deep.
+pub fn main() -> void {
+    var total = 0;
+    var round = 0;
+    while (round < 200) {
+        total = total + descend(5000);
+        round = round + 1;
+    }
+    terminal.print(total);
+}

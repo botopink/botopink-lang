@@ -1,0 +1,28 @@
+import {io.terminal} from "std";
+
+type Request(method: string, path: string, version: string)
+
+/// A request line parsed: split on spaces, read into a record.
+fn parse(line: string) -> Request {
+    val parts = line.split(" ");
+    return Request(method: parts[0] ?? "", path: parts[1] ?? "", version: parts[2] ?? "");
+}
+
+/// A response built: joined, upper-cased, concatenated, its length's text.
+fn respond(r: Request) -> string {
+    val body = [r.method.toUpper(), r.path, r.version].join("|");
+    return "200 OK " + body + " " + body.length.toString();
+}
+
+/// A server's loop over a hundred thousand requests, keeping only the sum of
+/// the responses' lengths.
+pub fn main() -> void {
+    var total = 0;
+    var i = 0;
+    while (i < 100000) {
+        val line = "GET /items/" + i.toString() + " HTTP/1.1";
+        total = total + respond(parse(line)).length;
+        i = i + 1;
+    }
+    terminal.print(total);
+}

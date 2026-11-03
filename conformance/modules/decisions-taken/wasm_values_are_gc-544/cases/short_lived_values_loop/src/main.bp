@@ -1,5 +1,3 @@
-//// Decision 544 — WasmGC for a wasm program's values: what it waits on, and what std-wasm becomes
-
 import {io.terminal} from "std";
 
 type Point(x: i32, y: i32)

@@ -78,6 +78,13 @@ pub const Options = struct {
     cwd: ?[]const u8 = null,
     /// The time limit; null runs to the end (or to an `interrupt`).
     timeout_ns: ?u64 = null,
+    /// The most bytes any one memory of the run may grow to (front 230 s1):
+    /// the store's limiter (`wasmtime_store_limiter`), which bounds every
+    /// linear memory and the GC heap alike — a GC allocation past it ends
+    /// the run with `GC heap out of memory`, a `memory.grow` past it answers
+    /// `-1`. Null leaves wasmtime's own bounds. Set in code by the caller (a
+    /// test's fixed cap), never by a flag or a variable (decision 67).
+    memory_limit: ?u64 = null,
 };
 
 pub const End = enum { exited, interrupted, timed_out };
@@ -242,6 +249,9 @@ const Session = struct {
         };
         _ = active.fetchAdd(1, .acq_rel);
         self.ctx = c.wasmtime_store_context(self.store).?;
+        // Negative leaves the table, instance, table-count and memory-count
+        // limits at wasmtime's defaults.
+        if (opts.memory_limit) |m| c.wasmtime_store_limiter(self.store, @intCast(@min(m, std.math.maxInt(i64))), -1, -1, -1, -1);
         c.wasmtime_context_set_epoch_deadline(self.ctx, 1);
         c.wasmtime_store_epoch_deadline_callback(self.store, onDeadline, &self.watch, null);
 
@@ -1119,6 +1129,72 @@ test "runCore: interrupt ends a run in progress (the SIGINT path)" {
     const later = try invokeCore(alloc, m.module, &.{}, "seven", .{});
     defer later.outcome.deinit(alloc);
     try std.testing.expectEqual(@as(?i64, 7), later.value);
+}
+
+// ── front 230 s1: the store limiter bounds the GC heap ──────────────────────
+
+/// `retain` keeps a list of a million GC structs alive (~40 MiB on
+/// wasmtime's collector); `garbage` makes as many and keeps only the last;
+/// `grow` grows the linear memory a page at a time until `memory.grow`
+/// answers -1 and returns the pages it got.
+const gc_heap_wat =
+    \\(module
+    \\  (type $node (struct (field (ref null $node)) (field i64)))
+    \\  (memory 1)
+    \\  (func (export "retain") (result i64)
+    \\    (local $i i64) (local $h (ref null $node))
+    \\    (block $done (loop $l
+    \\      (br_if $done (i64.ge_u (local.get $i) (i64.const 1000000)))
+    \\      (local.set $h (struct.new $node (local.get $h) (local.get $i)))
+    \\      (local.set $i (i64.add (local.get $i) (i64.const 1)))
+    \\      (br $l)))
+    \\    (struct.get $node 1 (ref.as_non_null (local.get $h))))
+    \\  (func (export "garbage") (result i64)
+    \\    (local $i i64) (local $h (ref null $node))
+    \\    (block $done (loop $l
+    \\      (br_if $done (i64.ge_u (local.get $i) (i64.const 1000000)))
+    \\      (local.set $h (struct.new $node (ref.null $node) (local.get $i)))
+    \\      (local.set $i (i64.add (local.get $i) (i64.const 1)))
+    \\      (br $l)))
+    \\    (struct.get $node 1 (ref.as_non_null (local.get $h))))
+    \\  (func (export "grow") (result i32)
+    \\    (local $n i32)
+    \\    (block $done (loop $l
+    \\      (br_if $done (i32.eq (memory.grow (i32.const 1)) (i32.const -1)))
+    \\      (local.set $n (i32.add (local.get $n) (i32.const 1)))
+    \\      (br $l)))
+    \\    (local.get $n)))
+;
+
+test "memory_limit: the store limiter bounds the GC heap, the collector keeps a garbage loop under it, and linear memory too" {
+    // A red here means a wasmtime bump moved the GC heap off the store's
+    // limiter: front 230's bound is then gone, re-measure before bumping.
+    const alloc = std.testing.allocator;
+    const m = try compileModule(gc_heap_wat);
+    defer m.deinit();
+    const cap: u64 = 16 * 1024 * 1024;
+
+    // Unbounded, the retained list completes.
+    const free = try invokeCore(alloc, m.module, &.{}, "retain", .{});
+    defer free.outcome.deinit(alloc);
+    try std.testing.expectEqual(@as(?i64, 999_999), free.value);
+
+    // Under the cap it ends with the GC heap's own refusal, never damaged data.
+    const capped = try invokeCore(alloc, m.module, &.{}, "retain", .{ .memory_limit = cap });
+    defer capped.outcome.deinit(alloc);
+    try std.testing.expectEqual(@as(i32, 1), capped.outcome.status);
+    try std.testing.expectEqual(@as(?i64, null), capped.value);
+    try std.testing.expect(std.mem.startsWith(u8, capped.outcome.trap.?, "GC heap out of memory"));
+
+    // As many allocations whose values die completes under the same cap.
+    const collected = try invokeCore(alloc, m.module, &.{}, "garbage", .{ .memory_limit = cap });
+    defer collected.outcome.deinit(alloc);
+    try std.testing.expectEqual(@as(?i64, 999_999), collected.value);
+
+    // The linear memory stops at the cap: 1 page declared, 255 grown.
+    const grown = try invokeCore(alloc, m.module, &.{}, "grow", .{ .memory_limit = cap });
+    defer grown.outcome.deinit(alloc);
+    try std.testing.expectEqual(@as(?i64, 255), grown.value);
 }
 
 test "load: kept in the process, the same bytes compiled once" {

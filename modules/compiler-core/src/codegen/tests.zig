@@ -19,6 +19,7 @@ test {
     _ = @import("tests/std_package.zig");
     _ = @import("tests/beam_memory.zig");
     _ = @import("tests/wat.zig");
+    _ = @import("tests/wat_memory.zig");
     _ = @import("tests/comptime_host_units.zig");
     _ = @import("tests/comptime_page_host.zig");
     _ = @import("wat/comptime_page.zig");

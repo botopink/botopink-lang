@@ -1,0 +1,14 @@
+import {io.terminal} from "std";
+
+/// Ten million short-lived values: each iteration makes four strings (the
+/// number's text and three concatenations) and keeps only their length.
+pub fn main() -> void {
+    var total = 0;
+    var i = 0;
+    while (i < 2500000) {
+        val s = "item-" + i.toString() + "-" + "payload";
+        total = total + s.length;
+        i = i + 1;
+    }
+    terminal.print(total);
+}
