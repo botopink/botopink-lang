@@ -6657,6 +6657,61 @@ test "wat: units ---- decision 1055 (6): a module val initialised once, methods 
     try std.testing.expectEqualStrings(try snapSection(ar, want, "wasm_val_methods_cross_units"), out);
 }
 
+// Front 229 s6 — a `val` of another unit is read through its accessor, typed
+// as this unit reads it (`ForeignVal.ty`). That type was recorded in the
+// lowering's numbering and never renumbered into the canonical group with the
+// rest of the module (`finishGc`), so once something else of the program
+// lowered a type before it — here `registry`'s own `origin`, a `Point` — the
+// index named another type and the accessor's import and thunk no longer
+// agreed with the exporter (two join cells broke at instantiation when one
+// declared fn joined a widely linked dependency).
+test "wat: units ---- front 229 s6: a foreign val's type is renumbered with the module's own" {
+    const a = std.testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(a);
+    defer arena.deinit();
+    const ar = arena.allocator();
+    var cfg = h.configs[3];
+    cfg.wasm_artifact = true;
+    cfg.wasm_units = true;
+    const srcs = [_]codegen.Module{
+        .{ .path = "registry", .source =
+        \\pub type Point(x: i32, y: i32) {}
+        \\
+        \\pub val origin: Point = Point(x: 1, y: 2);
+        \\
+        \\var entries: string[] = [];
+        \\
+        \\pub fn register(entry: string) -> void {
+        \\    entries.push(entry);
+        \\}
+        \\
+        \\pub fn names() -> string[] {
+        \\    return entries;
+        \\}
+        },
+        .{ .path = "main", .source =
+        \\import {io.terminal.print} from "std";
+        \\mod registry;
+        \\import {registry.names, registry.register, registry.origin};
+        \\
+        \\pub fn main() -> void {
+        \\    register("a");
+        \\    print(origin.x);
+        \\    print(names());
+        \\}
+        },
+    };
+    var outputs = try h.generate(a, &srcs, std.testing.io, cfg);
+    defer {
+        for (outputs.items) |*o| o.result.deinit(a);
+        outputs.deinit(a);
+    }
+    const pu = try programUnits(ar, &outputs, "main");
+    try expectUnitsLink(ar, pu.program);
+    const out = try runUnitsFrame(a, ar, pu.entry, pu.program);
+    try std.testing.expectEqualStrings("1\n[\"a\"]\n", out);
+}
+
 // Front 229 s1 — a function of the module's own that nothing reaches and
 // that still writes linear memory (a list pattern, `[a, b]`) is a stub that
 // traps, naming why and where; the module keeps its GC form. Reached, the

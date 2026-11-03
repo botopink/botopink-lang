@@ -7458,6 +7458,13 @@ const Emitter = struct {
         if (self.gc_gap != null) return error.GcFallback;
         // Every type the lowering named, renumbered into its canonical group.
         for (items.items) |*it| it.* = try self.gcRemapItem(it.*);
+        // Front 229 s6 — so is the type a foreign `val` is read as
+        // (`foreign_vals`, recorded at its declaration in the lowering's
+        // numbering): `unitBoundary` reads it against the canonical group,
+        // and the lowering's numbering depends on everything else the module
+        // lowers, so a stale index named another type (a struct for an
+        // array) once something else joined the program.
+        for (self.foreign_vals.values()) |*fv| fv.ty = self.gcRemapVt(fv.ty);
         try self.gcDeclCtors(items, defs);
         try self.gcInitTypes(items);
         self.gc_perm = null;
