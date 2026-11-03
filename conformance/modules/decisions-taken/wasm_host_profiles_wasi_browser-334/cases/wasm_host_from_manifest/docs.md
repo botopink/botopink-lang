@@ -1,0 +1,1 @@
+Loaded, this case answers on the loading build's own host (decision 334 (2), `out 2.0` on wasm too); its own `"wasm": { "host": "browser" }` is read only when it is the build — running it alone (`botopink run --target wasm` here) is the only way the browser profile is proved at all yet, since building a bare program for a named host is B-205's open question.

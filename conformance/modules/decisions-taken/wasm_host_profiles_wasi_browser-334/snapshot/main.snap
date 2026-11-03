@@ -21,5 +21,4 @@ out true
 == wasm_host_from_manifest
 out 2.0
 == wasm_host_from_manifest on wasm
-refused error: `floorOf` has no implementation for the wasm backend
-at src/main.bp:18:11
+out 2.0

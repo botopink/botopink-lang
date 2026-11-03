@@ -2,7 +2,9 @@
 //// one spot a landing of its piece changes, and until then it refuses by name (never a silent stub).
 //// See `../docs.md` for which function waits on what.
 
-import {io.os, compiler.Diagnostic, compiler.Module, compiler.RunFailure} from "std";
+import {io.os, compiler.Diagnostic, compiler.Module, compiler.RunFailure, compiler.RunFailureKind} from "std";
+import {records.Refusal};
+import {observe.Observed, observe.refusedAnswer, observe.ranAnswer};
 
 /// The target the program runs on: `commonJS`, `erlang`, `beam` or `wasm` (989 (7), piece 3:
 /// `io.os.target()`, never readable at comptime).
@@ -24,12 +26,28 @@ pub fn buildOutput(m: Module) -> string {
 /// What a run printed, and why it failed (989 (1), piece 2: `Module.run()` answers
 /// `Result<string, RunFailure>`). `m.run()` is written in the `compiler.init` body itself
 /// (`run-outside-init`), so the adapter takes its answer: `Ok(text)` is the printed text, `Error(f)`
-/// the text printed before the failure (`f.output`) and its message.
-pub type Ran(printed: string, failed: bool, failure: string)
+/// the text printed before the failure (`f.output`), its message and its `kind` (`.Failed` for the
+/// `Ok` side too — unread there).
+pub type Ran(printed: string, failed: bool, failure: string, kind: RunFailureKind)
 
 pub fn ranOf(r: Result<string, RunFailure>) -> Ran {
     return case r {
-        Ok(text) -> Ran(printed: text, failed: false, failure: "");
-        Error(f) -> Ran(printed: f.output, failed: true, failure: f.message);
+        Ok(text) -> Ran(printed: text, failed: false, failure: "", kind: RunFailureKind.Failed);
+        Error(f) -> Ran(printed: f.output, failed: true, failure: f.message, kind: f.kind);
+    };
+}
+
+/// A run's answer, rendered by kind (decision 989 (3)): `.Refused` and `.Excluded` are the loaded
+/// module's own answer, a message only, never a build-time diagnostic — so each renders as a
+/// refusal with no `at`, `label` or `from`. `.Failed`, `.Abort` and an ordinary success keep
+/// rendering as `ranAnswer` already does.
+pub fn ranAnswerOf(name: string, buildText: string, ran: Ran) -> Observed {
+    if (!ran.failed)
+        return ranAnswer(name, buildText, ran.printed, ran.failed, ran.failure);
+    return case ran.kind {
+        .Refused -> refusedAnswer(name, buildText, [Refusal(message: ran.failure)]);
+        .Excluded -> refusedAnswer(name, buildText, [Refusal(message: ran.failure)]);
+        .Failed -> ranAnswer(name, buildText, ran.printed, ran.failed, ran.failure);
+        .Abort -> ranAnswer(name, buildText, ran.printed, ran.failed, ran.failure);
     };
 }
