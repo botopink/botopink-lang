@@ -2,7 +2,7 @@
 //// candidate file. The program never accepts a candidate — it never writes `snapshot/main.snap`
 //// (decision 67).
 
-import {io.fs.writeText} from "std";
+import {compiler, failure.HostError, failure.HostErrorName} from "std";
 import {records.diff};
 import {sections.SnapFile, sections.parseFile, sections.renderFile, sections.HEADER};
 import {observe.Observed, observe.assemble, observe.reds};
@@ -20,11 +20,34 @@ pub fn candidatePath(root: string) -> string {
 /// The accepted file's path.
 pub val ACCEPTED_PATH: string = "snapshot/main.snap";
 
-/// `text` written to the file at `path`, through `io.fs` on every target (decision 992: wasm's
-/// `io.fs` is the other targets'). `Error` when the file cannot be written.
+// `deliver`'s host call, private so the public function below maps `HostError` into the plain
+// message `finish` already throws (decisions 431, 486's pattern — `std/encoding.bp`
+// `base64DecodeHost`). Native text on commonJS and erlang (which beam reads too, decision 437):
+// this writes through the host directly, never through `std/io/fs`, so `io.fs.writeText`'s wasm
+// leaf (`wasiCwd`) is never statically named here on any target. On wasm `deliverHostWasm`
+// answers the same `HostError` a real write failure would (decision 1096): a self-checking
+// module falls to linear memory over its own content, never over this scaffold, and `io.fs`'s
+// `.wat` leaves are GC-only (B-203) — naming `io.fs.writeText` here would refuse the whole
+// module, not just the write, for every self-checking module whose content needs linear memory.
+#[compiler.external(
+    .JavaScript("""require('fs').writeFileSync($0, $1)""", result: true),
+    .Erlang("""file:write_file($0, $1)""", result: true),
+    .Wasm(body: deliverHostWasm),
+)]
+declare fn deliverHost(path: string, text: string) -> Result<void, HostError>;
+
+fn deliverHostWasm(path: string, text: string) -> Result<void, HostError> {
+    throw HostError(
+        message: "cannot write " + path + " (wasm does not write files yet, decision 1096)",
+        kind: "host",
+        name: HostErrorName.Error,
+        detail: null,
+    );
+}
+
+/// `text` written to the file at `path`. `Error` when the file cannot be written.
 pub fn deliver(path: string, text: string) -> Result<void, string> {
-    // A `case`, not `try … catch { e -> … }`: wasm's GC lowering takes no catch binder yet.
-    case writeText(path, text) {
+    case deliverHost(path, text) {
         Ok(_) -> return;
         // The path alone: `e.message()` crashes on commonJS and `${e}` does not build on wasm's
         // GC lowering (B-170).
