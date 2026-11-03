@@ -3831,6 +3831,24 @@ test "wat: needs ---- a call of attempt asks for Exceptions" {
     try std.testing.expect(needs.contains(.exceptions));
 }
 
+// Decision 597 — a `defer` on its own, with no `attempt` anywhere in the
+// program, is what asks for `Exceptions`: `main`'s own `fn_has_defer` lowering
+// (`emitFn`) adds `.exceptions` to its `wrapper_needs` entry, and decision
+// 518 (2)'s reachability pass carries it into the module's gathered `needs`
+// because `main` is reached — nothing here imports `failure` or calls
+// `attempt`.
+test "wat: needs ---- a bare defer with no attempt asks for Exceptions" {
+    const needs = try wasmNeedsOfSource(std.testing.allocator,
+        \\fn main() -> void {
+        \\    defer print("closed");
+        \\    print("x");
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    );
+    try std.testing.expect(needs.contains(.exceptions));
+}
+
 // Decisions 449 (3), 450 (4) — the Erlang terms translated BEAM code computes
 // over, allocated on a process's heap (std-wasm's `heap.zig`) with the layout
 // each cell kind has (`term.cellLayout`), survive its collections: a module
