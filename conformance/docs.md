@@ -3175,7 +3175,7 @@ target (decisions 824, 825) (`comptime/context_lower.zig`).
 
 <!-- example: modules/decisions-taken/scope_tree_lives_with_its_process-824/cells/scope_tree_lives_with_its_process -->
 
-<!-- example: modules/decisions-taken/component_is_lambda_over_render_scope-388/cells/render_scope_construction -->
+<!-- example: modules/decisions-taken/component_is_lambda_over_render_scope-388/cases/render_scope_construction -->
 
 A `Context<T>` is its value at run time. A
 lambda written in a body is outside it: it takes the scope of the call that
