@@ -24255,7 +24255,7 @@ const Emitter = struct {
             // A generic task's `T`: bound by the call's arguments, or read off
             // the expression the shape readers see the task's value as
             // (`delay`'s value argument, `race`'s first task, …).
-            if (self.bindAwaitedGeneric(e, inner)) |b| {
+            if (self.bindAwaitedGeneric(e, inner) orelse self.bindSpawnAll(e, inner)) |b| {
                 inner = b;
                 generic_bound = true;
             } else if (e == .call and e.call.kind == .call) {
@@ -27178,7 +27178,16 @@ const Emitter = struct {
     /// element's tail call's task value, the same thunk-tail read
     /// `refuseWideTaskValues` uses to find what a thunk answers.
     fn arrayLitThunkTaskValue(self: *Emitter, arg: ast.Expr) ?ast.TypeRef {
-        if (arg != .collection or arg.collection.kind != .arrayLit) return null;
+        // 144 B-245 — an argument that is no literal (`runAll`'s own `tasks`
+        // passed on to `spawnAll`) answers the task value its own type's
+        // thunks declare: `array<fn() -> Async<string>>` in `runAll`'s copy
+        // for a string task.
+        if (arg != .collection or arg.collection.kind != .arrayLit) {
+            const at = self.typeRefOf(arg) orelse return null;
+            const el = arrayElemRef(at) orelse return null;
+            if (el != .function) return null;
+            return taskValueTypeRef(el.function.returnType.*);
+        }
         const elems = arg.collection.kind.arrayLit.elems;
         if (elems.len == 0) return null;
         const el = elems[0];
@@ -27232,6 +27241,19 @@ const Emitter = struct {
     /// when the call is no generic call, or nothing binds.
     fn bindAwaitedGeneric(self: *Emitter, call: ast.Expr, v: ast.TypeRef) ?ast.TypeRef {
         return self.bindGenericCall(call, v, false);
+    }
+
+    /// 144 B-245 — the one host-declared generic the awaited read binds:
+    /// `spawnAll` (the `spawn_all` binding), whose task settles with an
+    /// `arr_any` of its tasks' boxed answers whatever `T` is — exactly the
+    /// erased value `bindAwaitedGeneric`'s `boxed_arr` reads. `runAll`'s copy
+    /// for a string task (`runAll__T_string`, no type parameter left in it)
+    /// reaches `await spawnAll(tasks)` with `spawnAll`'s own `T` unbound.
+    fn bindSpawnAll(self: *Emitter, call: ast.Expr, v: ast.TypeRef) ?ast.TypeRef {
+        if (call != .call or call.call.kind != .call) return null;
+        const hb = self.host_bindings.get(call.call.kind.call.callee) orelse return null;
+        if (hb.binding != .wasi or !std.mem.eql(u8, hb.binding.wasi.name, "spawn_all")) return null;
+        return self.bindGenericCall(call, v, true);
     }
 
     /// `bindAwaitedGeneric`'s walk; `host` also reads a host-declared generic

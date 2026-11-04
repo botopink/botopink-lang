@@ -4717,6 +4717,39 @@ test "wat: gc ---- a generic thunk's tail calling another generic fn binds the o
     }
 }
 
+// 144 B-245 — `runAll<T>` over string thunks calls `runAll__T_string`, a copy
+// with no type parameter left in it, whose body awaits `spawnAll(tasks)`:
+// a host-declared generic reached through the variable `tasks`, not an array
+// literal. `spawnAll`'s own `T` never bound (the awaited read kept host
+// generics out, and the array-of-thunks read took a literal only), so the
+// module fell to linear memory ("an awaited task of a type parameter").
+// `bindSpawnAll` binds `spawnAll` (its task settles with the `arr_any` the
+// awaited read expects) and `arrayLitThunkTaskValue` reads a variable's own
+// `array<fn() -> Async<string>>`. A generic of the program forwarding its
+// own thunk array to `runAll` takes the same variable read.
+test "wat: gc ---- runAll over string thunks binds spawnAll's T through its tasks variable" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\async fn greet(s: string) -> Async<string> {
+        \\    return s + "!";
+        \\}
+        \\async fn both<T>(tasks: array<fn() -> Async<T>>) -> Async<array<T>> {
+        \\    return await async.runAll(tasks);
+        \\}
+        \\pub async fn main() -> Async<void> {
+        \\    val ran = await async.runAll([{ -> greet("a") }, { -> greet("b") }]);
+        \\    print("runAll " + ran.join(","));
+        \\    val fwd = await both([{ -> greet("c") }, { -> greet("d") }]);
+        \\    print("both " + fwd.join(","));
+        \\}
+        \\
+        \\import {async, io.terminal.print} from "std";
+    ,
+        \\runAll a!,b!
+        \\both c!,d!
+        \\
+    );
+}
+
 // Front 229 s4 — decision 985's wasm half: a lambda argument of a method's
 // specialisation is written against the copy's substituted parameter types,
 // the method's own type parameter included (`fold<A>`'s `A` bound to `f64`

@@ -432,7 +432,10 @@ settled task drops its waiters and its frame (`$__task_wake`): the codegen break
 (`gcEmitLifted`), its wrapper answering the `$task`. `race` / `raceOf` / `spawnAll` take an `arr_any`
 (the GC forms build their arrays as GC arrays, `gcTaskHelper`, without the linear `arr_new`); a thunk is
 called through the table as `(closure) -> anyref`. `spawnAll` settles with an `arr_any`, so a call whose
-answers are words or floats keeps its module in linear memory (`gcSpawnAllAnswers`). A gate is a `$task`
+answers are words or floats keeps its module in linear memory (`gcSpawnAllAnswers`). `await spawnAll(tasks)`
+in a copy of `runAll` with no type parameter left (`runAll__T_string`) binds `spawnAll`'s own `T` — the one
+host-declared generic the awaited read binds (`bindSpawnAll`), its `T` read off the variable's own
+`array<fn() -> Async<T>>` (`arrayLitThunkTaskValue` takes a variable as well as a literal; 144 B-245). A gate is a `$task`
 in an `unknown`. The `wasi` poll copies the pollables into linear-memory scratch for `bp_host.wait` and
 gives it back (`gc_task_host_poll_wasi`). `try r catch h` over a `$result` is `gcTryCatch`.
 
