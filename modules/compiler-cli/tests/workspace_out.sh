@@ -132,6 +132,31 @@ for target in commonJS erlang beam wasm; do
   ok "$target: out/$target/ alone"
 done
 
+# ── a dependency module no earlier member reached ───────────────────────────
+# A member writes only the modules of a dependency its own program reaches —
+# std's above all —, then the package's key. A later member reaching a module
+# the first did not (`std@hash` here) writes it: the key holds the files that
+# are there, never every module of the package. Order-dependent, so it was red
+# only when the conformance root's members happened to run in this order.
+for target in commonJS erlang; do
+  echo "==> $target: a std module the first member never reached is written by the next"
+  REACH="$WORK/reach-$target"
+  mkdir -p "$REACH/plain/src" "$REACH/hashed/src"
+  printf '{ "name": "reach", "version": "0.0.1", "workspaces": ["*"] }\n' >"$REACH/botopink.json"
+  printf '{ "name": "plain" }\n' >"$REACH/plain/botopink.json"
+  printf '{ "name": "hashed" }\n' >"$REACH/hashed/botopink.json"
+  printf 'import {io.terminal.print} from "std";\n\npub fn main() -> void {\n    print("plain");\n}\n' >"$REACH/plain/src/main.bp"
+  printf 'import {hash, io.terminal.print} from "std";\n\npub fn main() -> void {\n    print(hash.sha256("abc"));\n}\n' >"$REACH/hashed/src/main.bp"
+  run_in "$REACH/plain" run --target "$target" --workspace-out "$REACH/out"
+  [[ $CODE -eq 0 ]] || { echo "$OUT" >&2; fail "$target: member plain's run (exit $CODE)"; continue; }
+  [[ -s "$REACH/out/$target/.std.key" ]] || fail "$target: member plain wrote std's key"
+  run_in "$REACH/hashed" run --target "$target" --workspace-out "$REACH/out"
+  [[ $CODE -eq 0 ]] || { echo "$OUT" >&2; fail "$target: member hashed's run over plain's std key (exit $CODE)"; continue; }
+  grep -q 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad' <<<"$OUT" \
+    || { echo "$OUT" >&2; fail "$target: member hashed answers its digest"; }
+  ok "$target: the second member wrote the std module only it reaches"
+done
+
 # ── two packages of one name at two directories ─────────────────────────────
 echo "==> two members' dependencies of one name at two directories are refused"
 DUP="$WORK/dup"

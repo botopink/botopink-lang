@@ -1404,8 +1404,6 @@ fn writeOutputs(
             try noteEmitted(try artifactPath(arena, out_dir, target, packages, o.name, ext));
             for (o.result.units) |u| try noteEmitted(u.atom);
         }
-        if (once) |*w| if (w.skips(pkg)) continue;
-        var file: FileWriter = .{ .io = io, .once = if (once) |*w| w else null, .pkg = pkg };
         // erlang/BEAM: `out/<target>/<atom><ext>`, commonJS
         // `out/commonJS/<pkg>@<path>.js`, flat (decisions 1015, 1023). wasm:
         // `out/wasm/<module path><ext>`, so subdirectories may have to be created.
@@ -1421,6 +1419,12 @@ fn writeOutputs(
         else
             try artifactPath(gpa, out_dir, target, packages, o.name, ext);
         defer gpa.free(sub_path);
+        // A package held under its key is skipped module by module: a member
+        // writes only the modules of a dependency its own program reaches
+        // (std's above all), so a module no earlier member reached is
+        // written now, beside the ones the key already holds.
+        if (once) |*w| if (w.skips(pkg, sub_path)) continue;
+        var file: FileWriter = .{ .io = io, .once = if (once) |*w| w else null, .pkg = pkg };
 
         // Ensure parent directory exists.
         if (std.fs.path.dirname(sub_path)) |parent| {

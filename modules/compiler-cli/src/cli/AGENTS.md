@@ -23,7 +23,7 @@ cli/
 ├── code_cache.zig     ← the code cache, level A (decision 509): a dependency's toolchain step by content; the closure key and std's key (level B's)
 ├── beam_record.zig    ← a `.beam`'s record beside it (decision 1007): which modules of `out/erlang/` / `out/beam/` a compile step compiles
 ├── runtime_cache.zig  ← a package's `.bpr` set and its key (decision 1006 (2), (3)): where a bare `build` writes it, when `build --target` / `run` reuse it; a by-name load's set under the loader's cache root and the loads a key covers (1006 (6) P5, 1030)
-├── workspace_out.zig  ← a workspace root's one output folder per target (decision 1015 (4)): the root's `build` / `run --target` per member, the duplicate-name refusal, each dependency written once per its key
+├── workspace_out.zig  ← a workspace root's one output folder per target (decision 1015 (4)): the root's `build` / `run --target` per member, the duplicate-name refusal, each dependency written once per its key (skipped module by module: a module of a held package whose file is not there yet is written, since a member writes only the modules its program reaches)
 ├── fanout.zig         ← the workspace fan-out (decisions 1006 (5), 1066, 1067): one process per member, one after another, the whole under `--timeout` when passed, one `ok` / `FAIL` line each with its output and the count
 ├── analysis_store.zig ← the code cache, level B (144 B-60): where an analysis entry lives, read whole (doubt deletes), written staged and renamed; `Cache`, the store `build` / `test` / `check` hand the comptime pass
 ├── unit_cache.zig     ← the unit cache (decision 1008 (2)): a dependency's emitted units per target under its `.bpr` key, taken instead of emitted; level B's CODE folded in

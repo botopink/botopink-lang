@@ -280,7 +280,11 @@ compiler-cli/
 │   │                          folder (no member's `out/`, no subfolder), on each of the
 │   │                          four targets exactly `out/<t>/` (decision 1023), its `run
 │   │                          --target` answers both members; a stale key and
-│   │                          `--cold` rewrite; two members' `json` at two
+│   │                          `--cold` rewrite; a std module the first member never
+│   │                          reached (`std@hash`) written by the next member that
+│   │                          does, over std's key, on commonJS and erlang (the key
+│   │                          holds the files that are there, never every module of
+│   │                          the package); two members' `json` at two
 │   │                          directories refused, naming both, nothing written;
 │   │                          two members named `twin` refused at the root on
 │   │                          commonJS and erlang, naming both manifests (1013 (2))

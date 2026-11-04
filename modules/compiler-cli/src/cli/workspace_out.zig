@@ -17,7 +17,10 @@
 /// the browser `.wasm` / `.mjs` — each under a temporary name renamed over the
 /// final one, then the package's key file `.<pkg>.key` in the target's folder
 /// (`keyPath`), written last the same way. A process that finds the key file
-/// holding its key writes nothing of that package; `build --cold` reads no key
+/// holding its key writes none of that package's files already there — a
+/// member writes only the modules its program reaches, so a module of the
+/// package no earlier member reached is written by the first that does
+/// (`skips`, module by module); `build --cold` reads no key
 /// and rewrites (1008 (4)). Concurrent writers of one key rename the same
 /// bytes (the closure invariant, 509 (2)), so a reader sees one whole file.
 /// The member's own files are staged and renamed too: members run side by
@@ -105,10 +108,17 @@ pub const Once = struct {
         return self;
     }
 
-    /// Whether the files of `pkg` (null: the member's own) are left as the
-    /// folder holds them.
-    pub fn skips(self: *const Once, pkg: ?[]const u8) bool {
-        return if (pkg) |p| self.present.contains(p) else false;
+    /// Whether the files of `pkg`'s module written at `path` (null `pkg`: the
+    /// member's own) are left as the folder holds them: the package is held
+    /// under its key and that module's file is there. A member writes only
+    /// the modules of a dependency its program reaches, so the key says the
+    /// files it holds are current, never that every module is held — a
+    /// module no earlier member reached is written by the first that does.
+    pub fn skips(self: *const Once, pkg: ?[]const u8, path: []const u8) bool {
+        const p = pkg orelse return false;
+        if (!self.present.contains(p)) return false;
+        std.Io.Dir.cwd().access(self.io, path, .{}) catch return false;
+        return true;
     }
 
     /// `bytes` at `path`, staged and renamed over it: the member's own file
