@@ -112,7 +112,15 @@ pub const AmbiguousVariant = struct {
 };
 
 pub const MissingExternal = struct {
-    /// The called function's name.
+    /// The called function's name, owned however the producing backend's
+    /// own `missing_external` field documents (commonJS, erlang and beam
+    /// borrow it from the module's own AST, which outlives the emit).
+    /// 144 B-225 — the wasm backend's own is different: `wat.zig`'s
+    /// `emitWatPass` re-owns it with the allocator it was given, from
+    /// whatever the pass met (a generic specialisation's symbol, `em.arena()`'s,
+    /// included) before that pass's own arena is freed, so `wat.zig`'s own
+    /// callers free it once `diagnostic` has rendered it, as a
+    /// `MissingExternal.refusal` is freed by its callers.
     name: []const u8,
     /// The backend that has no target for it (`erlang`, `node`, `beam`).
     target: []const u8,

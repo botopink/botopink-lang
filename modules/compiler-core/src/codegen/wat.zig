@@ -517,6 +517,10 @@ pub fn codegenEmit(
                         .{ .type = .{ .message = r.message, .loc = r.loc } }
                     else
                         return err;
+                    // 144 B-225 — `me.name` was `alloc`'s own copy
+                    // (`emitWatPass`'s errdefer); `diagnostic` already holds
+                    // its own rendered message, so it is done with now.
+                    if (missing) |me| alloc.free(me.name);
                     try refusals.put(na, ct.name, try na.dupe(u8, diagnostic.type.message));
                     const links = try na.alloc(LinkVia, linked.items.len);
                     for (linked.items, links) |l, *lv| lv.* = .{ .name = l.name, .via = l.via, .declared = l.declared };
@@ -556,6 +560,8 @@ pub fn codegenEmit(
                                 .{ .type = .{ .message = r.message, .loc = r.loc } }
                             else
                                 return err;
+                            // 144 B-225 — `alloc`'s own copy, done with now.
+                            if (unit_missing) |me| alloc.free(me.name);
                             alloc.free(emitted.text);
                             alloc.free(emitted.binary);
                             for (emitted.std_funcs) |f| {
@@ -2282,6 +2288,9 @@ fn emitWat(
                 printLinearNote(module_name, retry_why);
                 return lin;
             } else |e| {
+                // 144 B-225 — this retry's own slots, never the outer
+                // ones' (the comment below): discarded, `alloc`'s, freed.
+                if (retry_missing) |m| alloc.free(m.name);
                 if (retry_refused) |r| alloc.free(r.message);
                 if (e == error.OutOfMemory) return e;
             }
@@ -2330,6 +2339,8 @@ fn emitGcOnly(
             clearSlots(alloc, missing, refused);
             return gc;
         } else |e| {
+            // 144 B-225 — this retry's own slots, discarded, `alloc`'s, freed.
+            if (retry_missing) |m| alloc.free(m.name);
             if (retry_refused) |r| alloc.free(r.message);
             if (e == error.OutOfMemory) return e;
         }
@@ -2346,7 +2357,12 @@ fn emitGcOnly(
 
 /// The refusal slots of a lowering that a later one answered for.
 fn clearSlots(alloc: std.mem.Allocator, missing: ?*?moduleOutput.MissingExternal, refused: ?*?Emitter.Refusal) void {
-    if (missing) |slot| slot.* = null;
+    // 144 B-225 — `.name` is `alloc`'s own copy (`emitWatPass`'s errdefer),
+    // like `refused`'s `.message` below.
+    if (missing) |slot| if (slot.*) |m| {
+        alloc.free(m.name);
+        slot.* = null;
+    };
     if (refused) |slot| if (slot.*) |r| {
         alloc.free(r.message);
         slot.* = null;
@@ -2423,6 +2439,19 @@ fn emitWatPass(
     errdefer if (plan.mode == .gc) recordGcFailure(&em, src_path);
     errdefer if (missing) |slot| {
         slot.* = em.missing_external;
+        // 144 B-225 — `.name` may be a generic call's specialised symbol
+        // (`specCopy`'s `registerFn`, `external_missing`'s key), owned by
+        // `em.arena()`: re-owned by `alloc`, which outlives this pass, before
+        // `defer em.deinit()` below frees it (errdefer runs in the reverse of
+        // registration order, so this one runs first). Dropped, never left
+        // dangling, if `alloc` itself cannot make the copy.
+        if (slot.*) |*m| {
+            if (alloc.dupe(u8, m.name)) |copy| {
+                m.name = copy;
+            } else |_| {
+                slot.* = null;
+            }
+        }
     };
     errdefer if (refused) |slot| {
         slot.* = em.refusal;

@@ -6612,6 +6612,65 @@ test "wat: comptime units ---- a module declaring a decorator has its comptime u
     try std.testing.expect(shared >= 2);
 }
 
+// 144 B-225 — loading several comptime units each missing a wasm binding
+// (06 C13's `MissingExternal`) used to crash the compiler: `emitWatPass`'s
+// `errdefer` copied out `em.missing_external` before `em.deinit()` freed the
+// pass's own arena, and `.name` could be that arena's (a generic call's
+// specialised symbol, `specCopy`'s `registerFn`); the first module's
+// diagnostic then read freed memory while rendering. Two units, each its own
+// comptime root (its own `comptime` token) and each calling a `declare fn`
+// with no `.Wasm` binding, is `std.testing.allocator`'s own oracle — a
+// use-after-free it catches is a crash under the test runner, not a silent
+// wrong answer.
+test "wat: comptime units ---- two units each missing a wasm binding both carry their own diagnostic" {
+    const a = std.testing.allocator;
+    const io = std.testing.io;
+    const modules = [_]codegen.Module{
+        .{ .path = "one", .source =
+        \\import {compiler, io.terminal.print} from "std";
+        \\
+        \\val tag = comptime { "one" };
+        \\
+        \\#[compiler.external(.Erlang("string:length($0)"))]
+        \\pub declare fn lenOne(s: string) -> i32;
+        \\
+        \\pub fn main() -> void {
+        \\    print(lenOne(tag));
+        \\}
+        },
+        .{ .path = "two", .source =
+        \\import {compiler, io.terminal.print} from "std";
+        \\
+        \\val tag = comptime { "two" };
+        \\
+        \\#[compiler.external(.Erlang("string:length($0)"))]
+        \\pub declare fn lenTwo(s: string) -> i32;
+        \\
+        \\pub fn main() -> void {
+        \\    print(lenTwo(tag));
+        \\}
+        },
+    };
+    const cfg = h.configs[1]; // erlang — the comptime stage is wasm's own whatever the target (decision 434)
+    var session = try codegen.analyse(a, &modules, io, cfg);
+    defer session.deinit(a);
+    var units = try codegen.comptimeUnits(a, session.outputs.items, cfg, null);
+    defer {
+        for (units.items) |*o| o.result.deinit(a);
+        units.deinit(a);
+    }
+    try std.testing.expectEqual(@as(usize, 2), units.items.len);
+    for (units.items, [_][]const u8{ "lenOne", "lenTwo" }) |o, want| {
+        const diag = o.result.diagnostic orelse {
+            std.debug.print("\n=== {s}: compiled, expected a missing-wasm-binding diagnostic\n", .{o.name});
+            return error.TestUnexpectedResult;
+        };
+        try std.testing.expect(diag == .type);
+        try std.testing.expect(std.mem.indexOf(u8, diag.type.message, want) != null);
+        try std.testing.expect(std.mem.indexOf(u8, diag.type.message, "wasm") != null);
+    }
+}
+
 // Decision 1032 (2), (3), 1034 (5), (8) — piece R2: `runner.runEntry` composes
 // a program from its unit files (the entry's `botopink.units`: the core,
 // std's units, the program's own `test@lib`, the entry), each loaded through
