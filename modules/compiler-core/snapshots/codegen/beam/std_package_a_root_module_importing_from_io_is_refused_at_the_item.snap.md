@@ -9912,16 +9912,19 @@ test "fs answers PermissionDenied for an OS permission error" {
     {move, {y, 10}, {x, 0}}.
     {move, {y, 9}, {x, 1}}.
     {call_ext, 2, {extfunc, lists, reverse, 2}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {y, 8}, {x, 0}}.
-    {call_ext, 2, {extfunc, lists, append, 2}}.
     {move, {x, 0}, {y, 11}}.
     {move, {y, 5}, {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call_ext, 2, {extfunc, lists, nthtail, 2}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {y, 11}, {x, 0}}.
-    {call_ext, 2, {extfunc, lists, append, 2}}.
+    {move, {y, 11}, {x, 1}}.
+    {move, {x, 0}, {x, 2}}.
+    {move, {y, 8}, {x, 0}}.
+    {test_heap, 6, 3}.
+    {put_list, {x, 2}, nil, {x, 3}}.
+    {put_list, {x, 1}, {x, 3}, {x, 3}}.
+    {put_list, {x, 0}, {x, 3}, {x, 3}}.
+    {move, {x, 3}, {x, 0}}.
+    {call_ext, 1, {extfunc, lists, append, 1}}.
     {move, {x, 0}, {y, 1}}.
     {jump, {f, 934}}.
   {label, 935}.
