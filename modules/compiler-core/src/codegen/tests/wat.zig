@@ -7474,6 +7474,80 @@ test "wat: gc ---- the fallback note names the attempt whose refusal is returned
     try std.testing.expect(std.mem.indexOf(u8, note, ":10:") == null);
 }
 
+// B-233 — a `.gc` gap met inside a `for` desugared over several/open sources
+// (decision 956, `parser/exprs.zig` `buildForWritten`) used to name the gap at
+// the GENERATED wrapper's own column: `ast.for_written_synthetic_col +
+// <real column> * ast.for_written_col_stride + <byte offset in the built
+// text>`, an internal key that keeps two such loops' tokens from colliding,
+// never meant to reach a diagnostic raw — and unlike `foreign_origin`'s
+// synthetic-SITE convention, which inflates the LINE for code with no real
+// backing at all, here the line was always real and only the column was
+// absurd. `loaded`'s `firstOver` (line 8 of its own file) walks `names` bare,
+// `tens()` as a non-driving source and the open range `0...`: the non-driving
+// `tens()` source is read through a built `iter for` wrapped in a by-hand
+// `.next()` (`lowerGenMethod`), which gaps here — reliably, through a loaded
+// package's own `.gc` pass (`self.loaded_pkg`, decisions 787, 792; a plain
+// top-level module with the same body never gaps, since this gap turns on
+// the private `YieldStep` splice a loaded package's reachability walk prunes
+// away). The fallback note must now name the `for`'s own real column
+// (`8:5`), never the synthetic one (`200050208` before this fix).
+test "wat: gc ---- the fallback note for a desugared `for`'s `.next()` gap in a loaded package names the `for`'s real column, not its synthetic one (B-233)" {
+    const alloc = std.testing.allocator;
+    const io = std.testing.io;
+    const moduleMod = @import("../../module.zig");
+    _ = watCodegen.takeLinearNote();
+    const Loaded = struct {
+        const files = [_][2][]const u8{
+            .{ "cases/sub/botopink.json", "{ \"name\": \"sub\" }" },
+            .{
+                "cases/sub/src/main.bp",
+                "import {io.terminal.print} from \"std\";\n\niter fn tens() -> Iter<i32> {\n    yield 10;\n}\n\nfn firstOver(names: string[], limit: i32) -> string {\n    for (names, tens(), 0...) { name, ten, i ->\n        if (ten > limit) return name + \"@\" + i.toString();\n    }\n    return \"none\";\n}\n\npub fn main() -> string {\n    return firstOver([\"a\", \"b\"], 15);\n}\n",
+            },
+        };
+        fn read(_: std.Io, arena: std.mem.Allocator, _: []const u8, rel: []const u8) moduleMod.PackageFiles.ReadError![]const u8 {
+            for (files) |f| if (std.mem.eql(u8, f[0], rel)) return arena.dupe(u8, f[1]) catch return error.OutOfMemory;
+            return error.FileNotFound;
+        }
+    };
+    const src =
+        \\import {compiler, io.terminal.print} from "std";
+        \\
+        \\var got: string = "";
+        \\
+        \\comptime {
+        \\    val loaded = comptime compiler.load("cases/sub");
+        \\    case loaded {
+        \\        Ok(m) -> compiler.init({ -> got = m.run().unwrapOr("err"); });
+        \\        Error(r) -> compiler.init({ -> got = "refused"; });
+        \\    }
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    print(got);
+        \\}
+    ;
+    var outputs = try codegen.generateWith(alloc, &.{.{
+        .path = "",
+        .source = src,
+        .srcPath = "src/main.bp",
+        .root = true,
+        .files = .{ .root = "", .io = io, .read = Loaded.read },
+    }}, io, h.configs[3], .{ .execute = false });
+    defer {
+        for (outputs.items) |*o| o.result.deinit(alloc);
+        outputs.deinit(alloc);
+    }
+    const note = watCodegen.takeLinearNote();
+    try std.testing.expect(std.mem.indexOf(u8, note, "a next() with no YieldStep declared") != null);
+    try std.testing.expect(std.mem.indexOf(u8, note, "cases/sub/src/main.bp") != null);
+    // The real column (`for` sits at column 5 of line 8 of the loaded
+    // package's own file) — never the synthetic one
+    // (`for_written_synthetic_col + 5 * for_written_col_stride`, which
+    // printed as `8:200050208` with no fix).
+    try std.testing.expect(std.mem.endsWith(u8, note, ":8:5"));
+    try std.testing.expect(std.mem.indexOf(u8, note, ":8:200") == null);
+}
+
 // Front 170 s7 P5-d — P5-a's measurement table's single biggest GC-gap
 // reason, 301 occurrences across 24 members: "an empty array literal of no
 // known type". `var taxed = [];` has no annotation and no element visible at

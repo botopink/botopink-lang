@@ -2043,6 +2043,24 @@ threadlocal var emit_only: ?*const std.StringHashMapUnmanaged(void) = null;
 threadlocal var gc_failure_buf: [1024]u8 = undefined;
 threadlocal var gc_failure: []const u8 = "";
 
+/// A located diagnostic's column, decision 956's `for_written_synthetic_col`
+/// encoding decoded away (B-233): a node of a `for` desugared over several or
+/// open sources (`parser/exprs.zig` `buildForWritten`) carries, on every token
+/// of the GENERATED wrapper around the written sources and body, a column
+/// `for_written_synthetic_col + <the for's own real column> *
+/// for_written_col_stride + <the token's byte offset in the built text>` — an
+/// internal key that keeps two such loops' tokens from colliding (locations
+/// are a lowering key elsewhere, `parser/AGENTS.md` § Postfix-chain locs), never
+/// meant to reach a reader raw; its LINE is already the real one (the same
+/// encoding leaves it alone). A location born of it is the one case this
+/// backend's diagnostics meet where the line is real and the column is not —
+/// unlike `foreign_origin`'s site, whose line is itself synthetic. Any other
+/// column (every one below the encoding's range) passes through unchanged.
+fn realCol(col: usize) usize {
+    if (col < ast.for_written_synthetic_col) return col;
+    return (col - ast.for_written_synthetic_col) / ast.for_written_col_stride;
+}
+
 /// Keeps why a `.gc` pass of `em` failed (`gc_failure`): its first gap,
 /// named and located (`Emitter.gcGapText`), else the refusal it met with its
 /// location, else nothing (the caller names the error). `own_src` is the
@@ -2060,7 +2078,7 @@ fn recordGcFailure(em: *Emitter, own_src: []const u8) void {
         const file = if (r.loaded) |ld|
             loadedDeclFile(ar, ld.pkg, ld.src, if (own_src.len > 0) own_src else em.module_name) catch break :blk r.message
         else if (em.foreign_origin != null or em.src_path.len == 0) (if (own_src.len > 0) own_src else em.module_name) else em.src_path;
-        break :blk std.fmt.allocPrint(ar, "{s} at {s}:{d}:{d}", .{ r.message, file, l.line, l.col }) catch return;
+        break :blk std.fmt.allocPrint(ar, "{s} at {s}:{d}:{d}", .{ r.message, file, l.line, realCol(l.col) }) catch return;
     } else if (em.missing_external) |m|
         std.fmt.allocPrint(ar, "a host-backed function with no wasm binding (`{s}`)", .{m.name}) catch return
     else
@@ -7469,7 +7487,7 @@ const Emitter = struct {
         if (func) |f| try out.print(ar, " in `{s}`", .{f});
         if (site.loc) |l| {
             const file = try loadedDeclFile(ar, site.pkg, site.src, self.module_name);
-            try out.print(ar, " at {s}:{d}:{d}", .{ file, l.line, l.col });
+            try out.print(ar, " at {s}:{d}:{d}", .{ file, l.line, realCol(l.col) });
         }
         return out.items;
     }
