@@ -8,7 +8,7 @@
 //// default one, an `async fn`, a component with hooks and a generic `fn`;
 //// a template hole of a function at build writes `fn/<arity>` too.
 
-import {context.RenderScope, io.terminal.print} from "std";
+import {io.terminal.print} from "std";
 
 type Element(text: string) implement Renderable
 
