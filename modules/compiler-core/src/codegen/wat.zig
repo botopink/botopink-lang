@@ -28656,6 +28656,13 @@ const Emitter = struct {
             .array => |inner| try std.fmt.allocPrint(self.arena(), "[{s}", .{try self.gcErasedShape(gps, inner.*)}),
             .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "array"))
                 try std.fmt.allocPrint(self.arena(), "[{s}", .{try self.gcErasedShape(gps, g.args[0])})
+            else if (self.records.contains(g.name) or (if (self.enums.get(g.name)) |vs| enumHasPayload(vs) else false))
+                // Front 170 s7 P5-c — a field `Inner<T>` of a generic
+                // declaration: its erased repr is `Inner`'s own struct (one
+                // per declaration, `gcErasedRepr`), which carries its
+                // declaration and prints by it, its own type-parameter
+                // slots by what they hold.
+                "T"
             else
                 self.gcFail("a generic field of a generic type"),
             .tuple_ => |elems| blk: {
@@ -33273,7 +33280,10 @@ const Emitter = struct {
                     try self.gcEqErasedSlot(ti, @intCast(i), erased.?, null);
                     continue;
                 }
-                if (erased != null and trefs[i] != .named) return self.gcFail("a generic record's composite field");
+                if (erased != null and trefs[i] != .named) {
+                    try self.gcEqCompositeSlot(ti, @intCast(i), erased.?, null, t, gps, trefs[i]);
+                    continue;
+                }
                 for ([_][]const u8{ "a", "b" }) |x| {
                     try self.emit(.{ .local_get = x });
                     try self.emit(.{ .struct_get = .{ .ty = ti, .field = @intCast(i) } });
@@ -33304,7 +33314,10 @@ const Emitter = struct {
                         try self.gcEqErasedSlot(ti, @intCast(i), erased.?, vv);
                         continue;
                     }
-                    if (erased != null and f.typeRef != .named) return self.gcFail("a generic enum's composite payload");
+                    if (erased != null and f.typeRef != .named) {
+                        try self.gcEqCompositeSlot(ti, @intCast(i), erased.?, vv, t, egps, f.typeRef);
+                        continue;
+                    }
                     for ([_][]const u8{ "a", "b" }) |x| {
                         try self.emit(.{ .local_get = x });
                         try self.emit(.{ .ref_cast = vv });
@@ -33346,6 +33359,32 @@ const Emitter = struct {
             try self.emit(.{ .struct_get = .{ .ty = ti, .field = field } });
         }
         try self.emit(.{ .call = try self.gcUnkEq() });
+        try self.emit(opOf(.i32, "eqz"));
+        try self.eqReturnIf(zero);
+    }
+
+    /// Front 170 s7 P5-c — one erased slot of a generic record or variant
+    /// whose declared type is a composite over the type parameters
+    /// (`items: T[]`, `p: #(T, T)`, `inner: Inner<T>`), compared with the
+    /// owner's type arguments written (`owner`). When the type the
+    /// arguments make of it (`Inner<i32>`) has the slot's erased repr — a
+    /// tuple, a generic declaration's one struct —, the two values compare
+    /// by that type's own equality; else (an `i32[]` the slot holds as an
+    /// `anyref` array of boxes) by `$__unk_eq`, structurally, as an
+    /// unwritten owner's slot does (`gcEqErasedSlot`).
+    fn gcEqCompositeSlot(self: *Emitter, ti: u16, field: u32, erased: Repr, cast: ?ValType, owner: ast.TypeRef, gps: []const ast.GenericParam, declared: ast.TypeRef) anyerror!void {
+        const args = owner.generic.args;
+        const subs = try self.arena().alloc(TypeSub, @min(gps.len, args.len));
+        for (subs, 0..) |*s, k| s.* = .{ .name = gps[k].name, .to = args[k] };
+        const ft = try substTypeParams(ast.TypeRef, self.arena(), declared, subs);
+        if (mentionsGeneric(ft, gps) or !self.reprOf(ft).eql(erased))
+            return self.gcEqErasedSlot(ti, field, erased, cast);
+        for ([_][]const u8{ "a", "b" }) |x| {
+            try self.emit(.{ .local_get = x });
+            if (cast) |vt| try self.emit(.{ .ref_cast = vt });
+            try self.emit(.{ .struct_get = .{ .ty = ti, .field = field } });
+        }
+        try self.gcEqValues(ft);
         try self.emit(opOf(.i32, "eqz"));
         try self.eqReturnIf(zero);
     }

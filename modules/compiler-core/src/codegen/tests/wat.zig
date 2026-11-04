@@ -4711,6 +4711,94 @@ test "wat: gc ---- a bool array, a nested array and a tuple's bool in a type par
     );
 }
 
+// Front 170 s7 P5-c — a field of a generic declaration whose type is
+// another generic declaration over its parameter (`inner: Inner<T>`): its
+// erased repr is `Inner`'s one struct, printed by its own declaration
+// (`T`). It fell to linear memory ("a generic field of a generic type").
+test "wat: gc ---- a generic field of a generic type prints, reads and compares" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\type Inner<T>(v: T)
+        \\type Outer<T>(inner: Inner<T>, tag: string)
+        \\type Many<T>(items: Inner<T>[])
+        \\pub fn main() -> void {
+        \\    val o = Outer(inner: Inner(v: 3), tag: "a");
+        \\    print(o);
+        \\    print(o.inner.v);
+        \\    print(o == Outer(inner: Inner(v: 3), tag: "a"));
+        \\    print(o == Outer(inner: Inner(v: 4), tag: "a"));
+        \\    print(Many(items: [Inner(v: "y")]));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\Outer(inner: Inner(v: 3), tag: "a")
+        \\3
+        \\true
+        \\false
+        \\Many(items: [Inner(v: "y")])
+        \\
+    );
+}
+
+// Front 170 s7 P5-c — `==` over a generic record whose field's type is a
+// composite over its parameter (`items: T[]`, `inner: Inner<T>`): the
+// slot compares by the type the arguments make of it when that type has
+// the slot's erased repr (`Inner<string>`), else structurally
+// (`$__unk_eq`, an `i32[]` held as an `anyref` array of boxes). It fell to
+// linear memory ("a generic record's composite field").
+test "wat: gc ---- equality over a generic record's composite field" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\type Inner<T>(v: T)
+        \\type Wrap<T>(items: T[])
+        \\type Outer<T>(inner: Inner<T>, items: Inner<T>[])
+        \\pub fn main() -> void {
+        \\    print(Wrap(items: [1, 2]) == Wrap(items: [1, 2]));
+        \\    print(Wrap(items: [1, 2]) == Wrap(items: [1, 3]));
+        \\    print(Wrap(items: ["a"]) == Wrap(items: ["a"]));
+        \\    val o = Outer(inner: Inner(v: "x"), items: [Inner(v: "y")]);
+        \\    print(o == Outer(inner: Inner(v: "x"), items: [Inner(v: "y")]));
+        \\    print(o == Outer(inner: Inner(v: "x"), items: [Inner(v: "z")]));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\true
+        \\false
+        \\true
+        \\true
+        \\false
+        \\
+    );
+}
+
+// Front 170 s7 P5-c — `==` over a generic enum whose payload's type is a
+// composite over its parameter (`p: #(T, T)`, `i: Inner<T>`), by the same
+// rule as a record's field. It fell to linear memory ("a generic enum's
+// composite payload").
+test "wat: gc ---- equality over a generic enum's composite payload" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\type Inner<T>(v: T)
+        \\type Two<T> { Pair(p: #(T, T)), Nil }
+        \\type Holder<T> { Has(i: Inner<T>), Empty }
+        \\pub fn main() -> void {
+        \\    print(Two.Pair(p: #(1, 2)) == Two.Pair(p: #(1, 2)));
+        \\    print(Two.Pair(p: #(1, 2)) == Two.Pair(p: #(2, 2)));
+        \\    print(Holder.Has(i: Inner(v: 2.5)));
+        \\    print(Holder.Has(i: Inner(v: 2.5)) == Holder.Has(i: Inner(v: 2.5)));
+        \\    print(Holder.Has(i: Inner(v: 2.5)) == Holder.Has(i: Inner(v: 1.5)));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\true
+        \\false
+        \\Holder.Has(i: Inner(v: 2.5))
+        \\true
+        \\false
+        \\
+    );
+}
+
 test "wat: gc ---- bytes, and the string arrays and optional strings std-wasm answers" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\pub fn main() -> void {
