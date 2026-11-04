@@ -7925,3 +7925,40 @@ test "wat: gc ---- `null ?? x`'s never-taken binder arm still type-checks in the
         \\
     );
 }
+
+// Front 170 s7 P5-g — the css library's `scopeCompound` (`src/selector.bp`,
+// which the stylesheet package's module reaches): an `else if` chain whose inner `if` the checker typed the
+// union of its arms (`xs.push(1)` beside an assignment) is the tail of the outer
+// `if`'s else arm. `wasmTypeOf` reads such an `if` as the `unknown` its arms are
+// boxed into, but the arm lowered it plain, so its `i32` was cast to `$box_i32`
+// ("a number where a reference was taken") and the module fell back to linear
+// memory. The inner `if`'s arms now answer what the outer arm asks for.
+test "wat: gc ---- an `else if` whose `if` the checker typed a union, as an outer arm's tail, answers that arm's type (front 170 s7 P5-g)" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\fn scope(a: bool, b: bool, c: bool) -> string {
+        \\    var problem = "";
+        \\    var xs: i32[] = [];
+        \\    if (a) {
+        \\        problem = "x";
+        \\    } else if (b) {
+        \\        xs.push(1);
+        \\    } else if (c)
+        \\        problem = "y";
+        \\    return problem + "|" + xs.length.toString();
+        \\}
+        \\pub fn main() -> void {
+        \\    print(scope(true, false, false));
+        \\    print(scope(false, true, false));
+        \\    print(scope(false, false, true));
+        \\    print(scope(false, false, false));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\x|0
+        \\|1
+        \\y|0
+        \\|0
+        \\
+    );
+}

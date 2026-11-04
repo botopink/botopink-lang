@@ -4207,6 +4207,10 @@ const Emitter = struct {
     /// What a `case` lowered right now is asked for, when that is another kind
     /// than the enclosing function's answer (`lowerCoerced`, `lowerCase`).
     pending_case_want: ?Repr = null,
+    /// What an `if` lowered right now answers, when an enclosing arm asks it
+    /// for a value the checker's union does not give it (`branchLastStmt`,
+    /// `lowerIfExpr`).
+    pending_if_want: ?Repr = null,
     /// The owner of the methods whose signatures are being registered: what
     /// a `Self` written in them names before `self_type` is set.
     sig_owner: ?[]const u8 = null,
@@ -34232,6 +34236,10 @@ const Emitter = struct {
     }
 
     fn lowerIfExpr(self: *Emitter, i: anytype) !void {
+        // What an enclosing arm asks this `if` for (`branchLastStmt`): taken
+        // here, before the condition lowers anything that could read it.
+        const want = self.pending_if_want;
+        self.pending_if_want = null;
         // F2 (Optionals tail) — distinguish statement-form `if` (both
         // branches end in void calls / valueless returns) from value-form
         // `if` (the expression yields an i32). Statement-form must NOT
@@ -34239,7 +34247,7 @@ const Emitter = struct {
         // module because the void-tailed branches don't push a value.
         const then_void = branchIsVoid(i.then_);
         const else_void = if (i.else_) |els| branchIsVoid(els) else false;
-        const as_stmt = then_void and else_void;
+        const as_stmt = then_void and else_void and want == null;
 
         // Decision 330 — `recv?.[i]`, `f?.(args)` and `x!` reach every backend
         // as an `if` over the optional with a `__bp_opt_<line>_<col>` binder
@@ -34283,12 +34291,13 @@ const Emitter = struct {
         // A GC module holds the boxed link as the optional of its payload:
         // the payload's own nullable reference, a scalar's box.
         const link_payload: ?Repr = if (self.mode == .gc) if (link_box) |bx| (self.gcOptPayload(bx) orelse return self.gcFail("an optional of no known payload")) else null else null;
-        const ty: Repr = if (as_stmt) self.cur_result else if (link_payload) |pr| gcOptRepr(pr) else if (link_box != null) .i32 else self.ifValueType(i);
+        const ty: Repr = if (want) |w| w else if (as_stmt) self.cur_result else if (link_payload) |pr| gcOptRepr(pr) else if (link_box != null) .i32 else self.ifValueType(i);
         // Decision 1021 (10) — in a GC module an arm answering `null` into a
         // reference is that reference's null (`branchLastStmt`), whatever
         // the enclosing result.
         const null_arm = self.mode == .gc and !as_stmt and link_box == null and ty.isRef() and (armTailIsNull(i.then_) or armTailIsNull(i.else_));
-        const own_ty = !self.sameVal(ty, self.cur_result) or null_arm;
+        // An `if` asked for `want` converts each arm to it (`emitBranchValue`).
+        const own_ty = want != null or !self.sameVal(ty, self.cur_result) or null_arm;
         const result: ?ValType = if (as_stmt) null else self.vtOf(ty);
 
         var then_c: Capture = .{};
@@ -34507,7 +34516,19 @@ const Emitter = struct {
         const prev_want = self.gc_want;
         if (empty_arr) self.gc_want = ty;
         defer self.gc_want = prev_want;
-        const from = if (empty_arr) ty else self.wasmTypeOf(last.expr);
+        // Front 170 s7 P5-g — an `if` the checker typed the union of its arms
+        // (`unionValueOf`) is read as the `unknown` those arms are boxed into
+        // (`wasmTypeOf`), but `emitStmtRaw` lowers it plain, never boxed: as
+        // the tail of an arm answering a scalar (`} else if (b) { xs.push(1);
+        // } else if (a) p = "y";` under an `if` whose value nothing reads) its
+        // `i32` was cast to `$box_i32`, and the module did not type-check. Its
+        // arms answer `ty` themselves instead, as the enclosing arm's do — the
+        // `unknown` too, each arm boxed by what it answers (`emitBranchValue`).
+        const if_want = self.mode == .gc and last.expr == .branch and last.expr.branch.kind == .if_ and
+            last.expr.branch.kind.if_.binding == null and self.unionValueOf(last.expr) != null;
+        if (if_want) self.pending_if_want = ty;
+        defer self.pending_if_want = null;
+        const from = if (empty_arr or if_want) ty else self.wasmTypeOf(last.expr);
         const tail = try self.emitStmtRaw(last);
         switch (tail) {
             .none => {
