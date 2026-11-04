@@ -1677,17 +1677,17 @@ reached function addresses it. A decoded function's nesting indents its lines
 to column 40 at most (`std_wasm_link.zig` `deeper`): LLVM lowers the case
 tables' `switch`es to hundreds of nested blocks.
 
-## How far a program grows without collection (decision 448, front 144 B-30)
+## How far a program grows without collection (decision 448, front 144 B-30; re-measured under the collector, front 230 s2)
 
-`$__alloc` bumps `$__heap_ptr` and never frees: every value a program makes
-stays in linear memory until the program ends. Measured 2026-10-12, before any
-collector was designed (448: the design follows this), on the compiler at
+`$__alloc` bumped `$__heap_ptr` and never freed: every value a program made
+stayed in linear memory until the program ended. Measured 2026-10-12, before
+any collector was designed (448: the design follows this), on the compiler at
 `feat`, each program built `--target wasm` (`wasi`) and run by `wasmtime` with
 `-W max-memory-size` bisected to the smallest memory (64 KiB pages) the run
-completes in. The live data of every program below is a few integers: what
-grows is garbage.
+completed in. The live data of every program below is a few integers: what
+grew was garbage, and nothing freed it.
 
-| Program | N | Smallest memory | Growth |
+| Program (the retired bump heap) | N | Smallest memory | Growth |
 |---|---|---|---|
 | hello world | — | 1 page | — |
 | a loop building one string per iteration (`"item-" + i.toString() + "-" + "payload"`, its length summed) | 10³ · 10⁴ · 10⁵ | 64 KiB · 640 KiB · 6 656 KiB | ~68 bytes per iteration, linear |
@@ -1695,27 +1695,58 @@ grows is garbage.
 | the same loop as `@Async`s: `serve(n) -> @Async<i32>` awaiting `handle(i) -> @Async<string>` per request | 10³ · 10⁴ · 10⁵ | 320 KiB · 3 200 KiB · 32 768 KiB | ~335 bytes per request (the task record and its frame included), linear |
 | a page render: ten records of three nodes each (`attrs`, `children`) rendered to HTML by `map` / `join` / concatenation, ~950 bytes of HTML per page | 10² · 10³ · 10⁴ | 1 664 KiB · 16 704 KiB · 171 840 KiB | ~17.6 KiB per page (18 times the HTML it answers), linear |
 
-- **Linear in the work, whatever the live set.** A server answering the
-  request loop's requests reaches wasm32's 4 GiB after ~5.9 million requests,
-  the page render after ~240 000 pages; a host that caps memory lower stops it
-  sooner.
-- **Exhaustion traps today.** At the cap, `memory.grow` answers `-1` and
-  `$__alloc` executes `unreachable` (the request loop under a 32 MiB cap:
-  `wasm trap: wasm 'unreachable' instruction executed` in `__alloc` ←
-  `__str_concat`); decision 448 (4) keeps that, never damaged data.
-- **Values are not written after they are made.** `push` answers a copy with
-  the element appended (`$__arr_push`; quadratic in a loop of pushes, which the
-  page render's ten cards pay), concatenation and every std-wasm function
-  answer fresh blocks: a block never points at a younger one. The exceptions
-  are the language runtime's own records — a `@Async` record (state, waiters,
-  value) and its frame are written after they are made — and a `var`'s cell
-  (448 (2)).
-- **onze's pages do not build on wasm**: `examples/blog` (`wasi`) is refused
-  in 67 modules — its element library's element module (`the wasm backend walks an array or a
-  range; nothing shows this iterable is one`), std's `json` and `io/fs`
-  (`fs.readText` has no `.Wasm(…)`). The page render above is their
-  shape (an element tree rendered to a string); onze is measured when its pages
-  build.
+A server answering the request loop's requests this way reached wasm32's
+4 GiB after ~5.9 million requests, the page render after ~240 000 pages: every
+row grew with the work, never with the live set.
+
+**Decision 544's collector changes the answer.** Every value is a WasmGC
+value now, and the host's collector frees what nothing reaches (the
+mechanics: § Under the GC model: the store limiter, below). Re-measured
+2026-11-03 on the compiler at `feat`, the same five program shapes at the
+table above's own largest N, now through `runner.Options.memory_limit` (the
+store limiter) instead of `-W max-memory-size`:
+
+| Program | N | Completes under | vs. the bump heap at the same N |
+|---|---|---|---|
+| hello world | — | 64 KiB — the wasm engine's own floor: a smaller cap refuses to instantiate any module at all, `memory minimum size of 1 pages exceeds memory limits`, before a single instruction of any program runs | unchanged — already the floor |
+| a loop building one string per iteration | 10⁵ | 64 KiB | 104× less |
+| a request loop | 10⁵ | 64 KiB | 1 109× less |
+| the same loop as `Async`s | 10⁵ | 64 KiB | 512× less |
+| a page render | 10⁴ | 64 KiB | 2 685× less |
+
+Every one of decision 448's five shapes, run at the same N its own table
+measured, now fits the wasm engine's own instantiation floor — a number that
+has nothing to do with any of these programs' data, since it is hello
+world's floor too. `tests/wat_memory.zig` is the oracle: the request-loop row
+is decision 544's own `request_loop` case (§ below), the string-loop row its
+`ten_million_allocations` case (run at 2 500 000, ten times past this table's
+N, under the file's fixed 2 MiB cap rather than this floor); the `Async`-loop
+and page-render rows have no existing case to stand on them, so two tests
+hold them directly — "an @Async loop's memory need stays flat as the request
+count grows" and "a page render's memory need stays flat as the page count
+grows" — each completing under that same fixed cap at both a small N and a
+hundred-to-thousand-times-larger one. Nothing in this table grows with N any
+more: a collection point frees what a finished request or a rendered page
+leaves behind, so a server built this way is bounded by how many requests or
+pages are live at once, never by how many it has answered so far.
+
+- **Exhaustion still traps, never damaged data** (decision 448 (4), carried by
+  544): past the cap a GC allocation ends the run with `GC heap out of
+  memory: no capacity for allocation of N bytes`, and `memory.grow` answers
+  `-1` — the collector runs first, so no program meets `$__alloc`'s
+  `unreachable` any more; that trap belonged to the bump heap alone.
+- **A value is still not written after it is made** (448 (2)): `push` answers
+  a copy with the element appended, concatenation and a std-wasm call answer
+  fresh values, so a collection never has to chase a pointer into a younger
+  generation except through the named exceptions — a `var`'s cell and the
+  language runtime's own records (a task's state, waiters and value), written
+  after they are made.
+- **onze's pages do not build on wasm** (unchanged by this step): `examples/blog`
+  (`wasi`) is refused in 67 modules — its element library's element module
+  (`the wasm backend walks an array or a range; nothing shows this iterable is
+  one`), std's `json` and `io/fs` (`fs.readText` has no `.Wasm(…)`). The page
+  render above is their shape (an element tree rendered to a string); onze is
+  measured when its pages build.
 
 ### Under the GC model: the store limiter (front 230 s1)
 
@@ -1748,6 +1779,84 @@ lowering bypassed:
 Each completes under a cap of 64 KiB too (the smallest the measurement
 tried): their live data is a few values. A string doubled to 64 MiB of live
 data ends with the GC heap's refusal under the same cap — the oracle can fail.
+
+Front 230 s2 added two more tests beside decision 544's four cases, for the
+two shapes of § How far a program grows without collection's table that no
+existing case stands on ("an @Async loop's memory need stays flat as the
+request count grows", "a page render's memory need stays flat as the page
+count grows"): each runs its program at a small N and at a hundred-to-
+thousand-times-larger one under the same fixed 2 MiB cap, so the file holds
+every row of that table's replacement, not only the request-loop and
+string-loop rows decision 544 already covered.
+
+## The std-wasm boundary's marshal, measured (front 170 s7's box, carried by front 230 s2 — a stopgap until front 229 s10 deletes the boundary)
+
+A GC module's call into std-wasm is one of two kinds (`emitStdCall`, above):
+a `.wat` leaf (decision 549) takes and answers the module's own GC values with
+no conversion at all, and everything else — most of std-wasm's surface —
+crosses into std-wasm's linear memory marshalled: a string or `bytes`
+argument copied byte by byte into the marshal arena (`$__gc_to_lin_str`), a
+string or `bytes` answer copied byte by byte back out into a fresh GC value
+(`$__lin_to_gc_str`), a `string[]` through `gcMarshalStrs`, a `bigint`
+through its own wrapper (`gcStdWrapper`, decision 1021 (10)), and the marshal
+arena's `$__heap_ptr` saved before the call and restored after, since
+std-wasm never calls back and nothing it allocates outlives the call. An
+`i32` / `i64` / `f64` argument or answer crosses for free — no conversion,
+no copy.
+
+**What crosses marshalled today** (counted 2026-11-03 against `std_leaves.zig`
+and `root.zig` at `feat`): of std-wasm's 42 `root.exports` functions (the
+`std:`-bound ones a declaration may name), 9 are also `.wat` leaves and so
+cross for free in a GC module (`text.length`, `charCodeAt`, `byteLength`,
+`byteAt`, `byteSlice`, `fromCodepoint`, `random.float`, `seed`,
+`seededFloat` — decision 549's rule: a name that is a leaf and still an
+export is the leaf's in a WasmGC module); the other **33 still marshal**
+every call. Three more functions the wasm codegen calls directly, never
+through a declaration (`root.program`, never `std:`-bound) also marshal —
+`text.slice`, `bytes.slice`, `bytes.isUtf8` — plus `bigint`'s eleven
+(`add`, `negate`, `multiply`, `divmod`, `compare`, `equalOptional`, `ofI64`,
+`toI64`, `toF64`, `toString`, `parse`), each through its own wrapper. **47
+distinct std-wasm functions marshal every call they answer; 15 do not**
+(the leaves of `modules/std-wasm/AGENTS.md`'s own table). An array's own
+methods (`push`, `slice`, `concat`, `join`, …) do not reach this boundary in
+a GC module either, but not because `emitStdCall` marshals them: `lowerArrayMethod`
+tries `gcArrayMethod` first in `.gc` mode — the module's own GC array
+instructions — and only a method it does not cover there falls through to
+`emitStdCall("array.…")`, which `gcStdSig` has no row for (`root.program`'s
+`array.*` entries are the LINEAR backend's own call, never bound by a `std:`
+cell): that call does not marshal either, it ends the whole module's `.gc`
+attempt and re-lowers it `.linear` (`error.GcFallback`, `printLinearNote`) —
+a different, module-wide cost this section does not measure.
+
+**The cost of a marshalled string, read from `wat_prelude.zig`'s
+`$__gc_to_lin_str` / `$__lin_to_gc_str`** (the two helpers every marshalled
+string or `bytes` value passes through, each a byte-by-byte loop — no bulk
+`array.copy`): a string **argument** costs a fixed ~12 instructions (the
+length read, the arena bump through `$__alloc`, the length word stored) plus
+~16 instructions per byte copied into the arena; a string **answer** costs a
+fixed ~7 instructions (a fresh GC string allocated, its length read) plus
+~16 instructions per byte copied out of it. A call with one string argument
+and a string answer — `text.trim`, say — pays both: ~19 fixed instructions
+plus ~32 per byte of the two strings combined, on top of the 4 instructions
+every marshalled call pays regardless (`$__heap_ptr` saved and restored). A
+scalar (`i32` / `i64` / `f64`) argument or answer costs none of this. This is
+exact, not sampled: every marshalled call runs the same fixed shape, so the
+count above is the whole cost — there is no second path a call could take.
+
+**Where this runs today, live**: `request_loop` (decision 544's case, § Under
+the GC model: the store limiter, above) calls two marshalled functions every
+request — `line.split(" ")` (`text.split`, a `string[]` answer, `gcMarshalStrs`)
+and `r.method.toUpper()` (`text.toUpper`, a string argument and a string
+answer, the shape just measured) — so the boundary this section measures is
+not theoretical: it runs in an oracle case already green on every gate.
+
+This whole section is a stopgap: it exists only because the boundary still
+exists. Once the boundary is deleted (front 229 s10, or whichever later step
+does it) every one of these 47 functions either becomes a `.wat` leaf of its
+own — as front 164 s3 already turned 15 others into leaves — or moves into
+botopink bodies the GC backend lowers directly with no std-wasm call at all
+(the direction decision 566 plans for some `String` methods), and this
+section is removed rather than re-measured.
 
 ## `Bytes` (decision 346)
 

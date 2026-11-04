@@ -149,3 +149,124 @@ test "wat memory: a value that outgrows the cap ends the run with the GC heap's 
     try std.testing.expectEqualStrings("", capped.stdout orelse "");
     try std.testing.expect(std.mem.startsWith(u8, capped.trap orelse "", "GC heap out of memory"));
 }
+
+/// Front 230 s2 — decision 448's own table (measured before any collector
+/// existed) carried an `@Async` loop and a page render alongside the string
+/// and request loops decision 544's four cases above already stand for; ones
+/// its replacement needs under the GC model too. `n` is the request count
+/// (`serve`'s argument) — the per-request task record and its frame die with
+/// the request, as decision 448's row already found.
+fn asyncLoopSrc(a: std.mem.Allocator, n: u32) ![]u8 {
+    const prefix =
+        \\import {io.terminal} from "std";
+        \\
+        \\async fn handle(i: i32) -> Async<string> {
+        \\    return "resp-" + i.toString();
+        \\}
+        \\
+        \\async fn serve(n: i32) -> Async<void> {
+        \\    var total = 0;
+        \\    var i = 0;
+        \\    while (i < n) {
+        \\        val s = await handle(i);
+        \\        total = total + s.length;
+        \\        i = i + 1;
+        \\    }
+        \\    terminal.print(total);
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    serve(
+    ;
+    const suffix =
+        \\);
+        \\}
+    ;
+    return std.fmt.allocPrint(a, "{s}{d}{s}", .{ prefix, n, suffix });
+}
+
+/// Decision 448's page render: ten records of three nodes each (`attrs`,
+/// `children`), rendered to HTML by `map` / `join` / concatenation. `n` is
+/// the page count — each page's ten records die once its HTML is built.
+fn pageRenderSrc(a: std.mem.Allocator, n: u32) ![]u8 {
+    const prefix =
+        \\import {io.terminal} from "std";
+        \\
+        \\type Node(tag: string, text: string)
+        \\type Card(attrs: Node[], children: Node[])
+        \\
+        \\fn renderNode(n: Node) -> string {
+        \\    return "<" + n.tag + ">" + n.text + "</" + n.tag + ">";
+        \\}
+        \\
+        \\fn renderCard(c: Card) -> string {
+        \\    val attrs = c.attrs.map({ n -> renderNode(n) }).join("");
+        \\    val children = c.children.map({ n -> renderNode(n) }).join("");
+        \\    return "<div" + attrs + ">" + children + "</div>";
+        \\}
+        \\
+        \\fn page() -> Card[] {
+        \\    var cards: Card[] = [];
+        \\    var i = 0;
+        \\    while (i < 10) {
+        \\        cards.push(Card(
+        \\            attrs: [Node(tag: "a", text: "x"), Node(tag: "b", text: "y"), Node(tag: "c", text: "z")],
+        \\            children: [Node(tag: "p", text: "hello"), Node(tag: "p", text: "world"), Node(tag: "p", text: "!")]
+        \\        ));
+        \\        i = i + 1;
+        \\    }
+        \\    return cards;
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    var total = 0;
+        \\    var p = 0;
+        \\    while (p <
+    ;
+    const suffix =
+        \\) {
+        \\        val html = page().map({ c -> renderCard(c) }).join("");
+        \\        total = total + html.length;
+        \\        p = p + 1;
+        \\    }
+        \\    terminal.print(total);
+        \\}
+    ;
+    return std.fmt.allocPrint(a, "{s}{d}{s}", .{ prefix, n, suffix });
+}
+
+test "wat memory: an @Async loop's memory need stays flat as the request count grows" {
+    const a = std.testing.allocator;
+    const small = try asyncLoopSrc(a, 1_000);
+    defer a.free(small);
+    const large = try asyncLoopSrc(a, 100_000);
+    defer a.free(large);
+
+    const o_small = try runProgram(a, small, .{ .stdout = .capture, .memory_limit = cap });
+    defer o_small.deinit(a);
+    try std.testing.expectEqual(@as(i32, 0), o_small.status);
+    try std.testing.expectEqualStrings("7890\n", o_small.stdout orelse "");
+
+    const o_large = try runProgram(a, large, .{ .stdout = .capture, .memory_limit = cap });
+    defer o_large.deinit(a);
+    try std.testing.expectEqual(@as(i32, 0), o_large.status);
+    try std.testing.expectEqualStrings("988890\n", o_large.stdout orelse "");
+}
+
+test "wat memory: a page render's memory need stays flat as the page count grows" {
+    const a = std.testing.allocator;
+    const small = try pageRenderSrc(a, 10);
+    defer a.free(small);
+    const large = try pageRenderSrc(a, 10_000);
+    defer a.free(large);
+
+    const o_small = try runProgram(a, small, .{ .stdout = .capture, .memory_limit = cap });
+    defer o_small.deinit(a);
+    try std.testing.expectEqual(@as(i32, 0), o_small.status);
+    try std.testing.expectEqualStrings("6700\n", o_small.stdout orelse "");
+
+    const o_large = try runProgram(a, large, .{ .stdout = .capture, .memory_limit = cap });
+    defer o_large.deinit(a);
+    try std.testing.expectEqual(@as(i32, 0), o_large.status);
+    try std.testing.expectEqualStrings("6700000\n", o_large.stdout orelse "");
+}
