@@ -6,3 +6,5 @@ Cells in this repository that also bear on it: `modules/decisions-taken/decorato
 
 
 [cases/decorator_member_reaches_decorator_imports/src/main.bp](cases/decorator_member_reaches_decorator_imports/src/main.bp)
+
+[cases/decorator_member_passes_type_to_its_module/src/main.bp](cases/decorator_member_passes_type_to_its_module/src/main.bp)

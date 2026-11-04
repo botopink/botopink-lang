@@ -1,0 +1,32 @@
+//// The decorator lives in a module of its own, beside `resolveAs`, which takes
+//// a type through `t: type<T>`. The member it writes as text passes each
+//// field's type to `resolveAs` by name; the call resolves here, where the
+//// member was written (decision 669), and `T` binds the type.
+
+import {compiler} from "std";
+
+pub fn resolveAs<T>(t: type<T>, make: fn() -> T) -> T {
+    return make();
+}
+
+pub fn fresh(syntax decl: unknown) -> void {
+    var args: array<string> = [];
+    compiler
+        .fields(decl)
+        .forEach({ f ->
+            args.push(f.name
+                + ": resolveAs("
+                + f.typeName
+                + ", { -> "
+                + f.typeName
+                + "(n: 7) })");
+        });
+    val name = compiler.name(decl)!;
+    compiler.addMember("pub fn new() -> "
+        + name
+        + " { return "
+        + name
+        + "("
+        + args.join(", ")
+        + "); }");
+}

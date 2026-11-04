@@ -162,6 +162,59 @@ test "decorator invocation: a raise in another module's decorator body names the
     try std.testing.expectEqual([2]usize{ 2, 3 }, [2]usize{ got.line, got.col });
 }
 
+test "decorator invocation: another module's text member passes a type to its module's type<T> function" {
+    // 144 B-249: the member's call names the decorator module's function by
+    // its hygiene alias (decision 669); the alias carries the declaration, so
+    // `ProbeRepo` where `t: type<T>` takes it binds `T` to the type, never to
+    // its constructor (`type mismatch: expected ProbeRepo, got function`).
+    const deco =
+        \\import {compiler, failure.panic} from "std";
+        \\
+        \\pub fn resolveAs<T>(t: type<T>, make: fn() -> T) -> T {
+        \\    val v = make();
+        \\    if (v is t) return v;
+        \\    return panic("not the type");
+        \\}
+        \\
+        \\pub fn fresh(syntax decl: unknown) -> void {
+        \\    var args: array<string> = [];
+        \\    compiler.fields(decl).forEach({ f ->
+        \\        args.push(f.name + ": resolveAs(" + f.typeName + ", { -> " + f.typeName + "(n: 7) })");
+        \\    });
+        \\    val name = compiler.name(decl)!;
+        \\    compiler.addMember("pub fn new() -> " + name + " { return " + name + "(" + args.join(", ") + "); }");
+        \\}
+    ;
+    const src =
+        \\import {deco.fresh};
+        \\
+        \\pub type ProbeRepo(n: i32)
+        \\
+        \\#[fresh]
+        \\pub type ProbeMachine(repo: ProbeRepo)
+        \\
+        \\pub fn main() -> i32 {
+        \\    return ProbeMachine.new().repo.n;
+        \\}
+    ;
+    const io = std.testing.io;
+    const build_root = h.buildRootPathFromSrc(io, @src());
+    var session = try comptimeMod.compile(std.testing.allocator, &.{
+        .{ .path = "deco", .source = deco },
+        .{ .path = "", .source = src },
+    }, io, build_root);
+    defer session.deinit(std.testing.allocator);
+    const outcome = for (session.outputs.items) |o| {
+        if (std.mem.eql(u8, o.name, "main")) break o.outcome;
+    } else return error.TestNoMainOutput;
+    if (outcome == .typeError) {
+        const message = try outcome.typeError.message(std.testing.allocator);
+        defer std.testing.allocator.free(message);
+        std.debug.print("\nunexpected type error: {s}\n", .{message});
+    }
+    try std.testing.expect(outcome == .ok);
+}
+
 test "decorator invocation: round trip ---- a @Decl handle carries fields, methods, variants and annotations" {
     // Front 14 step 3: the handle reaches the body as `main/1`'s argument (an
     // external term); the body reads every part back and emits it, and the reply

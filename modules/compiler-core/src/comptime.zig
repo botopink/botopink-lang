@@ -1767,6 +1767,7 @@ fn analyzeMerged(
         else => return err,
     };
     try written_names.bindRecorded(&env, hygiene);
+    try bindRecordedFnDecls(&env, hygiene, templateRegistry);
     const with_expansions = withExpansionImports(arena, &env, unadopted, mod.package, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry) catch |err| switch (err) {
         error.TypeError => {
             const te = env.lastError orelse validation.TypeError{ .kind = .{ .unboundVariable = "" } };
@@ -3751,6 +3752,25 @@ fn importTemplateAliasClosures(
 
 fn conflictCarrier(message: []const u8) ast.FnDecl {
     return .{ .name = message, .isPub = false, .genericParams = &.{}, .params = &.{}, .returnType = null, .body = &.{} };
+}
+
+/// 144 B-249 — each value a member written elsewhere reads, bound by the
+/// re-analysis under its hygiene alias (`written_names.bindRecorded`), also
+/// carries its declaration under that alias, as an import item binding it
+/// does (`resolveImports`): its parameters as written, so a type written where
+/// its `type<T>` parameter takes it is typed as the type, never as the type's
+/// constructor function (`expected ProbeRepo, got function`), and a function
+/// copied per type argument is copied here for the alias's calls too.
+fn bindRecordedFnDecls(env: *envMod.Env, recorded: []const envMod.HygieneImport, templateRegistry: *const std.StringHashMap(ast.FnDecl)) !void {
+    for (recorded) |h| {
+        if (h.isType or !env.templateImports.contains(h.alias)) continue;
+        if (env.importedFnDecls.contains(h.alias)) continue;
+        const pfn = templateRegistry.get(try defaultParamsKey(env.arena, h.module, h.name)) orelse continue;
+        try env.fnParams.put(h.alias, pfn.params);
+        try env.importedFnDecls.put(env.arena, h.alias, pfn);
+        if (try hooksMod.isExpandedFn(env.arena, pfn)) try env.expandedImports.put(env.arena, h.alias, .{ .decl = pfn, .owner = h.module });
+        if (try type_token.copiedPerType(env.arena, pfn)) try env.tokenImports.put(env.arena, h.alias, .{ .decl = pfn, .owner = h.module });
+    }
 }
 
 /// The `templateRegistry` key of the parameter list, as written, of the `pub fn`

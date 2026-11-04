@@ -39,5 +39,6 @@ fn runCase(comptime name: string) -> void {
 
 pub async fn main() -> Async<Result<void, string>> {
     runCase("decorator_member_reaches_decorator_imports");
+    runCase("decorator_member_passes_type_to_its_module");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

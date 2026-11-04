@@ -1,0 +1,16 @@
+//// Decision 669 — `#[fresh]`'s member passes the field's type to `resolveAs`,
+//// a `t: type<T>` function of the decorator's module; `T` binds the type, not
+//// its constructor function.
+
+pub mod factory;
+import {factory.fresh};
+import {io.terminal.print} from "std";
+
+pub type ProbeRepo(n: i32)
+
+#[fresh]
+pub type ProbeMachine(repo: ProbeRepo)
+
+pub fn main() -> void {
+    print(ProbeMachine.new().repo.n);
+}
