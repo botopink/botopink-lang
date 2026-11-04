@@ -7724,6 +7724,32 @@ test "wat: gc ---- an empty array literal with no annotation reads the element a
     );
 }
 
+// Front 170 s7 P5-b (decision 1105 (2)) — `xs.join(sep)` over an `f64[]`
+// used to leave `.gc` entirely: `gcArrayOp`'s native join covered only
+// `i32` / `bool` / a string `any`, so a float array fell through to
+// `lowerArrayMethod`'s linear-only tail, whose very first step
+// (`lowerCoerced(recv, .i32)`, coercing the GC array ref to a scalar) failed
+// with `gcFail("convert ref")` and re-lowered the WHOLE module `.linear`
+// (`wasm: main lowered .linear: convert ref at …`) — not a report naming
+// `array.joinFloats` at all, since the module never got that far. The float
+// element now crosses the std-wasm boundary as the free `f64` it already is
+// and `number.floatToString` marshals its `string` answer back — the one
+// scalar marshal this fix needed, never a wider one (per 1105 (2), since
+// Ryu's text has no fixed GC leaf yet).
+test "wat: gc ---- a float array's `join` stays GC, through `number.floatToString`'s scalar marshal (front 170 s7 P5-b)" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\pub fn main() -> void {
+        \\    val xs: f64[] = [1.5, 2.5, 3.5];
+        \\    print(xs.join(","));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\1.5,2.5,3.5
+        \\
+    );
+}
+
 // Front 170 s7 P5-d — P5-a's measurement table's second-biggest GC-gap
 // reason, 73 occurrences across 25 members: "a tuple element of a value of
 // no known tuple type", from `libraries/validation`'s own use of

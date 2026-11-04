@@ -1840,6 +1840,37 @@ cell): that call does not marshal either, it ends the whole module's `.gc`
 attempt and re-lowers it `.linear` (`error.GcFallback`, `printLinearNote`) —
 a different, module-wide cost this section does not measure.
 
+**Front 170 s7 P5-b (decision 1105 (2)).** `array.*` has no per-element-class
+leaf of its own: `gcArrOp`'s per-class helpers (`__arr_<op>_<cls>`) are
+already the GC-native answer for almost every array method, written once in
+Zig rather than read from a hand-written `.wat` file, because a single leaf
+named `array.slice` (say) cannot serve three different GC array types
+(`$arr_i32`, `$arr_f64`, `$arr_any`) the way the LINEAR backend's one generic
+word-slot function does — `gcArrOp` picks the right helper by `cls` where a
+file-based leaf could not. The one gap this left in `join` (`xs.join(sep)`
+over an `f64[]`, counted in the measurement above as module-wide `.linear`
+fallback, not a named `array.joinFloats` marshal: `lowerArrayMethod`'s
+linear-only tail fails at its own first step, `lowerCoerced(recv, .i32)`
+coercing the GC array ref to a scalar, `gcFail("convert ref")`, before
+`emitStdCall` is ever reached) is closed without a new leaf: `gcArrOp`'s
+`join` now handles `cls == .f64` by crossing the one `f64` element into
+std-wasm as the free scalar it already is and letting `number.floatToString`
+marshal its `string` answer back (`emitStdCall`'s own temps are the
+lowering CURRENTLY active's locals, so this is written by hand with two
+named locals, `jv` / `jtop`, in `__arr_join_f64`'s own static list, never
+through `emitStdCall` itself). `number.floatToString` has no `.wat` leaf
+(Ryu's text is not hand-writable there yet), so per 1105 (2)'s own rule this
+stays the existing scalar marshal, never a wider one. **Still open**, found
+the same way (`gcFail("convert ref")`, never a named `array.*` marshal
+refusal): `xs.zip(ys)` of two arrays whose element class is `any` and not a
+string (records, tuples) — `gcArrZip` would handle it (it only boxes a
+non-`any` class), but `gcArrayOp`'s own gate requires `er.isStr()` for `any`,
+untouched here since relaxing it also touches how the zipped tuple's element
+shape is read by later print/pattern code, outside this step's boundary
+scope. (A GC array stored in a record field reaching this same linear-only
+tail — `someRecord.field.pop()` — was this gap's other instance; it closed
+separately, in GC form through `struct.get` / `struct.set`, not a leaf.)
+
 **The cost of a marshalled string, read from `wat_prelude.zig`'s
 `$__gc_to_lin_str` / `$__lin_to_gc_str`** (the two helpers every marshalled
 string or `bytes` value passes through, each a byte-by-byte loop — no bulk

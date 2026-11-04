@@ -10725,7 +10725,27 @@ const Emitter = struct {
                     const else_seq = self.seal(&else_c, .{ .value = sti });
                     try self.emit(.{ .@"if" = .{ .result = sti, .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
                 },
-                else => try self.emit(.{ .call = try self.gcI32ToStr() }),
+                // Front 170 s7 P5-b — a float array's `join`: the element
+                // crosses the std-wasm boundary as the free `f64` it already
+                // is, and `number.floatToString` marshals its `string`
+                // answer back (decision 1105 (2) — Ryu's text has no fixed
+                // GC leaf yet, so this is the scalar marshal, not a wider
+                // one). Written by hand rather than through `emitStdCall`:
+                // that helper's own temps are the lowering CURRENTLY
+                // active's locals (`gcTemp` → `declareLocal` →
+                // `pending_locals`), never this helper's own static list —
+                // `jv` / `jtop` are declared below instead.
+                .f64 => {
+                    try self.emit(lset("jv"));
+                    try self.emit(.{ .global_get = heap_ptr });
+                    try self.emit(lset("jtop"));
+                    try self.emit(lget("jv"));
+                    try self.emit(try self.stdCallLinked("number.floatToString"));
+                    try self.emit(self.builder().helper(.lin_to_gc_str));
+                    try self.emit(lget("jtop"));
+                    try self.emit(.{ .global_set = heap_ptr });
+                },
+                .i32 => try self.emit(.{ .call = try self.gcI32ToStr() }),
             }
             try self.emit(self.builder().helper(.str_concat));
             try self.emit(lset("acc"));
@@ -10737,7 +10757,11 @@ const Emitter = struct {
             const loop_seq = self.seal(&body, .terminated);
             try self.gcLoop(loop_seq);
             try self.emit(lget("acc"));
-            try self.gcFinishFn(name, &.{ P("xs", at), P("sep", sti) }, sti, &.{ .{ .name = "n", .ty = .i32 }, .{ .name = "i", .ty = .i32 }, .{ .name = "acc", .ty = sti } }, &c);
+            const join_locals: []const wat.Local = if (cls == .f64)
+                &.{ .{ .name = "n", .ty = .i32 }, .{ .name = "i", .ty = .i32 }, .{ .name = "acc", .ty = sti }, .{ .name = "jv", .ty = .f64 }, .{ .name = "jtop", .ty = .i32 } }
+            else
+                &.{ .{ .name = "n", .ty = .i32 }, .{ .name = "i", .ty = .i32 }, .{ .name = "acc", .ty = sti } };
+            try self.gcFinishFn(name, &.{ P("xs", at), P("sep", sti) }, sti, join_locals, &c);
         } else return self.gcFail("an array operation with no GC form");
         return name;
     }
@@ -10933,7 +10957,7 @@ const Emitter = struct {
             return true;
         }
         if (eq(u8, name, "join") and cc.args.len == 1) {
-            if (!(cls == .i32 or cls == .bool or (cls == .any and er.isStr()))) return false;
+            if (!(cls == .i32 or cls == .bool or cls == .f64 or (cls == .any and er.isStr()))) return false;
             try self.lowerCoerced(recv, ar);
             try self.lowerCoerced(callArg(cc, 0).?, Repr.string);
             try self.emit(.{ .call = try self.gcArrOp("join", cls) });
