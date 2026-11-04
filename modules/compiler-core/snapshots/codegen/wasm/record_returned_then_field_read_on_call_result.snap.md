@@ -20,7 +20,8 @@ fn lineNo() -> i32 {
     (type $arr_any (sub (array (mut anyref))))
     (type $tuple (sub final $arr_any (array (mut anyref))))
     (type $box_i32 (sub (struct (field $v i32))))
-    (type $box_i64 (struct (field $v i64)))
+    (type $box_i64 (sub (struct (field $v i64))))
+    (type $box_u64 (sub final $box_i64 (struct (field $v i64))))
     (type $box_f64 (struct (field $v f64)))
     (type $box_bool (sub final $box_i32 (struct (field $v i32))))
     (type $box_big (struct (field $v (ref null $str))))
@@ -51,7 +52,7 @@ fn lineNo() -> i32 {
     i32.const 4
     i32.const 9
     i32.const 2
-    call $__new_23
+    call $__new_24
     return
   )
   (func $lineNo (result i32)
@@ -390,14 +391,14 @@ fn lineNo() -> i32 {
     global.set $__s6
     call $__init_types
   )
-  (func $__new_23 (param $f0 i32) (param $f1 i32) (param $f2 i32) (result (ref null $rec_Span))
-    global.get $__ti_23
+  (func $__new_24 (param $f0 i32) (param $f1 i32) (param $f2 i32) (result (ref null $rec_Span))
+    global.get $__ti_24
     local.get $f0
     local.get $f1
     local.get $f2
     struct.new $rec_Span
   )
-  (global $__ti_23 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_24 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tip1 $__tie1)
   (func $__init_types
     global.get $__s6
@@ -406,8 +407,8 @@ fn lineNo() -> i32 {
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_23
-    global.get $__ti_23
+    global.set $__ti_24
+    global.get $__ti_24
     call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")

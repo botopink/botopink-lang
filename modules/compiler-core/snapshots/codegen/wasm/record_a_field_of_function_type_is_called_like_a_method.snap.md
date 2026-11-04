@@ -29,7 +29,8 @@ import {io.terminal.print} from "std";
     (type $arr_any (sub (array (mut anyref))))
     (type $tuple (sub final $arr_any (array (mut anyref))))
     (type $box_i32 (sub (struct (field $v i32))))
-    (type $box_i64 (struct (field $v i64)))
+    (type $box_i64 (sub (struct (field $v i64))))
+    (type $box_u64 (sub final $box_i64 (struct (field $v i64))))
     (type $box_f64 (struct (field $v f64)))
     (type $box_bool (sub final $box_i32 (struct (field $v i32))))
     (type $box_big (struct (field $v (ref null $str))))
@@ -72,7 +73,7 @@ import {io.terminal.print} from "std";
     i32.const 0
     local.get $v ;; capture v
     struct.new $env0
-    call $__new_24
+    call $__new_25
     return
   )
   (func $main (export "main")
@@ -952,13 +953,13 @@ import {io.terminal.print} from "std";
     global.set $__s7
     call $__init_types
   )
-  (func $__new_24 (param $f0 i32) (param $f1 (ref null $closure)) (result (ref null $rec_Cell))
-    global.get $__ti_24
+  (func $__new_25 (param $f0 i32) (param $f1 (ref null $closure)) (result (ref null $rec_Cell))
+    global.get $__ti_25
     local.get $f0
     local.get $f1
     struct.new $rec_Cell
   )
-  (global $__ti_24 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_25 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tip3 $__tie3)
   (func $__init_types
     global.get $__s7
@@ -967,8 +968,8 @@ import {io.terminal.print} from "std";
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_24
-    global.get $__ti_24
+    global.set $__ti_25
+    global.get $__ti_25
     call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")

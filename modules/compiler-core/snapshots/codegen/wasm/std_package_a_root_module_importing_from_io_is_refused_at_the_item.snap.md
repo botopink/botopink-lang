@@ -331,7 +331,8 @@ test "path.isInside treats a name starting with two dots as a name" {
     (type $arr_any (sub (array (mut anyref))))
     (type $tuple (sub final $arr_any (array (mut anyref))))
     (type $box_i32 (sub (struct (field $v i32))))
-    (type $box_i64 (struct (field $v i64)))
+    (type $box_i64 (sub (struct (field $v i64))))
+    (type $box_u64 (sub final $box_i64 (struct (field $v i64))))
     (type $box_f64 (struct (field $v f64)))
     (type $box_bool (sub final $box_i32 (struct (field $v i32))))
     (type $box_big (struct (field $v (ref null $str))))
@@ -1311,7 +1312,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     local.get $baseParts
     local.get $pieces
     call $applyPieces
-    call $__new_23
+    call $__new_24
     return
   )
   (func $resolveAll (param $segments (ref null $arr_any)) (param $i i32) (param $state (ref null $rec_PathAccum)) (result (ref null $rec_PathAccum))
@@ -1383,7 +1384,7 @@ test "path.isInside treats a name starting with two dots as a name" {
     i32.const 0
     i32.const 0
     array.new_fixed $arr_any 0
-    call $__new_23
+    call $__new_24
     call $resolveAll
     local.set $finalState
     local.get $finalState
@@ -3099,13 +3100,13 @@ test "path.isInside treats a name starting with two dots as a name" {
     call $__init_types
     call $__init_globals
   )
-  (func $__new_23 (param $f0 i32) (param $f1 (ref null $arr_any)) (result (ref null $rec_PathAccum))
-    global.get $__ti_23
+  (func $__new_24 (param $f0 i32) (param $f1 (ref null $arr_any)) (result (ref null $rec_PathAccum))
+    global.get $__ti_24
     local.get $f0
     local.get $f1
     struct.new $rec_PathAccum
   )
-  (global $__ti_23 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_24 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tip2 $__tie2)
   (func $__init_types
     global.get $__s23
@@ -3114,8 +3115,8 @@ test "path.isInside treats a name starting with two dots as a name" {
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_23
-    global.get $__ti_23
+    global.set $__ti_24
+    global.get $__ti_24
     call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")
@@ -3252,7 +3253,8 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
     (type $arr_any (sub (array (mut anyref))))
     (type $tuple (sub final $arr_any (array (mut anyref))))
     (type $box_i32 (sub (struct (field $v i32))))
-    (type $box_i64 (struct (field $v i64)))
+    (type $box_i64 (sub (struct (field $v i64))))
+    (type $box_u64 (sub final $box_i64 (struct (field $v i64))))
     (type $box_f64 (struct (field $v f64)))
     (type $box_bool (sub final $box_i32 (struct (field $v i32))))
     (type $box_big (struct (field $v (ref null $str))))
@@ -3394,7 +3396,7 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
     i32.const 1
     local.get $m__1
     global.get $__s0
-    call $__new_24
+    call $__new_25
     struct.new $result
     return
       )
@@ -3561,7 +3563,7 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
     i32.const 1
     local.get $m__3
     global.get $__s0
-    call $__new_24
+    call $__new_25
     struct.new $result
     return
       )
@@ -4459,13 +4461,13 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
     global.set $__s6
     call $__init_types
   )
-  (func $__new_24 (param $f0 (ref null $str)) (param $f1 (ref null $str)) (result (ref null $rec_Failure))
-    global.get $__ti_24
+  (func $__new_25 (param $f0 (ref null $str)) (param $f1 (ref null $str)) (result (ref null $rec_Failure))
+    global.get $__ti_25
     local.get $f0
     local.get $f1
     struct.new $rec_Failure
   )
-  (global $__ti_24 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_25 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tip4 $__tie4)
   (func $__init_types
     global.get $__s6
@@ -4474,8 +4476,8 @@ async fn attemptTaskOnWasm<T>(f: fn() -> Async<T>) -> Async<Result<T, Failure>> 
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_24
-    global.get $__ti_24
+    global.set $__ti_25
+    global.get $__ti_25
     call $__ti_register
   )
   (@custom "botopink.needs" "exceptions\0agc\0a")
@@ -4912,7 +4914,8 @@ fn wholeOf(v: f64) -> i32 {
     (type $arr_any (sub (array (mut anyref))))
     (type $tuple (sub final $arr_any (array (mut anyref))))
     (type $box_i32 (sub (struct (field $v i32))))
-    (type $box_i64 (struct (field $v i64)))
+    (type $box_i64 (sub (struct (field $v i64))))
+    (type $box_u64 (sub final $box_i64 (struct (field $v i64))))
     (type $box_f64 (struct (field $v f64)))
     (type $box_bool (sub final $box_i32 (struct (field $v i32))))
     (type $box_big (struct (field $v (ref null $str))))
@@ -9306,7 +9309,8 @@ test "fs answers PermissionDenied for an OS permission error" {
     (type $arr_any (sub (array (mut anyref))))
     (type $tuple (sub final $arr_any (array (mut anyref))))
     (type $box_i32 (sub (struct (field $v i32))))
-    (type $box_i64 (struct (field $v i64)))
+    (type $box_i64 (sub (struct (field $v i64))))
+    (type $box_u64 (sub final $box_i64 (struct (field $v i64))))
     (type $box_f64 (struct (field $v f64)))
     (type $box_bool (sub final $box_i32 (struct (field $v i32))))
     (type $box_big (struct (field $v (ref null $str))))
@@ -10598,7 +10602,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     (if (result anyref)
       (then
     local.get $path
-    call $__new_41
+    call $__new_42
     return
       )
       (else
@@ -10642,7 +10646,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     (if (result anyref)
       (then
     local.get $path
-    call $__new_45
+    call $__new_46
     return
       )
       (else
@@ -10686,7 +10690,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     (if (result anyref)
       (then
     local.get $path
-    call $__new_37
+    call $__new_38
     return
       )
       (else
@@ -10710,7 +10714,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     (if (result anyref)
       (then
     local.get $path
-    call $__new_39
+    call $__new_40
     return
       )
       (else
@@ -10734,7 +10738,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     (if (result anyref)
       (then
     local.get $path
-    call $__new_33
+    call $__new_34
     return
       )
       (else
@@ -10745,7 +10749,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     local.get $path
     local.get $e
     struct.get $rec_HostError $f0
-    call $__new_43
+    call $__new_44
     return
   )
   ;; A host cell's answer, its failure read as an `FsError` of `path`.
@@ -11177,7 +11181,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     i32.const 1
     local.get $path
     local.get $offset
-    call $__new_35
+    call $__new_36
     struct.new $result
     return
       )
@@ -11650,7 +11654,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     array.new_fixed $arr_any 3
     global.get $__s0
     call $__arr_join_any
-    call $__new_43
+    call $__new_44
     struct.new $result
     return
       )
@@ -12289,7 +12293,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     local.get $offset
     global.get $__s33
     call $__i64_add_chk
-    call $__new_35
+    call $__new_36
     struct.new $result
     struct.set $gen $value ;; the yitem
     local.get $__frame
@@ -12544,7 +12548,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     local.get $self
     struct.get $rec_File $f0
     global.get $__s35
-    call $__new_43
+    call $__new_44
     struct.new $result
     return
       )
@@ -12612,7 +12616,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     i32.const 0
     local.get $path
     local.get $h
-    call $__new_29
+    call $__new_30
     struct.new $result
     return
   )
@@ -12641,7 +12645,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     i32.const 0
     local.get $path
     local.get $h
-    call $__new_29
+    call $__new_30
     struct.new $result
     return
   )
@@ -12655,7 +12659,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     local.get $asset
     struct.get $rec_Asset $f1
     call $memoryHandle
-    call $__new_29
+    call $__new_30
     return
   )
   ;; ── the wasm bodies (decision 992) ───────────────────────────────────────────
@@ -12936,7 +12940,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     global.get $__s104
     i32.const 0 ;; HostErrorName.Error
     ref.null $str
-    call $__new_27
+    call $__new_28
     return
   )
   ;; The `Ok` of a leaf's answer, its `Error` the `HostError` of the code.
@@ -15116,7 +15120,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     local.get $kind
     i32.const 3
     i32.eq
-    call $__new_31
+    call $__new_32
     struct.new $result
     return
   )
@@ -15445,7 +15449,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     call $sortedStrings
     local.get $dangling
     call $sortedStrings
-    call $__new_47
+    call $__new_48
     struct.new $result
     return
   )
@@ -18095,7 +18099,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     call $__i32_sub_chk
     i64.extend_i32_s
     i32.const 0
-    call $__new_31
+    call $__new_32
       )
       (else
     ref.null $rec_FileStat
@@ -18582,7 +18586,7 @@ test "fs answers PermissionDenied for an OS permission error" {
     global.get $__s0
     global.get $__s0
     call $memHandle
-    call $__new_29
+    call $__new_30
     return
   )
   ;; Internal, test scaffolding: take every permission from `path`; whether that
@@ -20049,6 +20053,17 @@ test "fs answers PermissionDenied for an OS permission error" {
     ref.cast (ref null $box_f64)
     struct.get $box_f64 $v
     call $__print_f64_raw
+    return
+      )
+    )
+    local.get $v
+    ref.test (ref null $box_u64)
+    (if
+      (then
+    local.get $v
+    ref.cast (ref null $box_u64)
+    struct.get $box_u64 $v
+    call $__print_u64_raw
     return
       )
     )
@@ -24270,82 +24285,82 @@ test "fs answers PermissionDenied for an OS permission error" {
     call $__init_types
     call $__init_globals
   )
-  (func $__new_41 (param $f0 (ref null $str)) (result (ref null $var_FsError_NotFound))
-    global.get $__ti_41
+  (func $__new_42 (param $f0 (ref null $str)) (result (ref null $var_FsError_NotFound))
+    global.get $__ti_42
     local.get $f0
     struct.new $var_FsError_NotFound
   )
-  (func $__new_45 (param $f0 (ref null $str)) (result (ref null $var_FsError_PermissionDenied))
-    global.get $__ti_45
+  (func $__new_46 (param $f0 (ref null $str)) (result (ref null $var_FsError_PermissionDenied))
+    global.get $__ti_46
     local.get $f0
     struct.new $var_FsError_PermissionDenied
   )
-  (func $__new_37 (param $f0 (ref null $str)) (result (ref null $var_FsError_IsDirectory))
-    global.get $__ti_37
+  (func $__new_38 (param $f0 (ref null $str)) (result (ref null $var_FsError_IsDirectory))
+    global.get $__ti_38
     local.get $f0
     struct.new $var_FsError_IsDirectory
   )
-  (func $__new_39 (param $f0 (ref null $str)) (result (ref null $var_FsError_NotDirectory))
-    global.get $__ti_39
+  (func $__new_40 (param $f0 (ref null $str)) (result (ref null $var_FsError_NotDirectory))
+    global.get $__ti_40
     local.get $f0
     struct.new $var_FsError_NotDirectory
   )
-  (func $__new_33 (param $f0 (ref null $str)) (result (ref null $var_FsError_AlreadyExists))
-    global.get $__ti_33
+  (func $__new_34 (param $f0 (ref null $str)) (result (ref null $var_FsError_AlreadyExists))
+    global.get $__ti_34
     local.get $f0
     struct.new $var_FsError_AlreadyExists
   )
-  (func $__new_43 (param $f0 (ref null $str)) (param $f1 (ref null $str)) (result (ref null $var_FsError_Other))
-    global.get $__ti_43
+  (func $__new_44 (param $f0 (ref null $str)) (param $f1 (ref null $str)) (result (ref null $var_FsError_Other))
+    global.get $__ti_44
     local.get $f0
     local.get $f1
     struct.new $var_FsError_Other
   )
-  (func $__new_35 (param $f0 (ref null $str)) (param $f1 i64) (result (ref null $var_FsError_InvalidUtf8))
-    global.get $__ti_35
+  (func $__new_36 (param $f0 (ref null $str)) (param $f1 i64) (result (ref null $var_FsError_InvalidUtf8))
+    global.get $__ti_36
     local.get $f0
     local.get $f1
     struct.new $var_FsError_InvalidUtf8
   )
-  (func $__new_29 (param $f0 (ref null $str)) (param $f1 anyref) (result (ref null $rec_File))
-    global.get $__ti_29
+  (func $__new_30 (param $f0 (ref null $str)) (param $f1 anyref) (result (ref null $rec_File))
+    global.get $__ti_30
     local.get $f0
     local.get $f1
     struct.new $rec_File
   )
-  (func $__new_27 (param $f0 (ref null $str)) (param $f1 (ref null $str)) (param $f2 i32) (param $f3 (ref null $str)) (result (ref null $rec_HostError))
-    global.get $__ti_27
+  (func $__new_28 (param $f0 (ref null $str)) (param $f1 (ref null $str)) (param $f2 i32) (param $f3 (ref null $str)) (result (ref null $rec_HostError))
+    global.get $__ti_28
     local.get $f0
     local.get $f1
     local.get $f2
     local.get $f3
     struct.new $rec_HostError
   )
-  (func $__new_31 (param $f0 i64) (param $f1 i64) (param $f2 i32) (result (ref null $rec_FileStat))
-    global.get $__ti_31
+  (func $__new_32 (param $f0 i64) (param $f1 i64) (param $f2 i32) (result (ref null $rec_FileStat))
+    global.get $__ti_32
     local.get $f0
     local.get $f1
     local.get $f2
     struct.new $rec_FileStat
   )
-  (func $__new_47 (param $f0 (ref null $arr_any)) (param $f1 (ref null $arr_any)) (result (ref null $rec_Walked))
-    global.get $__ti_47
+  (func $__new_48 (param $f0 (ref null $arr_any)) (param $f1 (ref null $arr_any)) (result (ref null $rec_Walked))
+    global.get $__ti_48
     local.get $f0
     local.get $f1
     struct.new $rec_Walked
   )
-  (global $__ti_41 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_45 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_37 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_39 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_33 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_43 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_35 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_29 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_27 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_47 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_25 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_42 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_46 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_38 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_40 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_34 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_44 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_36 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_30 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_28 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_32 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_48 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_26 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tip7 $__tie7 $__tip8 $__tie8 $__tip9 $__tie9 $__tip10 $__tie10 $__tip11 $__tie11 $__tip12 $__tie12 $__tip13 $__tie13 $__tip14 $__tie14 $__tip15 $__tie15 $__tip16 $__tie16 $__tip17 $__tie17 $__tip18 $__tie18)
   (func $__init_types
     global.get $__s272
@@ -24354,8 +24369,8 @@ test "fs answers PermissionDenied for an OS permission error" {
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_25
-    global.get $__ti_25
+    global.set $__ti_26
+    global.get $__ti_26
     call $__ti_register
     global.get $__s275
     ref.func $__tip8
@@ -24363,8 +24378,8 @@ test "fs answers PermissionDenied for an OS permission error" {
     ref.null func
     i32.const 1
     struct.new $__tinfo
-    global.set $__ti_41
-    global.get $__ti_41
+    global.set $__ti_42
+    global.get $__ti_42
     call $__ti_register
     global.get $__s277
     ref.func $__tip9
@@ -24372,8 +24387,8 @@ test "fs answers PermissionDenied for an OS permission error" {
     ref.null func
     i32.const 1
     struct.new $__tinfo
-    global.set $__ti_45
-    global.get $__ti_45
+    global.set $__ti_46
+    global.get $__ti_46
     call $__ti_register
     global.get $__s279
     ref.func $__tip10
@@ -24381,8 +24396,8 @@ test "fs answers PermissionDenied for an OS permission error" {
     ref.null func
     i32.const 1
     struct.new $__tinfo
-    global.set $__ti_37
-    global.get $__ti_37
+    global.set $__ti_38
+    global.get $__ti_38
     call $__ti_register
     global.get $__s281
     ref.func $__tip11
@@ -24390,8 +24405,8 @@ test "fs answers PermissionDenied for an OS permission error" {
     ref.null func
     i32.const 1
     struct.new $__tinfo
-    global.set $__ti_39
-    global.get $__ti_39
+    global.set $__ti_40
+    global.get $__ti_40
     call $__ti_register
     global.get $__s283
     ref.func $__tip12
@@ -24399,8 +24414,8 @@ test "fs answers PermissionDenied for an OS permission error" {
     ref.null func
     i32.const 1
     struct.new $__tinfo
-    global.set $__ti_33
-    global.get $__ti_33
+    global.set $__ti_34
+    global.get $__ti_34
     call $__ti_register
     global.get $__s286
     ref.func $__tip13
@@ -24408,8 +24423,8 @@ test "fs answers PermissionDenied for an OS permission error" {
     ref.null func
     i32.const 1
     struct.new $__tinfo
-    global.set $__ti_35
-    global.get $__ti_35
+    global.set $__ti_36
+    global.get $__ti_36
     call $__ti_register
     global.get $__s289
     ref.func $__tip14
@@ -24417,8 +24432,8 @@ test "fs answers PermissionDenied for an OS permission error" {
     ref.null func
     i32.const 1
     struct.new $__tinfo
-    global.set $__ti_43
-    global.get $__ti_43
+    global.set $__ti_44
+    global.get $__ti_44
     call $__ti_register
     global.get $__s297
     ref.func $__tip15
@@ -24426,8 +24441,8 @@ test "fs answers PermissionDenied for an OS permission error" {
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_27
-    global.get $__ti_27
+    global.set $__ti_28
+    global.get $__ti_28
     call $__ti_register
     global.get $__s302
     ref.func $__tip16
@@ -24435,8 +24450,8 @@ test "fs answers PermissionDenied for an OS permission error" {
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_31
-    global.get $__ti_31
+    global.set $__ti_32
+    global.get $__ti_32
     call $__ti_register
     global.get $__s307
     ref.func $__tip17
@@ -24444,8 +24459,8 @@ test "fs answers PermissionDenied for an OS permission error" {
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_47
-    global.get $__ti_47
+    global.set $__ti_48
+    global.get $__ti_48
     call $__ti_register
     global.get $__s311
     ref.func $__tip18
@@ -24453,8 +24468,8 @@ test "fs answers PermissionDenied for an OS permission error" {
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_29
-    global.get $__ti_29
+    global.set $__ti_30
+    global.get $__ti_30
     call $__ti_register
   )
   (@custom "botopink.needs" "gc\0afilesystem\0a")

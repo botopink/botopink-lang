@@ -733,7 +733,8 @@ declare fn ownerForeign(owner: unknown) -> bool;
     (type $arr_any (sub (array (mut anyref))))
     (type $tuple (sub final $arr_any (array (mut anyref))))
     (type $box_i32 (sub (struct (field $v i32))))
-    (type $box_i64 (struct (field $v i64)))
+    (type $box_i64 (sub (struct (field $v i64))))
+    (type $box_u64 (sub final $box_i64 (struct (field $v i64))))
     (type $box_f64 (struct (field $v f64)))
     (type $box_bool (sub final $box_i32 (struct (field $v i32))))
     (type $box_big (struct (field $v (ref null $str))))
@@ -863,7 +864,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
   (func $createContext (export "createContext") (param $value anyref) (result (ref null $rec_Context))
     (local $__mem0 i32)
     local.get $value
-    call $__new_29
+    call $__new_30
     return
   )
   ;; Gives `ctx` to every component this component renders below it — never
@@ -926,7 +927,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     i32.const 0
     ref.null any
     i32.const 0
-    call $__new_33
+    call $__new_34
     return
   )
   (func $Place_key (param $k anyref) (result (ref null $rec_Place))
@@ -936,7 +937,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     i32.const 0
     local.get $k
     i32.const 0
-    call $__new_33
+    call $__new_34
     return
   )
   (func $Place_index (param $i i32) (result (ref null $rec_Place))
@@ -946,7 +947,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     local.get $i
     ref.null any
     i32.const 0
-    call $__new_33
+    call $__new_34
     return
   )
   (func $Place_with (param $self (ref null $rec_Place)) (param $key (ref null $rec_Place)) (result (ref null $rec_Place))
@@ -966,7 +967,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     struct.get $rec_Place $f3
     local.get $self
     struct.get $rec_Place $f4
-    call $__new_33
+    call $__new_34
     return
       )
       (else
@@ -1005,7 +1006,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     ref.null any
     local.get $self
     struct.get $rec_Place $f4
-    call $__new_33
+    call $__new_34
     return
       )
       (else
@@ -1106,7 +1107,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     i32.const 0
     call $ownerSelf
     ref.null any
-    call $__new_39
+    call $__new_40
     return
   )
   (func $Scope_childAt (param $self (ref null $rec_Scope)) (param $key (ref null $rec_Place)) (result (ref null $rec_Scope))
@@ -1127,7 +1128,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     struct.get $rec_Scope $f2
     local.get $self
     struct.get $rec_Scope $f3
-    call $__new_39
+    call $__new_40
     return
   )
   (func $Scope_close (param $self (ref null $rec_Scope)) (result i32)
@@ -1148,13 +1149,13 @@ declare fn ownerForeign(owner: unknown) -> bool;
     local.get $self
     struct.get $rec_Scope $f1
     call $framesAt
-    call $__new_25
+    call $__new_26
     local.set $carried
     call $storeNew
     i32.const 0
     ref.null any
     local.get $carried
-    call $__new_39
+    call $__new_40
     return
   )
   (func $Scope_storeRef (param $self (ref null $rec_Scope)) (result anyref)
@@ -1204,9 +1205,9 @@ declare fn ownerForeign(owner: unknown) -> bool;
     i32.const 0
     ref.null any
     ref.null any
-    call $__new_27
+    call $__new_28
     ref.null any
-    call $__new_41
+    call $__new_42
     call $storeSet
     local.get $store
     return
@@ -1264,9 +1265,9 @@ declare fn ownerForeign(owner: unknown) -> bool;
     i32.const 0
     ref.null any
     ref.null any
-    call $__new_27
+    call $__new_28
     ref.null any
-    call $__new_41
+    call $__new_42
     local.set $t
     local.get $store
     local.get $t
@@ -1364,10 +1365,10 @@ declare fn ownerForeign(owner: unknown) -> bool;
     call $entryCounts
     local.get $t
     call $treeCells
-    call $__new_27
+    call $__new_28
     local.get $t
     call $treeLinks
-    call $__new_41
+    call $__new_42
     return
   )
   ;; Cell `id`'s state in `cells`.
@@ -1560,7 +1561,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     struct.get $rec_CellEntry $f4
     ref.null any
     ref.null any
-    call $__new_27
+    call $__new_28
     call $withCell
     local.set $kept
     local.get $store
@@ -1577,8 +1578,8 @@ declare fn ownerForeign(owner: unknown) -> bool;
     struct.get $rec_CellEntry $f2
     local.get $kept
     call $treeLinks
-    call $__new_37
-    call $__new_41
+    call $__new_38
+    call $__new_42
     call $storeSet
     local.get $l
     struct.get $rec_PlaceLink $f2
@@ -1611,7 +1612,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     ref.null any
     local.get $t
     call $treeCells
-    call $__new_27
+    call $__new_28
     local.get $parent
     local.get $key
     local.get $id
@@ -1619,8 +1620,8 @@ declare fn ownerForeign(owner: unknown) -> bool;
     struct.get $rec_CellEntry $f2
     local.get $t
     call $treeLinks
-    call $__new_37
-    call $__new_41
+    call $__new_38
+    call $__new_42
     call $storeSet
     local.get $id
     return
@@ -1789,7 +1790,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     local.get $value
     local.get $c
     call $entryFrames
-    call $__new_31
+    call $__new_32
     local.set $frames
     local.get $store
     local.get $t
@@ -1804,7 +1805,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     local.get $c
     call $entryCounts
     ref.null any
-    call $__new_27
+    call $__new_28
     call $withCell
     call $storeSet
     i32.const 0
@@ -1850,9 +1851,9 @@ declare fn ownerForeign(owner: unknown) -> bool;
     call $__i32_add_chk
     local.get $c
     call $entryCounts
-    call $__new_35
+    call $__new_36
     ref.null any
-    call $__new_27
+    call $__new_28
     call $withCell
     call $storeSet
     local.get $n
@@ -1979,7 +1980,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     local.get $now
     call $entryCounts
     ref.null any
-    call $__new_27
+    call $__new_28
     call $withCell
     call $storeSet
     local.get $value
@@ -2006,7 +2007,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     i32.const 0
     ref.null any
     ref.null any
-    call $__new_41
+    call $__new_42
     call $storeClose
     i32.const 0
   )
@@ -2791,7 +2792,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     local.get $key
     local.get $fallback
     ref.null any
-    call $__new_31
+    call $__new_32
     call $frameValue
     return
       )
@@ -2860,7 +2861,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     call $countAt
     ref.null any
     i32.const 1
-    call $__new_33
+    call $__new_34
     call $placed
     return
       )
@@ -2885,7 +2886,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     call $countNext
     ref.null any
     i32.const 1
-    call $__new_33
+    call $__new_34
     call $placed
     return
   )
@@ -2897,7 +2898,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     i32.const 0
     local.get $k
     i32.const 1
-    call $__new_33
+    call $__new_34
     call $placed
     return
   )
@@ -2947,7 +2948,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     call $countAt
     ref.null any
     i32.const 1
-    call $__new_33
+    call $__new_34
     call $Scope_childAt
     local.set $child
     local.get $child
@@ -3021,7 +3022,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     call $countAt
     ref.null any
     i32.const 1
-    call $__new_33
+    call $__new_34
     call $Scope_childAt
     local.set $child
     array.new_fixed $arr_any 0
@@ -3511,7 +3512,7 @@ declare fn ownerForeign(owner: unknown) -> bool;
     global.get $__s16
     call $__i32_add_chk
     local.get $counts
-    call $__new_35
+    call $__new_36
     call $countCellSet
     local.get $n
     return
@@ -3960,6 +3961,17 @@ declare fn ownerForeign(owner: unknown) -> bool;
     ref.cast (ref null $box_f64)
     struct.get $box_f64 $v
     call $__print_f64_raw
+    return
+      )
+    )
+    local.get $v
+    ref.test (ref null $box_u64)
+    (if
+      (then
+    local.get $v
+    ref.cast (ref null $box_u64)
+    struct.get $box_u64 $v
+    call $__print_u64_raw
     return
       )
     )
@@ -6970,13 +6982,13 @@ declare fn ownerForeign(owner: unknown) -> bool;
     global.set $__s80
     call $__init_types
   )
-  (func $__new_29 (param $f0 anyref) (result (ref null $rec_Context))
-    global.get $__ti_29
+  (func $__new_30 (param $f0 anyref) (result (ref null $rec_Context))
+    global.get $__ti_30
     local.get $f0
     struct.new $rec_Context
   )
-  (func $__new_33 (param $f0 i32) (param $f1 i32) (param $f2 i32) (param $f3 anyref) (param $f4 i32) (result (ref null $rec_Place))
-    global.get $__ti_33
+  (func $__new_34 (param $f0 i32) (param $f1 i32) (param $f2 i32) (param $f3 anyref) (param $f4 i32) (result (ref null $rec_Place))
+    global.get $__ti_34
     local.get $f0
     local.get $f1
     local.get $f2
@@ -6984,21 +6996,21 @@ declare fn ownerForeign(owner: unknown) -> bool;
     local.get $f4
     struct.new $rec_Place
   )
-  (func $__new_39 (param $f0 anyref) (param $f1 i32) (param $f2 anyref) (param $f3 anyref) (result (ref null $rec_Scope))
-    global.get $__ti_39
+  (func $__new_40 (param $f0 anyref) (param $f1 i32) (param $f2 anyref) (param $f3 anyref) (result (ref null $rec_Scope))
+    global.get $__ti_40
     local.get $f0
     local.get $f1
     local.get $f2
     local.get $f3
     struct.new $rec_Scope
   )
-  (func $__new_25 (param $f0 anyref) (result (ref null $rec_Carried))
-    global.get $__ti_25
+  (func $__new_26 (param $f0 anyref) (result (ref null $rec_Carried))
+    global.get $__ti_26
     local.get $f0
     struct.new $rec_Carried
   )
-  (func $__new_27 (param $f0 i32) (param $f1 anyref) (param $f2 i32) (param $f3 anyref) (param $f4 i32) (param $f5 anyref) (param $f6 anyref) (result (ref null $rec_CellEntry))
-    global.get $__ti_27
+  (func $__new_28 (param $f0 i32) (param $f1 anyref) (param $f2 i32) (param $f3 anyref) (param $f4 i32) (param $f5 anyref) (param $f6 anyref) (result (ref null $rec_CellEntry))
+    global.get $__ti_28
     local.get $f0
     local.get $f1
     local.get $f2
@@ -7008,16 +7020,16 @@ declare fn ownerForeign(owner: unknown) -> bool;
     local.get $f6
     struct.new $rec_CellEntry
   )
-  (func $__new_41 (param $f0 i32) (param $f1 i32) (param $f2 anyref) (param $f3 anyref) (result (ref null $rec_ScopeTree))
-    global.get $__ti_41
+  (func $__new_42 (param $f0 i32) (param $f1 i32) (param $f2 anyref) (param $f3 anyref) (result (ref null $rec_ScopeTree))
+    global.get $__ti_42
     local.get $f0
     local.get $f1
     local.get $f2
     local.get $f3
     struct.new $rec_ScopeTree
   )
-  (func $__new_37 (param $f0 i32) (param $f1 (ref null $rec_Place)) (param $f2 i32) (param $f3 i32) (param $f4 anyref) (result (ref null $rec_PlaceLink))
-    global.get $__ti_37
+  (func $__new_38 (param $f0 i32) (param $f1 (ref null $rec_Place)) (param $f2 i32) (param $f3 i32) (param $f4 anyref) (result (ref null $rec_PlaceLink))
+    global.get $__ti_38
     local.get $f0
     local.get $f1
     local.get $f2
@@ -7025,29 +7037,29 @@ declare fn ownerForeign(owner: unknown) -> bool;
     local.get $f4
     struct.new $rec_PlaceLink
   )
-  (func $__new_31 (param $f0 (ref null $str)) (param $f1 anyref) (param $f2 anyref) (result (ref null $rec_Frame))
-    global.get $__ti_31
+  (func $__new_32 (param $f0 (ref null $str)) (param $f1 anyref) (param $f2 anyref) (result (ref null $rec_Frame))
+    global.get $__ti_32
     local.get $f0
     local.get $f1
     local.get $f2
     struct.new $rec_Frame
   )
-  (func $__new_35 (param $f0 i32) (param $f1 i32) (param $f2 anyref) (result (ref null $rec_PlaceCount))
-    global.get $__ti_35
+  (func $__new_36 (param $f0 i32) (param $f1 i32) (param $f2 anyref) (result (ref null $rec_PlaceCount))
+    global.get $__ti_36
     local.get $f0
     local.get $f1
     local.get $f2
     struct.new $rec_PlaceCount
   )
-  (global $__ti_29 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_33 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_39 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_25 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_27 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_41 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_37 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_35 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_30 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_34 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_40 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_26 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_28 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_42 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_38 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_32 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_36 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tip1 $__tie1 $__tip4 $__tie4 $__tip5 $__tie5 $__tip6 $__tie6 $__tip7 $__tie7 $__tip8 $__tie8 $__tip9 $__tie9 $__tip13 $__tie13 $__tip14 $__tie14)
   (func $__init_types
     global.get $__s22
@@ -7056,8 +7068,8 @@ declare fn ownerForeign(owner: unknown) -> bool;
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_29
-    global.get $__ti_29
+    global.set $__ti_30
+    global.get $__ti_30
     call $__ti_register
     global.get $__s34
     ref.func $__tip4
@@ -7065,8 +7077,8 @@ declare fn ownerForeign(owner: unknown) -> bool;
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_33
-    global.get $__ti_33
+    global.set $__ti_34
+    global.get $__ti_34
     call $__ti_register
     global.get $__s40
     ref.func $__tip5
@@ -7074,8 +7086,8 @@ declare fn ownerForeign(owner: unknown) -> bool;
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_39
-    global.get $__ti_39
+    global.set $__ti_40
+    global.get $__ti_40
     call $__ti_register
     global.get $__s43
     ref.func $__tip6
@@ -7083,8 +7095,8 @@ declare fn ownerForeign(owner: unknown) -> bool;
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_25
-    global.get $__ti_25
+    global.set $__ti_26
+    global.get $__ti_26
     call $__ti_register
     global.get $__s52
     ref.func $__tip7
@@ -7092,8 +7104,8 @@ declare fn ownerForeign(owner: unknown) -> bool;
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_27
-    global.get $__ti_27
+    global.set $__ti_28
+    global.get $__ti_28
     call $__ti_register
     global.get $__s58
     ref.func $__tip8
@@ -7101,8 +7113,8 @@ declare fn ownerForeign(owner: unknown) -> bool;
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_41
-    global.get $__ti_41
+    global.set $__ti_42
+    global.get $__ti_42
     call $__ti_register
     global.get $__s65
     ref.func $__tip9
@@ -7110,8 +7122,8 @@ declare fn ownerForeign(owner: unknown) -> bool;
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_37
-    global.get $__ti_37
+    global.set $__ti_38
+    global.get $__ti_38
     call $__ti_register
     global.get $__s70
     ref.func $__tip13
@@ -7119,8 +7131,8 @@ declare fn ownerForeign(owner: unknown) -> bool;
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_31
-    global.get $__ti_31
+    global.set $__ti_32
+    global.get $__ti_32
     call $__ti_register
     global.get $__s75
     ref.func $__tip14
@@ -7128,8 +7140,8 @@ declare fn ownerForeign(owner: unknown) -> bool;
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_35
-    global.get $__ti_35
+    global.set $__ti_36
+    global.get $__ti_36
     call $__ti_register
   )
   (@custom "botopink.needs" "exceptions\0agc\0a")
@@ -7166,7 +7178,8 @@ component fn Widget() -> Component<Element> {
     (type $arr_any (sub (array (mut anyref))))
     (type $tuple (sub final $arr_any (array (mut anyref))))
     (type $box_i32 (sub (struct (field $v i32))))
-    (type $box_i64 (struct (field $v i64)))
+    (type $box_i64 (sub (struct (field $v i64))))
+    (type $box_u64 (sub final $box_i64 (struct (field $v i64))))
     (type $box_f64 (struct (field $v f64)))
     (type $box_bool (sub final $box_i32 (struct (field $v i32))))
     (type $box_big (struct (field $v (ref null $str))))
@@ -7258,7 +7271,7 @@ component fn Widget() -> Component<Element> {
     i32.const 0
     ref.null any
     i32.const 0
-    call $__new_31
+    call $__new_32
     return
   )
   (func $Place_key (param $k anyref) (result (ref null $rec_Place))
@@ -7268,7 +7281,7 @@ component fn Widget() -> Component<Element> {
     i32.const 0
     local.get $k
     i32.const 0
-    call $__new_31
+    call $__new_32
     return
   )
   (func $Place_index (param $i i32) (result (ref null $rec_Place))
@@ -7278,7 +7291,7 @@ component fn Widget() -> Component<Element> {
     local.get $i
     ref.null any
     i32.const 0
-    call $__new_31
+    call $__new_32
     return
   )
   (func $Place_with (param $self (ref null $rec_Place)) (param $key (ref null $rec_Place)) (result (ref null $rec_Place))
@@ -7298,7 +7311,7 @@ component fn Widget() -> Component<Element> {
     struct.get $rec_Place $f3
     local.get $self
     struct.get $rec_Place $f4
-    call $__new_31
+    call $__new_32
     return
       )
       (else
@@ -7337,7 +7350,7 @@ component fn Widget() -> Component<Element> {
     ref.null any
     local.get $self
     struct.get $rec_Place $f4
-    call $__new_31
+    call $__new_32
     return
       )
       (else
@@ -7426,7 +7439,7 @@ component fn Widget() -> Component<Element> {
     i32.const 0
     call $ownerSelf
     ref.null any
-    call $__new_37
+    call $__new_38
     return
   )
   (func $Scope_childAt (param $self (ref null $rec_Scope)) (param $key (ref null $rec_Place)) (result (ref null $rec_Scope))
@@ -7447,7 +7460,7 @@ component fn Widget() -> Component<Element> {
     struct.get $rec_Scope $f2
     local.get $self
     struct.get $rec_Scope $f3
-    call $__new_37
+    call $__new_38
     return
   )
   (func $Scope_close (param $self (ref null $rec_Scope)) (result i32)
@@ -7468,13 +7481,13 @@ component fn Widget() -> Component<Element> {
     local.get $self
     struct.get $rec_Scope $f1
     call $framesAt
-    call $__new_25
+    call $__new_26
     local.set $carried
     call $storeNew
     i32.const 0
     ref.null any
     local.get $carried
-    call $__new_37
+    call $__new_38
     return
   )
   (func $Scope_storeRef (param $self (ref null $rec_Scope)) (result anyref)
@@ -7513,9 +7526,9 @@ component fn Widget() -> Component<Element> {
     i32.const 0
     ref.null any
     ref.null any
-    call $__new_27
+    call $__new_28
     ref.null any
-    call $__new_39
+    call $__new_40
     call $storeSet
     local.get $store
     return
@@ -7570,9 +7583,9 @@ component fn Widget() -> Component<Element> {
     i32.const 0
     ref.null any
     ref.null any
-    call $__new_27
+    call $__new_28
     ref.null any
-    call $__new_39
+    call $__new_40
     local.set $t
     local.get $store
     local.get $t
@@ -7668,10 +7681,10 @@ component fn Widget() -> Component<Element> {
     call $entryCounts
     local.get $t
     call $treeCells
-    call $__new_27
+    call $__new_28
     local.get $t
     call $treeLinks
-    call $__new_39
+    call $__new_40
     return
   )
   (func $cellOf (param $cells anyref) (param $id i32) (result (ref null $rec_CellEntry))
@@ -7860,7 +7873,7 @@ component fn Widget() -> Component<Element> {
     struct.get $rec_CellEntry $f4
     ref.null any
     ref.null any
-    call $__new_27
+    call $__new_28
     call $withCell
     local.set $kept
     local.get $store
@@ -7877,8 +7890,8 @@ component fn Widget() -> Component<Element> {
     struct.get $rec_CellEntry $f2
     local.get $kept
     call $treeLinks
-    call $__new_35
-    call $__new_39
+    call $__new_36
+    call $__new_40
     call $storeSet
     local.get $l
     struct.get $rec_PlaceLink $f2
@@ -7911,7 +7924,7 @@ component fn Widget() -> Component<Element> {
     ref.null any
     local.get $t
     call $treeCells
-    call $__new_27
+    call $__new_28
     local.get $parent
     local.get $key
     local.get $id
@@ -7919,8 +7932,8 @@ component fn Widget() -> Component<Element> {
     struct.get $rec_CellEntry $f2
     local.get $t
     call $treeLinks
-    call $__new_35
-    call $__new_39
+    call $__new_36
+    call $__new_40
     call $storeSet
     local.get $id
     return
@@ -8104,9 +8117,9 @@ component fn Widget() -> Component<Element> {
     call $__i32_add_chk
     local.get $c
     call $entryCounts
-    call $__new_33
+    call $__new_34
     ref.null any
-    call $__new_27
+    call $__new_28
     call $withCell
     call $storeSet
     local.get $n
@@ -8192,7 +8205,7 @@ component fn Widget() -> Component<Element> {
     i32.const 0
     ref.null any
     ref.null any
-    call $__new_39
+    call $__new_40
     call $storeClose
     i32.const 0
   )
@@ -8334,7 +8347,7 @@ component fn Widget() -> Component<Element> {
     call $countAt
     ref.null any
     i32.const 1
-    call $__new_31
+    call $__new_32
     call $placed
     return
       )
@@ -8384,7 +8397,7 @@ component fn Widget() -> Component<Element> {
     global.get $__s13
     call $__i32_add_chk
     local.get $counts
-    call $__new_33
+    call $__new_34
     call $countCellSet
     local.get $n
     return
@@ -8587,7 +8600,7 @@ component fn Widget() -> Component<Element> {
     ref.cast (ref null $box_i32)
     struct.get $box_i32 $v
     drop
-    call $__new_41
+    call $__new_42
     call $bpScopeRaw__answer
     ref.cast (ref null $rec_Element)
     return
@@ -8640,7 +8653,7 @@ component fn Widget() -> Component<Element> {
     call $countAt
     ref.null any
     i32.const 1
-    call $__new_31
+    call $__new_32
     call $placed__T_i32
     return
       )
@@ -9020,6 +9033,17 @@ component fn Widget() -> Component<Element> {
     ref.cast (ref null $box_f64)
     struct.get $box_f64 $v
     call $__print_f64_raw
+    return
+      )
+    )
+    local.get $v
+    ref.test (ref null $box_u64)
+    (if
+      (then
+    local.get $v
+    ref.cast (ref null $box_u64)
+    struct.get $box_u64 $v
+    call $__print_u64_raw
     return
       )
     )
@@ -11700,8 +11724,8 @@ component fn Widget() -> Component<Element> {
     global.set $__s70
     call $__init_types
   )
-  (func $__new_31 (param $f0 i32) (param $f1 i32) (param $f2 i32) (param $f3 anyref) (param $f4 i32) (result (ref null $rec_Place))
-    global.get $__ti_31
+  (func $__new_32 (param $f0 i32) (param $f1 i32) (param $f2 i32) (param $f3 anyref) (param $f4 i32) (result (ref null $rec_Place))
+    global.get $__ti_32
     local.get $f0
     local.get $f1
     local.get $f2
@@ -11709,21 +11733,21 @@ component fn Widget() -> Component<Element> {
     local.get $f4
     struct.new $rec_Place
   )
-  (func $__new_37 (param $f0 anyref) (param $f1 i32) (param $f2 anyref) (param $f3 anyref) (result (ref null $rec_Scope))
-    global.get $__ti_37
+  (func $__new_38 (param $f0 anyref) (param $f1 i32) (param $f2 anyref) (param $f3 anyref) (result (ref null $rec_Scope))
+    global.get $__ti_38
     local.get $f0
     local.get $f1
     local.get $f2
     local.get $f3
     struct.new $rec_Scope
   )
-  (func $__new_25 (param $f0 anyref) (result (ref null $rec_Carried))
-    global.get $__ti_25
+  (func $__new_26 (param $f0 anyref) (result (ref null $rec_Carried))
+    global.get $__ti_26
     local.get $f0
     struct.new $rec_Carried
   )
-  (func $__new_27 (param $f0 i32) (param $f1 anyref) (param $f2 i32) (param $f3 anyref) (param $f4 i32) (param $f5 anyref) (param $f6 anyref) (result (ref null $rec_CellEntry))
-    global.get $__ti_27
+  (func $__new_28 (param $f0 i32) (param $f1 anyref) (param $f2 i32) (param $f3 anyref) (param $f4 i32) (param $f5 anyref) (param $f6 anyref) (result (ref null $rec_CellEntry))
+    global.get $__ti_28
     local.get $f0
     local.get $f1
     local.get $f2
@@ -11733,16 +11757,16 @@ component fn Widget() -> Component<Element> {
     local.get $f6
     struct.new $rec_CellEntry
   )
-  (func $__new_39 (param $f0 i32) (param $f1 i32) (param $f2 anyref) (param $f3 anyref) (result (ref null $rec_ScopeTree))
-    global.get $__ti_39
+  (func $__new_40 (param $f0 i32) (param $f1 i32) (param $f2 anyref) (param $f3 anyref) (result (ref null $rec_ScopeTree))
+    global.get $__ti_40
     local.get $f0
     local.get $f1
     local.get $f2
     local.get $f3
     struct.new $rec_ScopeTree
   )
-  (func $__new_35 (param $f0 i32) (param $f1 (ref null $rec_Place)) (param $f2 i32) (param $f3 i32) (param $f4 anyref) (result (ref null $rec_PlaceLink))
-    global.get $__ti_35
+  (func $__new_36 (param $f0 i32) (param $f1 (ref null $rec_Place)) (param $f2 i32) (param $f3 i32) (param $f4 anyref) (result (ref null $rec_PlaceLink))
+    global.get $__ti_36
     local.get $f0
     local.get $f1
     local.get $f2
@@ -11750,25 +11774,25 @@ component fn Widget() -> Component<Element> {
     local.get $f4
     struct.new $rec_PlaceLink
   )
-  (func $__new_33 (param $f0 i32) (param $f1 i32) (param $f2 anyref) (result (ref null $rec_PlaceCount))
-    global.get $__ti_33
+  (func $__new_34 (param $f0 i32) (param $f1 i32) (param $f2 anyref) (result (ref null $rec_PlaceCount))
+    global.get $__ti_34
     local.get $f0
     local.get $f1
     local.get $f2
     struct.new $rec_PlaceCount
   )
-  (func $__new_41 (result (ref null $rec_Element))
-    global.get $__ti_41
+  (func $__new_42 (result (ref null $rec_Element))
+    global.get $__ti_42
     struct.new $rec_Element
   )
-  (global $__ti_31 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_37 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_25 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_27 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_39 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_35 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_33 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_41 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_32 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_38 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_26 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_28 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_40 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_36 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_34 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_42 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tip3 $__tie3 $__tip4 $__tie4 $__tip5 $__tie5 $__tip6 $__tie6 $__tip7 $__tie7 $__tip8 $__tie8 $__tip12 $__tie12 $__tip19 $__tie19)
   (func $__init_types
     global.get $__s28
@@ -11777,8 +11801,8 @@ component fn Widget() -> Component<Element> {
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_31
-    global.get $__ti_31
+    global.set $__ti_32
+    global.get $__ti_32
     call $__ti_register
     global.get $__s34
     ref.func $__tip4
@@ -11786,8 +11810,8 @@ component fn Widget() -> Component<Element> {
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_37
-    global.get $__ti_37
+    global.set $__ti_38
+    global.get $__ti_38
     call $__ti_register
     global.get $__s37
     ref.func $__tip5
@@ -11795,8 +11819,8 @@ component fn Widget() -> Component<Element> {
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_25
-    global.get $__ti_25
+    global.set $__ti_26
+    global.get $__ti_26
     call $__ti_register
     global.get $__s46
     ref.func $__tip6
@@ -11804,8 +11828,8 @@ component fn Widget() -> Component<Element> {
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_27
-    global.get $__ti_27
+    global.set $__ti_28
+    global.get $__ti_28
     call $__ti_register
     global.get $__s52
     ref.func $__tip7
@@ -11813,8 +11837,8 @@ component fn Widget() -> Component<Element> {
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_39
-    global.get $__ti_39
+    global.set $__ti_40
+    global.get $__ti_40
     call $__ti_register
     global.get $__s59
     ref.func $__tip8
@@ -11822,8 +11846,8 @@ component fn Widget() -> Component<Element> {
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_35
-    global.get $__ti_35
+    global.set $__ti_36
+    global.get $__ti_36
     call $__ti_register
     global.get $__s64
     ref.func $__tip12
@@ -11831,8 +11855,8 @@ component fn Widget() -> Component<Element> {
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_33
-    global.get $__ti_33
+    global.set $__ti_34
+    global.get $__ti_34
     call $__ti_register
     global.get $__s66
     ref.func $__tip19
@@ -11840,8 +11864,8 @@ component fn Widget() -> Component<Element> {
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_41
-    global.get $__ti_41
+    global.set $__ti_42
+    global.get $__ti_42
     call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")

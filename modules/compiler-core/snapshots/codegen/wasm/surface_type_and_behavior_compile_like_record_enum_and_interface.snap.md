@@ -39,7 +39,8 @@ import {io.terminal.print} from "std";
     (type $arr_any (sub (array (mut anyref))))
     (type $tuple (sub final $arr_any (array (mut anyref))))
     (type $box_i32 (sub (struct (field $v i32))))
-    (type $box_i64 (struct (field $v i64)))
+    (type $box_i64 (sub (struct (field $v i64))))
+    (type $box_u64 (sub final $box_i64 (struct (field $v i64))))
     (type $box_f64 (struct (field $v f64)))
     (type $box_bool (sub final $box_i32 (struct (field $v i32))))
     (type $box_big (struct (field $v (ref null $str))))
@@ -126,15 +127,15 @@ import {io.terminal.print} from "std";
     (local $__mem1 i32)
     (local $sq (ref null $rec_Square))
     i32.const 3
-    call $__new_27
+    call $__new_28
     local.set $sq
     local.get $sq
     call $Square_area
     call $__print_i32
     i32.const 5
-    call $__new_23
+    call $__new_24
     call $weight
-    call $__new_25
+    call $__new_26
     call $weight
     global.get $__s1
     call $__i32_add_chk
@@ -844,23 +845,23 @@ import {io.terminal.print} from "std";
     global.set $__s11
     call $__init_types
   )
-  (func $__new_27 (param $f0 i32) (result (ref null $rec_Square))
-    global.get $__ti_27
+  (func $__new_28 (param $f0 i32) (result (ref null $rec_Square))
+    global.get $__ti_28
     local.get $f0
     struct.new $rec_Square
   )
-  (func $__new_23 (param $f0 i32) (result (ref null $var_Size_Large))
-    global.get $__ti_23
+  (func $__new_24 (param $f0 i32) (result (ref null $var_Size_Large))
+    global.get $__ti_24
     local.get $f0
     struct.new $var_Size_Large
   )
-  (func $__new_25 (result (ref null $var_Size_Small))
-    global.get $__ti_25
+  (func $__new_26 (result (ref null $var_Size_Small))
+    global.get $__ti_26
     struct.new $var_Size_Small
   )
-  (global $__ti_27 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_23 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_25 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_28 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_24 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_26 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tip1 $__tie1 $__tip2 $__tie2 $__tip3 $__tie3)
   (func $__init_types
     global.get $__s6
@@ -869,8 +870,8 @@ import {io.terminal.print} from "std";
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_27
-    global.get $__ti_27
+    global.set $__ti_28
+    global.get $__ti_28
     call $__ti_register
     global.get $__s8
     ref.func $__tip2
@@ -878,8 +879,8 @@ import {io.terminal.print} from "std";
     ref.null func
     i32.const 1
     struct.new $__tinfo
-    global.set $__ti_25
-    global.get $__ti_25
+    global.set $__ti_26
+    global.get $__ti_26
     call $__ti_register
     global.get $__s11
     ref.func $__tip3
@@ -887,8 +888,8 @@ import {io.terminal.print} from "std";
     ref.null func
     i32.const 1
     struct.new $__tinfo
-    global.set $__ti_23
-    global.get $__ti_23
+    global.set $__ti_24
+    global.get $__ti_24
     call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")

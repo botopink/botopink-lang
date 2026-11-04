@@ -32,7 +32,8 @@ import {io.terminal.print} from "std";
     (type $arr_any (sub (array (mut anyref))))
     (type $tuple (sub final $arr_any (array (mut anyref))))
     (type $box_i32 (sub (struct (field $v i32))))
-    (type $box_i64 (struct (field $v i64)))
+    (type $box_i64 (sub (struct (field $v i64))))
+    (type $box_u64 (sub final $box_i64 (struct (field $v i64))))
     (type $box_f64 (struct (field $v f64)))
     (type $box_bool (sub final $box_i32 (struct (field $v i32))))
     (type $box_big (struct (field $v (ref null $str))))
@@ -243,10 +244,10 @@ import {io.terminal.print} from "std";
       (then
     local.get $__gc0
     struct.get $gen $value
-    call $__new_25
+    call $__new_26
       )
       (else
-    call $__new_23
+    call $__new_24
       )
     )
     call $stepText
@@ -259,10 +260,10 @@ import {io.terminal.print} from "std";
       (then
     local.get $__gc1
     struct.get $gen $value
-    call $__new_25
+    call $__new_26
       )
       (else
-    call $__new_23
+    call $__new_24
       )
     )
     call $stepText
@@ -275,10 +276,10 @@ import {io.terminal.print} from "std";
       (then
     local.get $__gc2
     struct.get $gen $value
-    call $__new_25
+    call $__new_26
       )
       (else
-    call $__new_23
+    call $__new_24
       )
     )
     call $stepText
@@ -505,6 +506,17 @@ import {io.terminal.print} from "std";
     ref.cast (ref null $box_f64)
     struct.get $box_f64 $v
     call $__print_f64_raw
+    return
+      )
+    )
+    local.get $v
+    ref.test (ref null $box_u64)
+    (if
+      (then
+    local.get $v
+    ref.cast (ref null $box_u64)
+    struct.get $box_u64 $v
+    call $__print_u64_raw
     return
       )
     )
@@ -1540,17 +1552,17 @@ import {io.terminal.print} from "std";
     global.set $__s10
     call $__init_types
   )
-  (func $__new_25 (param $f0 anyref) (result (ref null $var_YieldStep_Yield))
-    global.get $__ti_25
+  (func $__new_26 (param $f0 anyref) (result (ref null $var_YieldStep_Yield))
+    global.get $__ti_26
     local.get $f0
     struct.new $var_YieldStep_Yield
   )
-  (func $__new_23 (result (ref null $var_YieldStep_Done))
-    global.get $__ti_23
+  (func $__new_24 (result (ref null $var_YieldStep_Done))
+    global.get $__ti_24
     struct.new $var_YieldStep_Done
   )
-  (global $__ti_25 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_23 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_26 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_24 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tip4 $__tie4 $__tip5 $__tie5)
   (func $__init_types
     global.get $__s7
@@ -1559,8 +1571,8 @@ import {io.terminal.print} from "std";
     ref.null func
     i32.const 1
     struct.new $__tinfo
-    global.set $__ti_25
-    global.get $__ti_25
+    global.set $__ti_26
+    global.get $__ti_26
     call $__ti_register
     global.get $__s9
     ref.func $__tip5
@@ -1568,8 +1580,8 @@ import {io.terminal.print} from "std";
     ref.null func
     i32.const 1
     struct.new $__tinfo
-    global.set $__ti_23
-    global.get $__ti_23
+    global.set $__ti_24
+    global.get $__ti_24
     call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")

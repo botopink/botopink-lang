@@ -7167,8 +7167,9 @@ const Emitter = struct {
 
         /// A `bool` has a box of its own, so an `unknown` holding one prints
         /// and compares as a `bool` (front 164 s2 P2b); so has a `bigint`
-        /// (`big`, decision 1031 (2)): its block's bytes, told from a string.
-        const Box = enum { i32, i64, f64, bool, big };
+        /// (`big`, decision 1031 (2)): its block's bytes, told from a string;
+        /// so has a `u64` (a subtype of `$box_i64`), so it prints unsigned.
+        const Box = enum { i32, i64, u64, f64, bool, big };
 
         fn eql(a: GcTy, b: GcTy) bool {
             if (std.meta.activeTag(a) != std.meta.activeTag(b)) return false;
@@ -7195,6 +7196,8 @@ const Emitter = struct {
         // `$box_bool` and an enum's box are subtypes of `$box_i32`, declared
         // before them.
         if ((t == .box and t.box == .bool) or t == .ebox) _ = self.gcTyIndex(.{ .box = .i32 });
+        // `$box_u64` is a subtype of `$box_i64` (decisions 568, 1031 (2)).
+        if (t == .box and t.box == .u64) _ = self.gcTyIndex(.{ .box = .i64 });
         if (t == .env) _ = self.gcTyIndex(.closure);
         if (t == .tuple) _ = self.gcTyIndex(.{ .arr = .any });
         // `$arr_bool` is a subtype of `$arr_i32` (decisions 568, 1031 (2)).
@@ -7897,7 +7900,7 @@ const Emitter = struct {
             .result => return ar.dupe(ValType, &.{ .i32, .anyref }),
             .box => |b| return ar.dupe(ValType, &.{switch (b) {
                 .i32, .bool => ValType.i32,
-                .i64 => ValType.i64,
+                .i64, .u64 => ValType.i64,
                 .f64 => ValType.f64,
                 .big => prelude.gc_str_ref,
             }}),
@@ -7961,6 +7964,7 @@ const Emitter = struct {
             .box => |b| switch (b) {
                 .i32 => .box_i32,
                 .i64 => .box_i64,
+                .u64 => .box_u64,
                 .f64 => .box_f64,
                 .bool => .box_bool,
                 .big => .box_big,
@@ -8372,16 +8376,23 @@ const Emitter = struct {
                     if (b == .i32) final = for (self.gc_types.items) |x| {
                         if ((x == .box and x.box == .bool) or x == .ebox) break false;
                     } else true;
+                    // `$box_u64` is a subtype of `$box_i64` (decisions 568,
+                    // 1031 (2)); `$box_i64` is open when it exists.
+                    if (b == .u64) super = self.gcTyIndex(.{ .box = .i64 });
+                    if (b == .i64) final = for (self.gc_types.items) |x| {
+                        if (x == .box and x.box == .u64) break false;
+                    } else true;
                     const fs = try ar.alloc(wat.Field, 1);
                     fs[0] = .{ .name = "v", .ty = switch (b) {
                         .i32, .bool => ValType.i32,
-                        .i64 => ValType.i64,
+                        .i64, .u64 => ValType.i64,
                         .f64 => ValType.f64,
                         .big => prelude.gc_str_ref,
                     } };
                     try defs.append(ar, .{ .name = switch (b) {
                         .i32 => "box_i32",
                         .i64 => "box_i64",
+                        .u64 => "box_u64",
                         .f64 => "box_f64",
                         .bool => "box_bool",
                         .big => "box_big",
@@ -8976,6 +8987,12 @@ const Emitter = struct {
             // A `bool` reads as the word it is: in `$box_bool`, so the
             // element prints and compares as one.
             if (r == .i32 and self.isBoolExpr(el)) r = .bool;
+            // A `u64`: in `$box_u64`, a `$box_i64` that prints unsigned.
+            if (r == .i64 and (self.isU64Expr(el) or tupleSlotIsU64(as0, i))) {
+                try self.lowerCoerced(el, .i64);
+                try self.emit(.{ .struct_new = self.gcTyIndex(.{ .box = .u64 }) });
+                continue;
+            }
             // An all-unit enum's ordinal: in its enum's box, a `$box_i32`
             // that prints by name (as `gcGenericArg`'s scalar).
             if (r == .i32) if (self.unitEnumOf(el) orelse self.unitEnumOfTypeRef(el)) |en| {
@@ -8987,6 +9004,13 @@ const Emitter = struct {
             try self.gcBox(r);
         }
         try self.emit(.{ .array_new_fixed = .{ .ty = self.gcTyIndex(.tuple), .n = @intCast(tl.elems.len) } });
+    }
+
+    /// Whether slot `i` of the types a tuple is widened to is a `u64`.
+    fn tupleSlotIsU64(as0: ?[]const ast.TypeRef, i: usize) bool {
+        const ts = as0 orelse return false;
+        if (i >= ts.len or ts[i] != .named) return false;
+        return std.mem.eql(u8, ts[i].named, "u64") or std.mem.eql(u8, ts[i].named, "usize");
     }
 
     /// `xs[i]` over an array in a GC module.
@@ -9876,6 +9900,7 @@ const Emitter = struct {
         const bi = self.gcBoxVt(.i32);
         const bf = self.gcBoxVt(.f64);
         const bl = self.gcBoxVt(.i64);
+        const bu = self.gcBoxVt(.u64);
         const str = prelude.gc_str_ref;
         self.gc_str_used = true;
         self.gc_tagged_used = true;
@@ -9905,6 +9930,8 @@ const Emitter = struct {
             .{ .vt = bb, .print = b.helper(.print_bool_raw) },
             .{ .vt = bi, .print = b.helper(.print_i32_raw) },
             .{ .vt = bf, .print = b.helper(.print_f64_raw) },
+            // A `u64` before an `i64`: `$box_u64` is a `$box_i64` too.
+            .{ .vt = bu, .print = b.helper(.print_u64_raw) },
             .{ .vt = bl, .print = b.helper(.print_i64_raw) },
             .{ .vt = str, .print = b.helper(if (quoted) .print_quoted_raw else .print_str_raw) },
         };
@@ -11723,12 +11750,13 @@ const Emitter = struct {
     /// its printer knows — a word, a float, a `bool`, a string, an array, a
     /// tuple, a declared type, an `unknown`, an optional or a failure of
     /// those —, an all-unit enum only as a tuple's element (in its enum's
-    /// box, `gcTupleLit`); a `u64`, or an all-unit enum's array, never.
+    /// box, `gcTupleLit`) and a `u64` the same way (in `$box_u64`); a `u64`'s
+    /// or an all-unit enum's array, never.
     fn gcShapeSlotOk(sh: []const u8, tuple_elem: bool) bool {
         if (sh.len == 0) return false;
         switch (sh[0]) {
             's', 'i', 'f', 'l', 'b', 'T', 'U' => return true,
-            'E' => return tuple_elem,
+            'E', 'u' => return tuple_elem,
             '[', '?', '!' => return gcShapeSlotOk(sh[1..], false),
             '(' => {
                 var i: usize = 1;
@@ -29182,7 +29210,7 @@ const Emitter = struct {
                     const sh = (try self.printShapeOf(value)) orelse return self.gcFail("a generic container of no print shape");
                     // Each element prints by its box (`U`): a `bool` in
                     // `$box_bool`, an all-unit enum's ordinal (a tuple's
-                    // element) in its enum's box; a `u64` would not.
+                    // element) in its enum's box, a `u64` in `$box_u64`.
                     if (!gcShapeSlotOk(sh, false)) return self.gcFail("a generic container holding words");
                 }
                 try self.lowerCoerced(value, vr);
@@ -29221,6 +29249,11 @@ const Emitter = struct {
             'b' => {
                 try self.lowerCoerced(value, .bool);
                 try self.gcBox(.bool);
+            },
+            // A `u64` in `$box_u64`, which the slot's printer reads unsigned.
+            'u' => {
+                try self.lowerCoerced(value, .i64);
+                try self.emit(.{ .struct_new = self.gcTyIndex(.{ .box = .u64 }) });
             },
             // A float goes in its own box, which the slot's printer and a
             // reader at the type argument both know (front 164 s2 P3).

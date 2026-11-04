@@ -19,7 +19,8 @@ fn f() -> Result<void, string> {
     (type $arr_any (sub (array (mut anyref))))
     (type $tuple (sub final $arr_any (array (mut anyref))))
     (type $box_i32 (sub (struct (field $v i32))))
-    (type $box_i64 (struct (field $v i64)))
+    (type $box_i64 (sub (struct (field $v i64))))
+    (type $box_u64 (sub final $box_i64 (struct (field $v i64))))
     (type $box_f64 (struct (field $v f64)))
     (type $box_bool (sub final $box_i32 (struct (field $v i32))))
     (type $box_big (struct (field $v (ref null $str))))
@@ -56,7 +57,7 @@ fn f() -> Result<void, string> {
     (local $age i32)
     global.get $__s0
     i32.const 30
-    call $__new_23
+    call $__new_24
     local.set $r
     local.get $r
     local.set $__assert_0
@@ -658,13 +659,13 @@ fn f() -> Result<void, string> {
     global.set $__s7
     call $__init_types
   )
-  (func $__new_23 (param $f0 (ref null $str)) (param $f1 i32) (result (ref null $rec_Person))
-    global.get $__ti_23
+  (func $__new_24 (param $f0 (ref null $str)) (param $f1 i32) (result (ref null $rec_Person))
+    global.get $__ti_24
     local.get $f0
     local.get $f1
     struct.new $rec_Person
   )
-  (global $__ti_23 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_24 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tip1 $__tie1)
   (func $__init_types
     global.get $__s7
@@ -673,8 +674,8 @@ fn f() -> Result<void, string> {
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_23
-    global.get $__ti_23
+    global.set $__ti_24
+    global.get $__ti_24
     call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")

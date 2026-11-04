@@ -50,7 +50,8 @@ import {io.terminal.print} from "std";
     (type $arr_any (sub (array (mut anyref))))
     (type $tuple (sub final $arr_any (array (mut anyref))))
     (type $box_i32 (sub (struct (field $v i32))))
-    (type $box_i64 (struct (field $v i64)))
+    (type $box_i64 (sub (struct (field $v i64))))
+    (type $box_u64 (sub final $box_i64 (struct (field $v i64))))
     (type $box_f64 (struct (field $v f64)))
     (type $box_bool (sub final $box_i32 (struct (field $v i32))))
     (type $box_big (struct (field $v (ref null $str))))
@@ -209,11 +210,11 @@ import {io.terminal.print} from "std";
     (local $a anyref)
     (local $b anyref)
     i32.const 2
-    call $__new_23
+    call $__new_24
     local.set $a
     i32.const 3
     i32.const 4
-    call $__new_27
+    call $__new_28
     local.set $b
     local.get $a
     call $area
@@ -221,7 +222,7 @@ import {io.terminal.print} from "std";
     local.get $b
     call $area
     call $__print_i32
-    call $__new_25
+    call $__new_26
     call $area
     call $__print_i32
     local.get $b
@@ -233,12 +234,12 @@ import {io.terminal.print} from "std";
     local.get $b
     call $__print_tagged_raw
     call $__print_nl
-    call $__new_25
+    call $__new_26
     call $__print_tagged_raw
     call $__print_nl
     local.get $a
     i32.const 2
-    call $__new_23
+    call $__new_24
     call $__eq_Shape
     call $__print_bool
     local.get $a
@@ -1080,24 +1081,24 @@ import {io.terminal.print} from "std";
     global.set $__s16
     call $__init_types
   )
-  (func $__new_23 (param $f0 i32) (result (ref null $var_Shape_Circle))
-    global.get $__ti_23
+  (func $__new_24 (param $f0 i32) (result (ref null $var_Shape_Circle))
+    global.get $__ti_24
     local.get $f0
     struct.new $var_Shape_Circle
   )
-  (func $__new_27 (param $f0 i32) (param $f1 i32) (result (ref null $var_Shape_Rect))
-    global.get $__ti_27
+  (func $__new_28 (param $f0 i32) (param $f1 i32) (result (ref null $var_Shape_Rect))
+    global.get $__ti_28
     local.get $f0
     local.get $f1
     struct.new $var_Shape_Rect
   )
-  (func $__new_25 (result (ref null $var_Shape_Dot))
-    global.get $__ti_25
+  (func $__new_26 (result (ref null $var_Shape_Dot))
+    global.get $__ti_26
     struct.new $var_Shape_Dot
   )
-  (global $__ti_23 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_27 (mut (ref null $__tinfo)) (ref.null $__tinfo))
-  (global $__ti_25 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_24 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_28 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_26 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tip1 $__tie1 $__tip2 $__tie2 $__tip3 $__tie3)
   (func $__init_types
     global.get $__s10
@@ -1106,8 +1107,8 @@ import {io.terminal.print} from "std";
     ref.null func
     i32.const 1
     struct.new $__tinfo
-    global.set $__ti_23
-    global.get $__ti_23
+    global.set $__ti_24
+    global.get $__ti_24
     call $__ti_register
     global.get $__s14
     ref.func $__tip2
@@ -1115,8 +1116,8 @@ import {io.terminal.print} from "std";
     ref.null func
     i32.const 1
     struct.new $__tinfo
-    global.set $__ti_27
-    global.get $__ti_27
+    global.set $__ti_28
+    global.get $__ti_28
     call $__ti_register
     global.get $__s16
     ref.func $__tip3
@@ -1124,8 +1125,8 @@ import {io.terminal.print} from "std";
     ref.null func
     i32.const 1
     struct.new $__tinfo
-    global.set $__ti_25
-    global.get $__ti_25
+    global.set $__ti_26
+    global.get $__ti_26
     call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")

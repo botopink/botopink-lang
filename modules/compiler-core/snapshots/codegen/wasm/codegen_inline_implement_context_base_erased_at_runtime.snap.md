@@ -17,7 +17,8 @@ fn render() -> Element {
     (type $arr_any (sub (array (mut anyref))))
     (type $tuple (sub final $arr_any (array (mut anyref))))
     (type $box_i32 (sub (struct (field $v i32))))
-    (type $box_i64 (struct (field $v i64)))
+    (type $box_i64 (sub (struct (field $v i64))))
+    (type $box_u64 (sub final $box_i64 (struct (field $v i64))))
     (type $box_f64 (struct (field $v f64)))
     (type $box_bool (sub final $box_i32 (struct (field $v i32))))
     (type $box_big (struct (field $v (ref null $str))))
@@ -45,7 +46,7 @@ fn render() -> Element {
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   (func $render (result (ref null $rec_Element))
     (local $__mem0 i32)
-    call $__new_23
+    call $__new_24
     return
   )
   (func $__eq_Element (param $a (ref null $rec_Element)) (param $b (ref null $rec_Element)) (result i32)
@@ -299,11 +300,11 @@ fn render() -> Element {
     global.set $__s1
     call $__init_types
   )
-  (func $__new_23 (result (ref null $rec_Element))
-    global.get $__ti_23
+  (func $__new_24 (result (ref null $rec_Element))
+    global.get $__ti_24
     struct.new $rec_Element
   )
-  (global $__ti_23 (mut (ref null $__tinfo)) (ref.null $__tinfo))
+  (global $__ti_24 (mut (ref null $__tinfo)) (ref.null $__tinfo))
   (elem declare func $__tip1 $__tie1)
   (func $__init_types
     global.get $__s1
@@ -312,8 +313,8 @@ fn render() -> Element {
     ref.null func
     i32.const 0
     struct.new $__tinfo
-    global.set $__ti_23
-    global.get $__ti_23
+    global.set $__ti_24
+    global.get $__ti_24
     call $__ti_register
   )
   (@custom "botopink.needs" "gc\0a")

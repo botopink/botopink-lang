@@ -52,7 +52,8 @@ import {io.terminal.print} from "std";
     (type $arr_any (sub (array (mut anyref))))
     (type $tuple (sub final $arr_any (array (mut anyref))))
     (type $box_i32 (sub (struct (field $v i32))))
-    (type $box_i64 (struct (field $v i64)))
+    (type $box_i64 (sub (struct (field $v i64))))
+    (type $box_u64 (sub final $box_i64 (struct (field $v i64))))
     (type $box_f64 (struct (field $v f64)))
     (type $box_bool (sub final $box_i32 (struct (field $v i32))))
     (type $box_big (struct (field $v (ref null $str))))
@@ -553,6 +554,17 @@ import {io.terminal.print} from "std";
       )
     )
     local.get $v
+    ref.test (ref null $box_u64)
+    (if
+      (then
+    local.get $v
+    ref.cast (ref null $box_u64)
+    struct.get $box_u64 $v
+    call $__print_u64_raw
+    return
+      )
+    )
+    local.get $v
     ref.test (ref null $box_i64)
     (if
       (then
@@ -630,6 +642,17 @@ import {io.terminal.print} from "std";
     ref.cast (ref null $box_f64)
     struct.get $box_f64 $v
     call $__print_f64_raw
+    return
+      )
+    )
+    local.get $v
+    ref.test (ref null $box_u64)
+    (if
+      (then
+    local.get $v
+    ref.cast (ref null $box_u64)
+    struct.get $box_u64 $v
+    call $__print_u64_raw
     return
       )
     )

@@ -4865,6 +4865,29 @@ test "wat: linear ---- equality of bare generic record constructors compares the
     );
 }
 
+// Front 170 s7 P5-c — a `u64` in a tuple in a type parameter's slot: in
+// `$box_u64`, a GC subtype of `$box_i64` (decisions 568, 1031 (2)), so it
+// prints unsigned and compares as the `i64` cell it is. It fell to linear
+// memory ("a generic container holding words").
+test "wat: gc ---- a u64 in a tuple in a type parameter's slot prints unsigned" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\type Box<T>(value: T)
+        \\pub fn main() -> void {
+        \\    val big: u64 = 18446744073709551615;
+        \\    print(Box(value: #(big, 1)));
+        \\    print(Box(value: #(big, 1)) == Box(value: #(big, 1)));
+        \\    print(Box(value: #(big, 1)) == Box(value: #(big, 2)));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\Box(value: #(18446744073709551615, 1))
+        \\true
+        \\false
+        \\
+    );
+}
+
 test "wat: gc ---- bytes, and the string arrays and optional strings std-wasm answers" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\pub fn main() -> void {
