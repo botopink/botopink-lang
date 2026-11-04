@@ -16,7 +16,7 @@ at src/main.bp:9:6
 refused error: implement-signature-differs: `Card.compose` does not match the contract `Component<View>` — contract: fn compose(self: Card) -> Component<View> · written: fn compose(self: Card, suffix: string) -> View
 at src/main.bp:11:8
 == component_scope_field
-refused error: component-scope-field: `Card.scope` is a `RenderScope` — a component holds no scope: the renderer hands it to `compose` at each run (decision 388 (5))
+refused error: component-scope-field: `Card.scope` is a `Scope` — a component holds no scope: the renderer hands it to `compose` at each run (decision 388 (5))
 at src/main.bp:9:33
 == component_use_outside_compose
 refused error: component-use-outside-compose: `use` in `Card.mode`, a helper of the type component `Card` — hooks are read in its `compose` alone (decision 804 (1))
