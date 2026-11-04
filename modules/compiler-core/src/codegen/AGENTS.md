@@ -3261,12 +3261,14 @@ first three are now enforced by the model, not by discipline:
   top-level `val`'s initialiser (`str_globals`, `global_rec_types`). A value
   whose shape nothing recovers still prints through `$__print_i32`.
 - **A declared type answers for its eager wrapper and for its binders**:
-  `eagerTypeRef` peels `@Async<T>` and `@Component<T>` to `T` (both run in
-  place here; `await` / `use` are identity) before any shape question —
+  `eagerTypeRef` peels `@Async<T>` to `T` (run in place here; `await` is
+  identity) before any shape question —
   `watType`, `isNamedTypeRef`, `typeRefName`, the `@Result` and array readers —
-  so a `-> @Async<string>` fn, an `@Async<string>` record field or a
-  `-> @Component<string>` hook is a string, and `await e` / `use e` has the
-  shape of `e`. A `@Result`'s `ResultShape` carries its payload types
+  so a `-> @Async<string>` fn or an `@Async<string>` record field is a string,
+  and `await e` has the shape of `e`. A `@Component<T>` is never peeled
+  (decision 1102): it is the closure `fn(scope, key) -> T` a component is on
+  every target, and `gcReprOfType`, `eagerTypeRef` and `reprOf` agree on it
+  (`isComponentTypeRef`; `gcAliasFunctionType` answers its function type). A `@Result`'s `ResultShape` carries its payload types
   (`ok` / `err`), recovered from a call, a local, a **parameter**
   (`noteParamShape`), a record field or an `await`; a `case` binder `Ok(v)` /
   `Error(e)` gets everything a parameter of that type gets (`noteTypedBinder`:

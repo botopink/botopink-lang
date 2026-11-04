@@ -3864,26 +3864,11 @@ test "wat: needs ---- std/failure linked and attempt never called asks for nothi
 
 // Decision 771 — a module binding std's memo cells (`wasi: .CellNew` …, `use
 // memo`) keeps the WasmGC lowering: the cell is a `$cell` struct, not a
-// linear-memory word.
-//
-// Refused on wasm (pending b162wasm-d): decision 1088 closed the half of
-// this that was `cellOf`'s (place stamping, std/context.bp) — its bare
-// `loop` diverging through a declared `-> noreturn` call no longer defeats
-// the wasm backend's tail-type inference (`isNoReturnCall` reads any
-// declared-`noreturn` callee now, and `wasmTypeOf` / `gcReprOfExpr` /
-// `recordTypeOfExpr` read a return-only loop's type off its `return`s). This
-// module still falls `.gc` back to `.linear`, for an unrelated reason:
-// `run` reaches `placed` (std/context.bp), whose declared return
-// `Composition<T>` — a type alias of a function type — the wasm GC
-// backend's `gcReprOfType` does not unwrap (only a `@Result`-shaped alias
-// is, decision 118's `gcExpandResultAliasReturns`), so `placed`'s closure
-// value refuses to convert and `context.run`'s `is Async<unknown>` has no
-// run-time test once in linear memory (same cause as the four
-// `features.zig` cases `assertJsRefusedOnWasm` records). Decision 771's
-// WasmGC claim cannot be asserted until that lands too; this records
-// today's actual answer, a refused compile, instead of inventing one.
+// linear-memory word. Decision 1102 — `Page("a")` is the closure a component
+// is (`Component<Element>`, `fn(scope, key) -> Element`), so `run`'s `T` is
+// read off it and nothing sends the module to linear memory.
 test "wat: needs ---- a use memo module stays WasmGC" {
-    try std.testing.expectError(error.ModuleDidNotCompile, wasmNeedsOfSource(std.testing.allocator,
+    const needs = try wasmNeedsOfSource(std.testing.allocator,
         \\import {context.run, context.Scope, hooks.memo, io.terminal.print} from "std";
         \\
         \\type Element(text: string)
@@ -3914,7 +3899,8 @@ test "wat: needs ---- a use memo module stays WasmGC" {
         \\    val last = await run(a, root);
         \\    print(last.text);
         \\}
-    ));
+    );
+    try std.testing.expect(needs.contains(.gc));
 }
 
 // ... and a call of `attempt` asks for `Exceptions`.

@@ -534,22 +534,22 @@ pub fn root() -> unknown {
 // passes through, so the stamp written last — the outer call's — wins
 // (821 (2)).
 
-pub fn stamp(c: Component<unknown>, cell: unknown, callNo: i32) -> Composition<unknown> {
+pub fn stamp<T>(c: Component<T>, cell: unknown, callNo: i32) -> Composition<T> {
     if (cell is Scope)
         return placed(c, Place(callNo: callNo, item: PlaceItem.Body, itemNo: countAt(cell.storeRef(), cell.ownerRef(), cell.carriedRef(), cell.cellId(), callNo), keyValue: null, stamped: true));
     panic("a component is run with a `Scope` (decision 819)");
 }
 
-pub fn stampPlain(c: Component<unknown>, counter: unknown, callNo: i32) -> Composition<unknown> {
+pub fn stampPlain<T>(c: Component<T>, counter: unknown, callNo: i32) -> Composition<T> {
     return placed(c, Place(callNo: callNo, item: PlaceItem.Plain, itemNo: countNext(counter, callNo), keyValue: null, stamped: true));
 }
 
-pub fn stampKeyed(c: Component<unknown>, callNo: i32, k: unknown) -> Composition<unknown> {
+pub fn stampKeyed<T>(c: Component<T>, callNo: i32, k: unknown) -> Composition<T> {
     return placed(c, Place(callNo: callNo, item: PlaceItem.Key, itemNo: 0, keyValue: k, stamped: true));
 }
 
 // `c` carrying `mine`.
-fn placed(c: Component<unknown>, mine: Place) -> Composition<unknown> {
+fn placed<T>(c: Component<T>, mine: Place) -> Composition<T> {
     return { scope, key -> resolve(c, scope, if (key.stamped) key else mine.with(key)) };
 }
 

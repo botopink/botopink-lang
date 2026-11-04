@@ -592,7 +592,19 @@ such call the checker's type of the value as its one type argument (a run's as `
 - a call of std's `find` / `provideIn` / `answer` / `enter` outside a wrapper — the checker left the
   type unresolved — is refused at the call;
 - **`is <behavior>` with no implementing type is `false`** (`lowerIsCall`): `c is Composable<T>` in
-  std's `resolve` before any type implements it;
+  std's `resolve` before any type implements it, and the `if` over it lowers its arm as
+  `unreachable` (`neverTrueBehaviorTest`) — nothing is read off a closure narrowed to a behavior;
+- **a checker type `@Component<T>` is the closure too** (decision 1102): `eagerTypeRef` leaves it,
+  `gcReprOfType` answers `.closure`, so `val a = Page("a")` is the closure `run(a)` reads `T` off;
+  std's stamps are generic (`stamp<T>(c: Component<T>, …) -> Composition<T>`), so a stamped call
+  keeps its `T` instead of `Composition<unknown>`; `return c(scope, key)` into a `T | Async<T>`
+  result (`resolve`) returns the `anyref` the closure answered, its `T` or, marked, its task, as it
+  came (`gc_value_call_raw`); `cs[i]!` over a `Component<T>[]` (`allIn`) is the closure, and `use
+  all(cs)`'s awaited `unknown` is read as the `T[]` the call carries (`allInCarried`);
+  a trailing lambda of a direct call (`use effect { -> … }`) is lowered as its next argument
+  against the parameter's function type; a tuple element of a function type (`val #(shown, push) =
+  use optimistic(…)`) binds the closure, called by its written type; a bare `loop` with no `break`
+  ends in `unreachable` (decision 1088, `neverEndingLoop`), not a word no reference result takes;
 - **only a function whose body awaits is a state machine** (504): `lowerLambdaValue` makes a
   component function (its parameters `bpScope__`, `bpKey__`) a machine when
   `context_lower.containsAwait` finds an `await` outside its nested lambdas — a written one, or the

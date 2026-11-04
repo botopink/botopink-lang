@@ -210,21 +210,29 @@ fn isZeroArgMainCall(e: ast.Expr) bool {
     };
 }
 
-/// The value an eager effect wrapper carries. wasm runs a `@Async<T>` and a
-/// `@Component<T>` in place (`await` and `use` are identity), so a value of
-/// either type IS its `T`: every question about its representation — a string,
-/// a `@Result` with a string payload, an array, a record — is asked of `T`.
-/// Nested wrappers peel all the way (`@Async<@Async<string>>` is a string).
+/// The value an eager effect wrapper carries. wasm runs a `@Async<T>` in
+/// place (`await` is identity), so a value of it IS its `T`: every question
+/// about its representation — a string, a `@Result` with a string payload,
+/// an array, a record — is asked of `T`. Nested tasks peel all the way
+/// (`@Async<@Async<string>>` is a string).
+///
+/// Decision 1102 — a `@Component<T>` is never peeled: it is the closure
+/// `fn(scope, key) -> T` a component is on every target (B-162,
+/// `wat/scope_carry.zig`), never an eager `T` (`isComponentTypeRef`).
 fn eagerTypeRef(t: ast.TypeRef) ast.TypeRef {
     return switch (t) {
         .generic => |g| if (g.is_builtin and g.args.len == 1 and std.mem.eql(u8, g.name, "Async"))
-            eagerTypeRef(g.args[0])
-        else if (g.is_builtin and g.args.len == 1 and std.mem.eql(u8, g.name, "Component"))
             eagerTypeRef(g.args[0])
         else
             t,
         else => t,
     };
+}
+
+/// Decision 1102 — a written `@Component<T>` (the prelude's wrapper name,
+/// decision 606 (1)): the closure a component is.
+fn isComponentTypeRef(t: ast.TypeRef) bool {
+    return t == .generic and t.generic.is_builtin and t.generic.args.len == 1 and std.mem.eql(u8, t.generic.name, "Component");
 }
 
 /// Decision 392 — a `@Async<T>` value is the task that settles with its `T`
@@ -4278,6 +4286,12 @@ const Emitter = struct {
     /// `wat/scope_carry.zig`'s wrappers: its `return` passes the word std's
     /// `context` answered as it is, typed by the wrapper's declared return.
     raw_return: bool = false,
+    /// Decisions 504, 1102 — the call through a function value being lowered
+    /// is returned as it came into a `T | Async<T>` result (std's
+    /// `context.resolve`, `return c(scope, key)`): a component's closure
+    /// answers its `T` or, marked, the task of it, so the `anyref` the call
+    /// answers is left unread (`gcValueCall`). Read once by that call.
+    gc_value_call_raw: bool = false,
     /// The declared function type a lambda about to be lifted is written
     /// against — the enclosing fn's `-> fn(x: string) -> string` at a
     /// `return { x -> … }`, or a `val f: fn(…) -> … = { … }` annotation. Read
@@ -5949,6 +5963,19 @@ const Emitter = struct {
                                 };
                             };
                             if (cc.receiver == null) if (self.genericRetRecord(cc)) |r| break :blk r;
+                            // Decision 1102 — a generic call whose `T` a
+                            // function argument binds (`run(Page("a"))`, `T`
+                            // the record the component's closure answers):
+                            // the record its declared return names, a task's
+                            // read off the task as `genericResultOf` reads it.
+                            if (cc.receiver == null) if (self.genericRetByFnArg(cc) catch null) |t| {
+                                const v = taskValueTypeRef(t) orelse t;
+                                switch (v) {
+                                    .named => |n| if (self.resolveRecordName(n)) |r| break :blk r,
+                                    .generic => |g| if (!g.is_builtin) if (self.resolveRecordName(g.name)) |r| break :blk r,
+                                    else => {},
+                                }
+                            };
                             // A method call on a value (`n.at(0)`, the link
                             // `xs?.[0]` is written as) is never the module's
                             // free function of its name (`fn at(c: bool) ->
@@ -6259,6 +6286,21 @@ const Emitter = struct {
             if (i > 0) try self.emit(opOf(.i32, "or"));
         }
         try self.emit(opOf(.i32, "and"));
+    }
+
+    /// Decision 810 (1) — `x is B` over a behavior `B` no type of the
+    /// program implements, of a plain name: `false`, with nothing to
+    /// evaluate (`lowerIsCall` answers the constant), so an `if` over it
+    /// never takes its arm.
+    fn neverTrueBehaviorTest(self: *Emitter, cond: ast.Expr) bool {
+        if (cond != .call or cond.call.kind != .call) return false;
+        const cc = cond.call.kind.call;
+        if (!std.mem.eql(u8, cc.callee, ast.is_builtin_name) or cc.args.len != 1) return false;
+        const t = cc.isType orelse return false;
+        if (primTestOf(t) != null or t == .function) return false;
+        const bn = ast.behaviorTestName(t) orelse return false;
+        if (cc.args[0].value.* != .identifier) return false;
+        return if (self.behavior_impls.get(bn)) |impls| impls.items.len == 0 else true;
     }
 
     // ── decision 8 §11's box (`00 · 05-wasm` step 2 D1–D3) ─────────────────
@@ -7688,6 +7730,17 @@ const Emitter = struct {
     /// left for `gcFail("a lambda parameter nothing types")`. Null when `t`
     /// names no such alias.
     fn gcAliasFunctionType(self: *Emitter, t: ast.TypeRef) ?ast.TypeRef {
+        // Decision 1102 — `Component<T>` is the function `fn(unknown,
+        // unknown) -> T` (`wat/scope_carry.zig`'s rewrite of a written one).
+        if (isComponentTypeRef(t)) {
+            const ar = self.arena();
+            const params = ar.alloc(ast.TypeRef, 2) catch return null;
+            params[0] = .{ .named = ast.unknown_type_name };
+            params[1] = .{ .named = ast.unknown_type_name };
+            const ret = ar.create(ast.TypeRef) catch return null;
+            ret.* = t.generic.args[0];
+            return .{ .function = .{ .params = params, .returnType = ret } };
+        }
         const name, const args = switch (t) {
             .named => |n| .{ n, @as([]const ast.TypeRef, &.{}) },
             .generic => |g| .{ g.name, @as([]const ast.TypeRef, g.args) },
@@ -7714,6 +7767,10 @@ const Emitter = struct {
     /// The reference a GC module holds a value of type `t0` as, null for a
     /// scalar and for a type with no GC form here.
     fn gcReprOfType(self: *Emitter, t0: ast.TypeRef) ?Repr {
+        // Decision 1102 — a `Component<T>` is its closure, `fn(scope, key)
+        // -> T`, as `eagerTypeRef` leaves it: never its `T`, never a union
+        // of a function and a behavior.
+        if (isComponentTypeRef(t0)) return .{ .ref = .closure };
         // Front 170 s7 P5-d, reason "an empty array literal of no known
         // type"'s union/coercion residual — a union type some of whose
         // members are arrays (`Node[] | string`, written bare or through any
@@ -8494,6 +8551,10 @@ const Emitter = struct {
         if (self.resultShapeOf(e) != null) return .{ .ref = .result };
         if (self.isArrayExpr(e)) if (self.gcElemRepr(e)) |er| return .{ .ref = .{ .arr = gcElemClassOf(er) } };
         if (self.optInfoOf(e)) |oi| if (self.gcOptPayload(oi)) |pr| return gcOptRepr(pr);
+        // Decision 1102 — a value of a written function type (`cs[i]!` over
+        // a `Component<T>[]`, `fn(unknown, unknown) -> T` once carried) is
+        // the closure it is.
+        if (optOperatorParts(e)) |op| if (op.bang) if (self.typeRefOf(e)) |tr| if (tr == .function) return .{ .ref = .closure };
         if (e == .literal and e.literal.kind == .bytesLit) return .{ .ref = .bytes };
         if (self.typeRefOf(e)) |tr| if (tr == .named and std.mem.eql(u8, tr.named, "bytes")) return .{ .ref = .bytes };
         if (self.isBigintExpr(e) or self.isOptBigintExpr(e)) return .{ .ref = .bigint };
@@ -8701,6 +8762,8 @@ const Emitter = struct {
             // `unknown` decision 150's union boxing already gives such a
             // value — a `ref.test` elsewhere tells its concrete shape apart.
             'T' => .{ .ref = .unknown },
+            // Decision 1051 — a function value (`F<arity>`): the closure it is.
+            'F' => .{ .ref = .closure },
             else => null,
         };
     }
@@ -10083,6 +10146,10 @@ const Emitter = struct {
                     const er = gcShapeRepr(code) orelse return self.gcFail("a tuple element of no known repr");
                     const b = try self.bindName(name, er);
                     try self.noteTupleElemShape(b, lb.value.*, i);
+                    // A function element is called by its written type
+                    // (`val #(shown, push) = use optimistic(…); push(shown)`).
+                    if (code[0] == 'F') if (self.typeRefOf(lb.value.*)) |tt| if (tt.tupleElems()) |els| if (i < els.len and els[i] == .function)
+                        try self.local_typerefs.put(b, els[i]);
                     try self.emit(.{ .local_get = mem });
                     try self.emit(try self.constInt(i));
                     try self.emit(.{ .array_get = .{ .ty = self.gcTyIndex(.{ .arr = .any }) } });
@@ -11702,6 +11769,8 @@ const Emitter = struct {
                 try self.emit(.{ .ref_cast = ValType.def(k) });
                 try self.emit(.{ .struct_get = .{ .ty = k, .field = 0 } });
             },
+            // A function value is read back as the closure `gcShapeRepr` binds.
+            'F' => try self.emit(.{ .ref_cast = self.gcTy(.closure) }),
             else => {
                 const vt = try self.gcShapeVt(sh);
                 if (vt != .anyref) try self.emit(.{ .ref_cast = vt });
@@ -14481,6 +14550,13 @@ const Emitter = struct {
                         if (!gc_task and self.isBoolExpr(lb.value.*)) try self.bool_locals.put(lb.name, {});
                         try self.noteArrayLocal(lb.name, lb.value.*);
                         if (self.resultShapeOf(lb.value.*)) |shape| try self.result_shape_locals.put(lb.name, shape);
+                        // Decision 1102 — a closure local (a component,
+                        // `val a = Page("a")`, `val c: Component<View> =
+                        // m.make()`) keeps its function type from here on:
+                        // a later binding of this body declared before the
+                        // walk reaches `a` (`val first = await run(a,
+                        // root)`) reads `run`'s `T` off it.
+                        if (self.mode == .gc and t == .ref and t.ref == .closure) if (lb.typeAnnotation orelse self.typeRefOf(lb.value.*)) |vt| try self.local_typerefs.put(lb.name, vt);
                         try self.declareLocal(lb.name, t);
                         try self.declareNestedLocals(lb.value.*);
                     },
@@ -15681,6 +15757,13 @@ const Emitter = struct {
                                 try self.emitFromCell(cell);
                                 try self.emitConvert(cell.ty(), self.cur_result);
                             }
+                        } else if (self.fn_has_result and self.gcReturnsMaybeTask() and self.isValueCall(val.*)) {
+                            // Decisions 504, 1102 — `return c(scope, key)`
+                            // into a `T | Async<T>` result: what the closure
+                            // answered, its `T` or its task, as it came.
+                            self.gc_value_call_raw = true;
+                            defer self.gc_value_call_raw = false;
+                            if (!try self.gcValueCall(val.call.kind.call)) try self.lowerCoerced(val.*, self.cur_result);
                         } else if (self.fn_has_result and self.boxesInto(self.cur_ret_typeref, val.*))
                             try self.lowerBoxedInto(self.cur_ret_typeref, val.*)
                         else if (self.fn_has_result)
@@ -20135,6 +20218,17 @@ const Emitter = struct {
                     try self.lowerCoerced(arg.value.*, sig.params[base + i]);
             }
             var k = base + cc.args.len;
+            // A trailing lambda is the next argument (`effect { -> … }`, a
+            // hook's call a stamp wraps, decision 1102): written against its
+            // parameter's declared function type, as a lambda argument is.
+            for (cc.trailing) |t| {
+                if (k >= sig.params.len) break;
+                const ptref: ?ast.TypeRef = if (ptrefs) |ps| (if (k < ps.len) ps[k] else null) else null;
+                self.expected_fn = if (ptref) |pt| (if (pt == .function) pt else null) else null;
+                defer self.expected_fn = null;
+                try self.lowerLambdaValue(t.params, t.body, loc);
+                k += 1;
+            }
             while (k < sig.params.len) : (k += 1) {
                 try self.emitC(constOf(sig.params[k], "0"), "missing argument");
             }
@@ -23705,7 +23799,14 @@ const Emitter = struct {
     /// Whether `e` is a `T | Async<T>` — a union one of whose members is a
     /// task (decision 823 (4)): what the `await` that `use c` lowers to reads.
     fn isMaybeTaskExpr(self: *Emitter, e: ast.Expr) bool {
+        // Decisions 827, 1102 — `use all(cs)`'s `allIn` answers the list, or
+        // the task of it when an entry answered a task, in an `unknown`.
+        if (allInCarried(e) != null) return true;
         const t = self.typeRefOf(e) orelse return false;
+        // An `unknown` narrowed to a task (`if (r is Async<unknown>) await r`
+        // in std's `context.settled`): the same test, the value itself when
+        // it is no task.
+        if (isUnknownTypeRef(t)) return true;
         const members = t.unionMembers() orelse return false;
         for (members) |m| if (isTaskTypeRef(m)) return true;
         return false;
@@ -23734,22 +23835,49 @@ const Emitter = struct {
         try self.emit(.{ .local_set = mk });
         try self.emit(.{ .local_get = v });
         const op_seq = self.seal(&op_c, .{ .value = .anyref });
-        if (self.machine != null and self.gen_item == null) return self.emitSuspension(lo, op_seq, mk, raw);
-        for (op_seq.lines) |l| try self.cur.?.append(self.arena(), l);
-        try self.emit(.drop);
-        try self.emit(.{ .local_get = mk });
-        var then_c: Capture = .{};
-        self.open(&then_c);
-        try self.emit(.{ .local_get = v });
-        try self.emit(.{ .ref_cast = self.gcTy(.task) });
-        try self.emit(self.builder().helper(.task_block_on));
-        try self.emitSettledRead(raw);
-        const then_seq = self.seal(&then_c, .{ .value = .anyref });
-        var else_c: Capture = .{};
-        self.open(&else_c);
-        try self.emit(.{ .local_get = v });
-        const else_seq = self.seal(&else_c, .{ .value = .anyref });
-        try self.emit(.{ .@"if" = .{ .result = .anyref, .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
+        if (self.machine != null and self.gen_item == null) {
+            try self.emitSuspension(lo, op_seq, mk, raw);
+        } else {
+            for (op_seq.lines) |l| try self.cur.?.append(self.arena(), l);
+            try self.emit(.drop);
+            try self.emit(.{ .local_get = mk });
+            var then_c: Capture = .{};
+            self.open(&then_c);
+            try self.emit(.{ .local_get = v });
+            try self.emit(.{ .ref_cast = self.gcTy(.task) });
+            try self.emit(self.builder().helper(.task_block_on));
+            try self.emitSettledRead(raw);
+            const then_seq = self.seal(&then_c, .{ .value = .anyref });
+            var else_c: Capture = .{};
+            self.open(&else_c);
+            try self.emit(.{ .local_get = v });
+            const else_seq = self.seal(&else_c, .{ .value = .anyref });
+            try self.emit(.{ .@"if" = .{ .result = .anyref, .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
+        }
+        // `use all(cs)`'s list read as the `T[]` the call carries: each entry
+        // the `unknown` its component answered (std's `allIn`), unboxed
+        // element by element into an array of scalars.
+        if (allInCarried(operand)) |t| {
+            const r = self.reprOf(t);
+            if (r.isArrRef() and r.ref.arr != .any) {
+                try self.emit(.{ .ref_cast = ValType.def(self.gcTyIndex(.{ .arr = .any })) });
+                try self.emit(.{ .call = try self.gcUnboxArr(r.ref.arr) });
+            } else try self.emitConvert(.{ .ref = .unknown }, r);
+        }
+    }
+
+    /// Decisions 827, 884 — the `T[]` a `use all(cs)` carries
+    /// (`context_lower`'s `allIn` call, its one type argument): what the
+    /// awaited list is read as. Null for any other expression.
+    fn allInCarried(e: ast.Expr) ?ast.TypeRef {
+        if (e == .collection and e.collection.kind == .grouped) return allInCarried(e.collection.kind.grouped.*);
+        if (e != .call or e.call.kind != .call) return null;
+        const cc = e.call.kind.call;
+        if (cc.receiver != null or cc.is_builtin or cc.args.len != 3) return null;
+        // The lowering's name, or std's own once the import is resolved.
+        if (!std.mem.eql(u8, cc.callee, context_lower.all_in_fn) and !std.mem.eql(u8, cc.callee, "allIn")) return null;
+        const ta = cc.typeArgs orelse return null;
+        return if (ta.len == 1) ta[0] else null;
     }
 
     /// How an `await` reads the value a settled task holds: in linear memory
@@ -25031,8 +25159,34 @@ const Emitter = struct {
         try self.emit(.{ .call_ref = sig });
     }
 
+    /// Decisions 504, 1102 — the function being lowered answers, in a GC
+    /// module, a union one of whose members is a task (`T | Async<T>`, std's
+    /// `context.resolve`): its result is the `anyref` either one is.
+    fn gcReturnsMaybeTask(self: *Emitter) bool {
+        if (self.mode != .gc) return false;
+        if (!(self.cur_result == .ref and self.cur_result.ref == .unknown)) return false;
+        const rt = self.cur_ret_typeref orelse return false;
+        const members = rt.unionMembers() orelse return false;
+        for (members) |m| if (isTaskTypeRef(m)) return true;
+        return false;
+    }
+
+    /// Whether `e` is a call through a function value held by a local or a
+    /// global, or of an expression (`c(scope, key)`, `(f)(x)`).
+    fn isValueCall(self: *Emitter, e: ast.Expr) bool {
+        if (e != .call or e.call.kind != .call) return false;
+        const cc = e.call.kind.call;
+        if (cc.is_builtin) return false;
+        if (cc.calleeExpr != null) return true;
+        if (cc.receiver != null) return false;
+        return self.locals.contains(self.resolveName(cc.callee)) or self.globals.contains(cc.callee);
+    }
+
     /// `f(a, b)` through a function value in a GC module.
     fn gcValueCall(self: *Emitter, cc: anytype) anyerror!bool {
+        // Read once: the calls among the arguments are read as usual.
+        const raw = self.gc_value_call_raw;
+        self.gc_value_call_raw = false;
         const Slot = union(enum) { field: struct { rty: []const u8, idx: u32 }, tuple: u32 };
         const slot: ?Slot = blk: {
             if (cc.calleeExpr != null) break :blk null;
@@ -25128,6 +25282,9 @@ const Emitter = struct {
             const l = self.lambdas.items[i];
             if (l.fn_ref == null) try self.gcSyncCaptures(tmp, l, .out_of_env);
         }
+        // The `anyref` a component's closure answered, its `T` or its task
+        // (`gc_value_call_raw`), returned as it is.
+        if (raw) return true;
         const rr = self.gcValueCallRepr(cc) orelse return self.gcFail("a call through a function value of no known result");
         if (li) |i| if (decl == null) {
             self.lambdas.items[i].ret_seen = rr;
@@ -26669,7 +26826,7 @@ const Emitter = struct {
                 const want = p.typeRef.function.returnType.*;
                 const got = self.fnArgReturnTyped(cc.args[pi].value.*, p.typeRef, f.genericParams, ctx.items) orelse continue;
                 const w = if (isTaskTypeRef(want)) (taskValueTypeRef(want) orelse continue) else want;
-                const a = if (isTaskTypeRef(want)) (taskValueTypeRef(got) orelse continue) else got;
+                const a = if (isTaskTypeRef(want)) (taskValueTypeRef(got) orelse continue) else (compositionAnswer(got) orelse got);
                 if (w == .named and isGenericParamName(w.named, f.genericParams, &.{}))
                     try subs.append(ar, .{ .name = w.named, .to = a });
                 continue;
@@ -26762,8 +26919,31 @@ const Emitter = struct {
     /// its declared return.
     fn fnArgReturn(self: *Emitter, arg: ast.Expr) ?ast.TypeRef {
         if (thunkTail(arg)) |tail| return self.typeRefOf(tail);
-        const t = self.typeRefOf(arg) orelse return null;
-        return if (t == .function) t.function.returnType.* else null;
+        const t0 = self.typeRefOf(arg) orelse return null;
+        // Decision 1102 — a value written through a function-shaped alias
+        // (`Composition<T>`, std's stamps' answer) is the function it names.
+        const t = if (t0 == .function) t0 else (self.gcAliasFunctionType(t0) orelse return null);
+        return t.function.returnType.*;
+    }
+
+    /// Decision 1102 — what a component's closure answers, `T`, read off the
+    /// written `T | Async<T>` of `Composition<T>`: on wasm the closure answers
+    /// `T`'s own word or the task of a body that awaits, its mark telling
+    /// which (decision 504), so a type parameter bound by it is `T`, as a
+    /// `Component<T>` written anywhere binds it (`scope_carry.zig`). Null for
+    /// any other type.
+    fn compositionAnswer(t: ast.TypeRef) ?ast.TypeRef {
+        if (t != .generic or !std.mem.eql(u8, t.generic.name, ast.union_type_name)) return null;
+        const members = t.generic.args;
+        if (members.len != 2) return null;
+        for (members, 0..) |m, i| {
+            const other = members[1 - i];
+            // The prelude's alias spells `Async<T>` bare, whatever its
+            // builtin flag (decision 606 (1)).
+            if (other != .generic or other.generic.args.len != 1 or !std.mem.eql(u8, other.generic.name, "Async")) continue;
+            if (sameTypeRef(m, other.generic.args[0])) return m;
+        }
+        return null;
     }
 
     /// What the per-name shape maps held for a name a read binds for a while
@@ -27382,6 +27562,10 @@ const Emitter = struct {
             // A value narrowed from an optional function (`val f = cfg.scoper;
             // if (f != null) { f("x") }`) answers the function's return.
             .optional => |o| if (o.* == .function) o.function.returnType.* else null,
+            // Decision 1102 — a value written through a function-shaped alias
+            // (`c.compose()(scope, key)`, a `Composition<T>`) answers the
+            // function it names.
+            .named, .generic => if (self.gcAliasFunctionType(ft)) |af| af.function.returnType.* else null,
             else => null,
         };
     }
@@ -27559,6 +27743,14 @@ const Emitter = struct {
                     // settles them instead of printing the handle.
                     if (self.indexArgs(cc)) |ix| if (!ix.is_slice) if (self.elemTypeRefOf(ix.recv)) |et| if (isTaskTypeRef(et)) break :blk self.optionalOf(et);
                     if (cc.receiver) |r| if (cc.args.len <= 1) if (self.elemTypeRefOf(r.*)) |et| if (isTaskTypeRef(et)) {
+                        for ([_][]const u8{ "at", "first", "last", "pop" }) |m| if (std.mem.eql(u8, cc.callee, m)) break :blk self.optionalOf(et);
+                    };
+                    // Decision 1102 — so does one off an array of function
+                    // values, a `Component<T>[]` among them (`cs[i]!` in
+                    // std's `context.allIn`): `!` answers the closure, which
+                    // `resolve` calls.
+                    if (self.mode == .gc) if (self.indexArgs(cc)) |ix| if (!ix.is_slice) if (self.elemTypeRefOf(ix.recv)) |et| if (et == .function) break :blk self.optionalOf(et);
+                    if (self.mode == .gc) if (cc.receiver) |r| if (cc.args.len <= 1) if (self.elemTypeRefOf(r.*)) |et| if (et == .function) {
                         for ([_][]const u8{ "at", "first", "last", "pop" }) |m| if (std.mem.eql(u8, cc.callee, m)) break :blk self.optionalOf(et);
                     };
                     // `o.unwrapOr(d)` over a `?T` answers a `T`: a `?u64`'s
@@ -27743,6 +27935,7 @@ const Emitter = struct {
             // `T` is the argument that binds it.
             .jump => |j| switch (j.kind) {
                 .await_ => |a| blk: {
+                    if (allInCarried(a.*)) |t| break :blk t;
                     const inner = self.typeRefOf(a.*);
                     if (inner) |t| if (taskValueTypeRef(t)) |v| {
                         // `await twice(21)` over `-> @Async<@Result<T, string>>`:
@@ -27815,6 +28008,10 @@ const Emitter = struct {
             // path below used to give it from `pairs`' own shape, and could
             // not tell what `.1` itself was shaped like.
             .tuple_, .labeledTuple => return .{ .boxed = false, .inner = et, .shape = self.typeRefShape(et) catch null },
+            // Decision 1102 — an element of an array of function values (a
+            // `Component<T>[]`, `cs[i]!` in std's `context.allIn`) is the
+            // closure, its own nullable reference.
+            .function => if (self.mode == .gc) return .{ .boxed = false, .inner = et },
             else => {},
         };
         if (self.elemIsPointer(recv)) {
@@ -32405,7 +32602,22 @@ const Emitter = struct {
         const loop_seq = self.seal(&loop_c, .terminated);
 
         try self.emitLoopBlock(loop_seq, lp.label);
-        if (result) |res| try self.emit(.{ .local_get = res }) else try self.emit(zero);
+        if (result) |res| try self.emit(.{ .local_get = res }) else if (neverEndingLoop(lp))
+            // Decision 1088 — a bare `loop` with no `break` leaves only by a
+            // `return` or a diverging call: nothing follows it, and the word
+            // `0` there is no value of a function answering a reference
+            // (`context.cellOf`, a GC module that failed to type-check).
+            try self.emitC(.@"unreachable", "a loop with no break never ends")
+        else
+            try self.emit(zero);
+    }
+
+    /// A bare `loop { … }` (its condition the parser's `true`) whose body
+    /// holds no `break`.
+    fn neverEndingLoop(lp: anytype) bool {
+        const it = lp.iter.*;
+        if (it != .identifier or it.identifier.kind != .ident or !std.mem.eql(u8, it.identifier.kind.ident, "true")) return false;
+        return !bodyHasBreak(lp.body);
     }
 
     fn lowerRangeLoop(self: *Emitter, params: []const []const u8, body: []const ast.Stmt, r: anytype, result: ?[]const u8, label: ?[]const u8) anyerror!void {
@@ -32492,6 +32704,10 @@ const Emitter = struct {
         // What an awaited task settles with (`gcAwaitedRead`).
         if (self.mode == .gc and e == .jump and e.jump.kind == .await_ and runCallOf(e.jump.kind.await_.*) == null) {
             const op = innerClosureBlock(e.jump.kind.await_.*) orelse e.jump.kind.await_.*;
+            if (allInCarried(op)) |t| return self.reprOf(t);
+            // An `unknown` awaited (`gcAwaitMaybeTask`) answers the `unknown`
+            // its task settled with, or itself.
+            if (self.typeRefOf(op)) |t| if (isUnknownTypeRef(t)) return .{ .ref = .unknown };
             if (self.isTaskExpr(op)) {
                 const g = self.gcAwaitedRead(op) catch {
                     self.gcGap("an awaited task of no known type");
@@ -34465,7 +34681,15 @@ const Emitter = struct {
         const then_marked = try self.applyNarrowing(then_names.items);
         const unknown_narrowed = try self.narrowUnknown(i.cond.*);
         const rec_narrowed = try self.narrowRecordTest(i.cond.*, true);
-        const then_tail: Tail = if (link_box) |bx| blk: {
+        const then_tail: Tail = if (self.neverTrueBehaviorTest(i.cond.*)) blk: {
+            // Decision 810 (1) — the test answers `false` (`lowerIsCall`), so
+            // the arm never runs: what it reads off a value narrowed to a
+            // behavior no type implements (`c.compose()` in std's
+            // `context.resolve`, a component that is its closure on wasm,
+            // decision 1102) has nothing to be lowered from.
+            try self.emitC(.@"unreachable", "an arm under a behavior test no value passes (decision 810 (1))");
+            break :blk .terminated;
+        } else if (link_box) |bx| blk: {
             const tail = i.then_[0].expr;
             if (link_payload) |pr| {
                 try self.lowerCoerced(tail, pr);
