@@ -203,7 +203,7 @@ function answers the other kind (`gcCaseArmsType`); `try r` answers the `Ok` typ
 (`gcReprOfExpr`, `typeRefOf`); a primitive's method is never the module's free function of its name
 (`resultShapeOf`: `actual.contains(needle)` beside `fn contains(…) -> Result<…>`); `xs.fill(v)` is an array of
 `v`'s class (`gcArrayOp`, `array.new`); `recv?.m(args)` over an optional record or enum
-(`gcOptionalTypedMethod`); `Self` in an enum's method is its `$enum_<owner>` (`emitMemberFn` sets
+(`gcOptionalTypedMethod`), and over a primitive method, written with `?.` or continuing its chain (`gcChainedCall`, 144 B-243: null when the receiver's carrier is, else the payload unboxed, the method on it, a scalar answer boxed; `at` / `first` of an array and a string's `at` answer their optional as it is); `t?._N` (decision 45's `rs.at(i)?.label`) is the slot or null, the slot already the element's optional carrier (`gcOptionalTupleGet`); `Self` in an enum's method is its `$enum_<owner>` (`emitMemberFn` sets
 `sig_owner`); `indexOf`, `lastIndexOf` and `contains` over an array of class `any` whose elements are no
 strings (a type-parameter slot, std's `asserts.includes`) compare a number, a string or a bool by value and any
 other reference by identity (`$__unk_same`, `__arr_indexOfEq_any`), as the linear lowering's word compare
@@ -2088,6 +2088,7 @@ guarded link's result, a field's declared type, a string). The whole expression
 is the `?T` the checker typed — `optInfoOf` answers it (`chainedCallOpt`) — and
 prints `null` or its value. A float result has no box here and keeps the
 unguarded path. `modules/optional/run/src/cases/optional_chain_method` pins it. The link written with
+A tuple label read through `?.` (`rs.at(i)?.b.length()`) is a string, int or bool payload by its element's shape (`chainPayloadKind`, `optTupleElemShapeOf`; 144 B-243).
 A field written as an array read through `?.` is an array payload
 (`chainPayloadKind`: `m?.list.join(",")` resolves `join/1`, the payload bound with its
 element shape — `modules/meta/cells/meta_list_method_on_optional`), and `elemKindOf` reads a `o ?? d`'s

@@ -9049,6 +9049,36 @@ const Emitter = struct {
         try self.gcUnbox(er);
     }
 
+    /// 144 B-243 — `t?._N` (decision 45's `rs.at(i)?.label`, rewritten to its
+    /// position) over a GC optional tuple: null when the tuple is, else its
+    /// element. A tuple's slot already holds the element as an optional
+    /// carries it — a scalar in its box, a reference as itself, an optional
+    /// element as its own carrier — so the slot is the answer, cast to the
+    /// carrier `optInfoOf` names for the read.
+    fn gcOptionalTupleGet(self: *Emitter, ia: anytype, idx: u32, whole: ast.Expr) anyerror!void {
+        const oi = self.optInfoOf(whole) orelse return self.gcFail("a ?. tuple element of no known type");
+        const pr = self.gcOptPayload(oi) orelse return self.gcFail("a ?. tuple element of no known payload");
+        const cr = gcOptRepr(pr);
+        const cvt = self.vtOf(cr);
+        const tr: Repr = .{ .ref = .tuple };
+        const tmp = try self.gcTemp(tr);
+        try self.lowerCoerced(ia.receiver.*, tr);
+        try self.emit(.{ .local_tee = tmp });
+        try self.emit(.ref_is_null);
+        var absent: Capture = .{};
+        self.open(&absent);
+        try self.emit(self.zeroOf(cr));
+        const absent_seq = self.seal(&absent, .{ .value = cvt });
+        var present: Capture = .{};
+        self.open(&present);
+        try self.emit(.{ .local_get = tmp });
+        try self.emit(try self.constInt(idx));
+        try self.emit(.{ .array_get = .{ .ty = self.gcTyIndex(.{ .arr = .any }) } });
+        if (cvt != .anyref) try self.emit(.{ .ref_cast = cvt });
+        const present_seq = self.seal(&present, .{ .value = cvt });
+        try self.emit(.{ .@"if" = .{ .result = cvt, .then = .{ .seq = absent_seq }, .@"else" = .{ .seq = present_seq } } });
+    }
+
     /// The methods of an array a GC module lowers in place: `length`, `isEmpty`,
     /// `toList`. False for the others.
     fn gcArrayMethod(self: *Emitter, cc: anytype, recv: ast.Expr, name: []const u8) anyerror!bool {
@@ -20620,7 +20650,20 @@ const Emitter = struct {
             // float field has no chained lowering here, so it is left to the
             // unguarded path.
             .identifier => |id| switch (id.kind) {
-                .identAccess => |ia| if (self.recordTypeOfExpr(ia.receiver.*)) |rty| {
+                // `t?._N` — a tuple element read through the chain (decision
+                // 45's `rs.at(i)?.label`): its element's shape. Unread, the
+                // method after it (`rs.at(i)?.b.length()`) was lowered with
+                // no guard, off a field offset guessed by name (144 B-243).
+                .identAccess => |ia| if (ia.optional and tupleIndex(ia.member) != null) {
+                    const el = (self.optTupleElemShapeOf(ia) catch null) orelse return null;
+                    if (el.len != 1) return null;
+                    return switch (el[0]) {
+                        's' => .string,
+                        'i' => .int,
+                        'b' => .bool,
+                        else => null,
+                    };
+                } else if (self.recordTypeOfExpr(ia.receiver.*)) |rty| {
                     if (self.fieldTypeIn(rty, ia.member)) |ft| {
                         if (self.typeRefOf(recv)) |tr| if (arrayElemOfTypeRef(tr) != null) return .array;
                         if (std.mem.eql(u8, ft, "string")) return .string;
@@ -20684,6 +20727,12 @@ const Emitter = struct {
         {
             const oi = self.arrayElemOpt(cc.receiver.?.*);
             if (!oi.boxed) return oi;
+            // A GC `?bool[]`'s element is in its box and prints as a bool
+            // (144 B-243): the optional's own written type says so.
+            if (self.mode == .gc) if (self.typeRefOf(cc.receiver.?.*)) |tr| if (eagerTypeRef(tr) == .optional) {
+                const at = eagerTypeRef(eagerTypeRef(tr).optional.*);
+                if (at == .array and isBoolTypeRef(at.array.*)) return .{ .boxed = true, .bool_ = true };
+            };
         }
         return switch (primCallRes(k, cc) orelse return null) {
             .i32 => .{ .boxed = true },
@@ -20697,6 +20746,7 @@ const Emitter = struct {
     fn lowerChainedCall(self: *Emitter, cc: anytype, loc: ast.Loc) anyerror!bool {
         const res = self.chainedCallOpt(cc, loc) orelse return false;
         const k = self.chainedCallKind(cc, loc).?;
+        if (self.mode == .gc) return self.gcChainedCall(cc, loc, k, res);
         const recv = cc.receiver.?.*;
         const recv_boxed = if (self.optInfoOf(recv)) |oi| oi.boxed else false;
         const mem = try self.memName(self.nextMem());
@@ -20751,6 +20801,96 @@ const Emitter = struct {
             .then = .{ .seq = then_seq },
             .@"else" = .{ .seq = else_seq },
         } });
+        return true;
+    }
+
+    /// 144 B-243 — `lowerChainedCall` in a GC module: `recv?.m(args)` over a
+    /// primitive method, written with `?.` or continuing a `?.` chain. The
+    /// receiver's carrier is evaluated once; null (absent anywhere up the
+    /// chain — each guarded link answers null when its own receiver was) is
+    /// the whole answer, null, and the method never runs; present, the
+    /// payload is read out of its carrier (a scalar unboxed, a reference as
+    /// it is), the method runs on it, and a scalar answer goes in its box. A
+    /// method that answers an optional itself (`at`, `first` of an array, a
+    /// string's `at`) is that optional as it is: `?.` flattens.
+    fn gcChainedCall(self: *Emitter, cc: anytype, loc: ast.Loc, k: envMod.PrimKind, res: OptInfo) anyerror!bool {
+        const eq = std.mem.eql;
+        const recv = cc.receiver.?.*;
+        // `xs?.pop()` would shorten a copy of the payload, not `xs`.
+        if (k == .array and eq(u8, cc.callee, "pop")) return self.gcFail("a ?. pop");
+        // `xs?.find(p)`: `chainedCallOpt` reads its answer as a boxed word
+        // whatever the element is (no `arrayElemOpt` for it).
+        if (k == .array and eq(u8, cc.callee, "find")) return self.gcFail("a ?. find");
+        // The optional's own type, when written: what an array payload's
+        // element is read by.
+        const inner_tr: ?ast.TypeRef = if (self.typeRefOf(recv)) |tr| switch (tr) {
+            .optional => |o| o.*,
+            else => null,
+        } else null;
+        const pr: Repr = blk: {
+            if (self.optInfoOf(recv)) |oi| if (self.gcOptPayload(oi)) |r| break :blk r;
+            switch (k) {
+                .string => break :blk Repr.string,
+                else => {},
+            }
+            if (inner_tr) |t| {
+                const r = self.reprOf(t);
+                if (r.isRef()) break :blk r;
+            }
+            return self.gcFail("a ?. chain over a payload of no known type");
+        };
+        // The receiver's family must agree with how its payload is held.
+        switch (k) {
+            .string => if (!(pr.isRef() and pr.ref == .str)) return self.gcFail("a ?. string method over no string payload"),
+            .array => if (!pr.isArrRef()) return self.gcFail("a ?. array method over no array payload"),
+            .int => if (pr != .i32) return self.gcFail("a ?. int method over no i32 payload"),
+            .bool => if (pr != .bool and pr != .i32) return self.gcFail("a ?. bool method over no bool payload"),
+            else => return self.gcFail("a ?. method of a primitive this lowering has no GC form for"),
+        }
+        const answers_opt = (k == .array and (eq(u8, cc.callee, "at") or eq(u8, cc.callee, "first"))) or
+            (k == .string and eq(u8, cc.callee, "at"));
+        const out_pr = self.gcOptPayload(res) orelse return self.gcFail("a ?. chain of no known answer");
+        const cr = gcOptRepr(pr);
+        const out_cr = gcOptRepr(out_pr);
+        const out_vt = self.vtOf(out_cr);
+        const tmp = try self.gcTemp(cr);
+        try self.lowerCoerced(recv, cr);
+        try self.emit(.{ .local_tee = tmp });
+        try self.emit(.ref_is_null);
+        var absent: Capture = .{};
+        self.open(&absent);
+        try self.emit(self.zeroOf(out_cr));
+        const absent_seq = self.seal(&absent, .{ .value = out_vt });
+        var present: Capture = .{};
+        self.open(&present);
+        // The payload, in a local of its own type.
+        const p = if (pr.isRef()) tmp else blk: {
+            const v = try self.gcTemp(pr);
+            try self.emit(.{ .local_get = tmp });
+            try self.gcUnbox(pr);
+            try self.emit(.{ .local_set = v });
+            break :blk v;
+        };
+        if (inner_tr) |t| try self.local_typerefs.put(p, t);
+        if (k == .string) try self.str_locals.put(p, {});
+        if (k == .bool) try self.bool_locals.put(p, {});
+        if (k == .array) if (inner_tr) |t| if (arrayElemOfTypeRef(t)) |ek| {
+            try self.arr_locals.put(p, {});
+            try self.arr_elem_locals.put(p, ek);
+            if (self.elemRecordOf(recv)) |rec| try self.arr_elem_recs.put(p, rec);
+        };
+        const payload = try self.arena().create(ast.Expr);
+        payload.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = p } } };
+        var link = cc;
+        link.receiver = payload;
+        link.optional = false;
+        try self.lowerPrimMethod(k, link);
+        if (answers_opt) {
+            // Already the optional: cast down to the carrier this call is.
+            if (out_vt != .anyref) try self.emit(.{ .ref_cast = out_vt });
+        } else if (!out_pr.isRef()) try self.gcBox(out_pr);
+        const present_seq = self.seal(&present, .{ .value = out_vt });
+        try self.emit(.{ .@"if" = .{ .result = out_vt, .then = .{ .seq = absent_seq }, .@"else" = .{ .seq = present_seq } } });
         return true;
     }
 
@@ -29618,6 +29758,7 @@ const Emitter = struct {
             // `recv?._N`: absent when the tuple is — the load reads a present
             // one only, and a scalar element is boxed (`optInfoOf`).
             if (ia.optional) {
+                if (self.mode == .gc) return self.gcOptionalTupleGet(ia, idx, .{ .identifier = .{ .loc = loc, .kind = .{ .identAccess = ia } } });
                 try self.lowerOptionalField(ia, idx * 4, "");
                 return;
             }

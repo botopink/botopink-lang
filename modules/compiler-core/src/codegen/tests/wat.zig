@@ -8488,6 +8488,203 @@ test "wat: gc ---- `rec.field.push(v)` / `.pop()` on a string array field (front
     );
 }
 
+// 144 B-243 — `recv?.m(args)` over a primitive method (`lowerChainedCall`)
+// had no GC form: its scalar answer was boxed by the linear `box_i32` helper
+// and the module fell back to linear memory. Absent anywhere up the chain is
+// null, the method never run; a present payload's answer is in its box.
+test "wat: gc ---- a primitive method through `?.`, written with it or continuing its chain (144 B-243)" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\type Entry(key: string)
+        \\fn maybeStr(b: bool) -> ?string {
+        \\    if (b) { return "hello"; }
+        \\    return null;
+        \\}
+        \\pub fn main() -> void {
+        \\    val es = [Entry(key: "abc"), Entry(key: "")];
+        \\    val ks = es.map({ e -> e.key });
+        \\    print(ks.at(0)?.length());
+        \\    print(ks.at(1)?.length());
+        \\    print(ks.at(5)?.length());
+        \\    print(maybeStr(true)?.toUpper());
+        \\    print(maybeStr(false)?.toUpper());
+        \\    print(maybeStr(true)?.contains("ll"));
+        \\    print(maybeStr(false)?.contains("ll") ?? true);
+        \\    print(maybeStr(true)?.length().toString());
+        \\    print(maybeStr(false)?.length().toString());
+        \\    print(maybeStr(true)?.at(1));
+        \\    print(maybeStr(true)?.at(9));
+        \\    print(maybeStr(false)?.length() ?? -1);
+        \\    print(es.at(1)?.key.length());
+        \\    print(es.at(5)?.key.length() ?? -1);
+        \\    print(es.at(0)?.key.length().toString());
+        \\    print(es.at(5)?.key.length().toString() ?? "gone");
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\3
+        \\0
+        \\null
+        \\HELLO
+        \\null
+        \\true
+        \\true
+        \\5
+        \\null
+        \\e
+        \\null
+        \\-1
+        \\0
+        \\-1
+        \\3
+        \\gone
+        \\
+    );
+}
+
+// The same lowering over an optional array: a method that answers an
+// optional itself (`at`, `first`) is that optional, not a box around it.
+test "wat: gc ---- an array method through `?.` flattens the optional it answers (144 B-243)" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\fn maybeArr(b: bool) -> ?i32[] {
+        \\    if (b) { return [4, 5, 6]; }
+        \\    return null;
+        \\}
+        \\fn maybeWords(b: bool) -> ?string[] {
+        \\    if (b) { return ["a", "bc"]; }
+        \\    return null;
+        \\}
+        \\type Entry(key: string)
+        \\fn maybeEntries(b: bool) -> ?Entry[] {
+        \\    if (b) { return [Entry(key: "abc"), Entry(key: "de")]; }
+        \\    return null;
+        \\}
+        \\fn maybeFlags(b: bool) -> ?bool[] {
+        \\    if (b) { return [false, true]; }
+        \\    return null;
+        \\}
+        \\pub fn main() -> void {
+        \\    print(maybeEntries(true)?.at(1)?.key);
+        \\    print(maybeEntries(true)?.at(4)?.key);
+        \\    print(maybeEntries(false)?.at(1)?.key);
+        \\    print(maybeEntries(true)?.first()?.key.length());
+        \\    print(maybeFlags(true)?.at(0));
+        \\    print(maybeFlags(true)?.at(1));
+        \\    print(maybeFlags(false)?.at(1));
+        \\    print(maybeFlags(true)?.contains(true));
+        \\    print(maybeArr(true)?.at(1));
+        \\    print(maybeArr(true)?.at(7));
+        \\    print(maybeArr(false)?.at(1));
+        \\    print(maybeArr(true)?.length());
+        \\    print(maybeArr(false)?.length() ?? -1);
+        \\    print(maybeArr(true)?.first() ?? -1);
+        \\    print(maybeWords(true)?.at(1)?.length());
+        \\    print(maybeWords(true)?.at(5)?.length());
+        \\    print(maybeWords(false)?.at(1)?.length());
+        \\    print(maybeWords(true)?.join("-"));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\de
+        \\null
+        \\null
+        \\3
+        \\false
+        \\true
+        \\null
+        \\true
+        \\5
+        \\null
+        \\null
+        \\3
+        \\-1
+        \\4
+        \\2
+        \\null
+        \\null
+        \\a-bc
+        \\
+    );
+}
+
+// 144 B-243 — `rs.at(i)?.label` (decision 45, rewritten to `?._N`): a GC
+// tuple's slot already holds the element as an optional carries it, so the
+// read is the slot or null. It fell back to linear memory, which boxed the
+// scalar by `box_i32`. A present `0`, `false`, `""` is that value.
+test "wat: gc ---- a tuple label read through `?.` (144 B-243)" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\fn rows() -> #(a: i32, b: string, f: f64)[] {
+        \\    return [#(0, "", 0.0), #(3, "q", 2.5)];
+        \\}
+        \\pub fn main() -> void {
+        \\    val es: #(a: i32, b: string)[] = [];
+        \\    print(es.at(0)?.b ?? "none");
+        \\    print(es.at(3)?.a ?? 0);
+        \\    val rs = rows();
+        \\    print(rs.at(0)?.a);
+        \\    print(rs.at(1)?.a);
+        \\    print(rs.at(1)?.b);
+        \\    print(rs.at(0)?.f);
+        \\    print(rs.at(1)?.f);
+        \\    print(rs.at(2)?.a);
+        \\    print(rs.at(2)?.b);
+        \\    print(rs.at(2)?.f);
+        \\    print(rs.at(2)?.a ?? 77);
+        \\    print(rs.at(1)?.b ?? "none");
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\none
+        \\0
+        \\0
+        \\3
+        \\q
+        \\0.0
+        \\2.5
+        \\null
+        \\null
+        \\null
+        \\77
+        \\q
+        \\
+    );
+}
+
+// 144 B-243 — a method after a tuple label read through `?.`
+// (`rs.at(i)?.b.length()`) continues the chain: `chainPayloadKind` reads
+// the element's shape. Unread, the method ran with no guard off a field
+// offset guessed by name — an absent element's `length()` answered `8`.
+test "wat: gc ---- a primitive method after a tuple label read through `?.` (144 B-243)" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\fn rows() -> #(a: i32, b: string)[] {
+        \\    return [#(0, ""), #(3, "q")];
+        \\}
+        \\pub fn main() -> void {
+        \\    val rs = rows();
+        \\    print(rs.at(1)?.b.length());
+        \\    print(rs.at(2)?.b.length());
+        \\    print(rs.at(0)?.b.length());
+        \\    print(rs.at(1)?.b.toUpper());
+        \\    print(rs.at(2)?.b.toUpper() ?? "none");
+        \\    print(rs.at(1)?.b.length().toString());
+        \\    print(rs.at(2)?.b.length().toString());
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\1
+        \\null
+        \\0
+        \\Q
+        \\none
+        \\1
+        \\null
+        \\
+    );
+}
+
 // Front 170 s7 P5-g — "the GC module does not type-check: a value of another
 // type" (decision 668's `mapAll(["a", "bc"], { s -> s.length })`): an array a
 // generic body answers is its erased `$arr_any`, each element boxed, whatever
