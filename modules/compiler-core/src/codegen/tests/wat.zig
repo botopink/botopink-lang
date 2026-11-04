@@ -8111,3 +8111,86 @@ test "wat: gc ---- an `else if` whose `if` the checker typed a union, as an oute
         \\
     );
 }
+
+// Front 170 s7 P5-f — `xs.find(pred)` is `xs.filter(pred).at(0)`
+// (`lowerArrayMethod`'s own comment on `find`): the filter step already had
+// a GC twin (`gcArrayHof`), but the `.at(0)` after it called `arrAtHelper`
+// unconditionally — the linear-memory `$__arr_at` / `$__arr_at_box` helper
+// names, which have no GC form (`arr_at`, `arr_at_box`, `box_i32` are three
+// of front 170's 19 ungapped helper groups) — and the module fell back to
+// `.linear` reaching them. `find` on a GC array now closes with the same
+// `gcArrAtOpt` call `gcArrayMethod`'s own `at` uses.
+test "wat: gc ---- `xs.find(pred)` closes with the GC array's own `at`, not the linear helper (front 170 s7 P5-f)" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\fn main() -> void {
+        \\    val xs = [1, 2, 3, 4];
+        \\    print(xs.find({ n -> n > 2 }) ?? -1);
+        \\    print(xs.find({ n -> n > 10 }) ?? -1);
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\3
+        \\-1
+        \\
+    );
+}
+
+// Front 170 s7 P5-f — `rec.field.push(v)` / `rec.field.pop()`: the
+// local-or-global receiver branch of `lowerArrayPush` / `lowerArrayPop` had
+// its own GC twin (`gcArrPush`, `gcArrAtOpt` + `gcArrOp("slice", …)`), but
+// the record-field branch (`push`'s field path, `pop`'s) never gained one —
+// it always emitted the linear `$__arr_push` / `$__arr_at(_box)` helpers,
+// which `gcFail` on a GC module (`arr_push`, `arr_at`, `arr_at_box`,
+// `box_i32`: four of front 170's 19 groups). Both now read and write the
+// field through `struct.get` / `struct.set`, as a plain field assignment
+// does (`gcFieldAssign`'s field ref), calling the same GC array ops the
+// local/global branch already does.
+test "wat: gc ---- `rec.field.push(v)` / `.pop()` read and write the field by `struct.set` (front 170 s7 P5-f)" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\type Box(items: i32[])
+        \\fn main() -> void {
+        \\    val b = Box(items: [1, 2, 3]);
+        \\    b.items.push(4);
+        \\    print(b.items.length());
+        \\    print(b.items.at(3) ?? -1);
+        \\    val popped = b.items.pop() ?? -1;
+        \\    print(popped);
+        \\    print(b.items.length());
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\4
+        \\4
+        \\4
+        \\3
+        \\
+    );
+}
+
+// The same field path, boxed on an `any`-class array (a string element):
+// `push` boxes nothing here (strings are already references), but `pop`
+// still answers through `gcArrAtOpt`'s `any` branch and its `ref_cast`.
+test "wat: gc ---- `rec.field.push(v)` / `.pop()` on a string array field (front 170 s7 P5-f)" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\type Box(items: string[])
+        \\fn main() -> void {
+        \\    val b = Box(items: ["a", "b", "c"]);
+        \\    b.items.push("d");
+        \\    print(b.items.length());
+        \\    print(b.items.at(3) ?? "?");
+        \\    val popped = b.items.pop() ?? "?";
+        \\    print(popped);
+        \\    print(b.items.length());
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\4
+        \\d
+        \\d
+        \\3
+        \\
+    );
+}

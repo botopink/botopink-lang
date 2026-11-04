@@ -21689,6 +21689,23 @@ const Emitter = struct {
             };
             try self.lowerArrayHof(@intFromEnum(Hof.filter), recv, lam, null);
             try self.emit(zero);
+            // Front 170 s7 P5-f — the filter's own GC twin (`gcArrayHof`)
+            // already left a GC array on the stack; `at(0)` of it is
+            // `gcArrAtOpt`, the same function `gcArrayMethod`'s `at` calls —
+            // `arrAtHelper`'s linear-memory helper names (`$__arr_at` /
+            // `$__arr_at_box`) read a pointer, which a GC module has none of.
+            if (self.mode == .gc) {
+                const ar = self.wasmTypeOf(recv);
+                if (!ar.isArrRef()) return self.gcFail("a find over a value of no known array type");
+                const cls = ar.ref.arr;
+                const er: Repr = if (cls == .any) (self.gcElemRepr(recv) orelse return self.gcFail("a find over an array of no known element type")) else gcClsRepr(cls);
+                try self.emit(.{ .call = try self.gcArrAtOpt(cls) });
+                if (cls == .any and er.isRef()) {
+                    const vt = self.vtOf(er);
+                    if (vt != .anyref) try self.emit(.{ .ref_cast = vt });
+                }
+                return;
+            }
             try self.emit(b.helper(self.arrAtHelper(recv)));
             return;
         }
@@ -21908,6 +21925,45 @@ const Emitter = struct {
             if (recv == .identifier and recv.identifier.kind == .identAccess) {
                 const ia = recv.identifier.kind.identAccess;
                 if (self.recordTypeOfExpr(ia.receiver.*)) |rty| if (self.fieldOffsetIn(rty, ia.member)) |off| {
+                    // Front 170 s7 P5-f — `rec.field.pop()` in a GC module:
+                    // the last element answered by `gcArrAtOpt` (the local/
+                    // global branch's own GC twin, `gcArrayMethod`'s `pop`),
+                    // the field rebound one shorter by `struct.set` (the
+                    // field ref `gcFieldAssign` uses).
+                    if (self.mode == .gc) {
+                        const ar = self.wasmTypeOf(recv);
+                        if (!ar.isArrRef()) return self.gcFail("a pop off a value of no known array type");
+                        const cls = ar.ref.arr;
+                        const rrepr: Repr = .{ .ref = .{ .record = rty } };
+                        const ref: wat.FieldRef = .{ .ty = self.gcTyIndex(.{ .record = rty }), .field = off / 4 };
+                        const owner = try self.gcTemp(rrepr);
+                        const arrv = try self.gcTemp(ar);
+                        try self.lowerCoerced(ia.receiver.*, rrepr);
+                        try self.emit(.{ .local_set = owner });
+                        try self.emit(.{ .local_get = owner });
+                        try self.emit(.{ .struct_get = ref });
+                        try self.emit(.{ .local_set = arrv });
+                        try self.emit(.{ .local_get = arrv });
+                        try self.emit(try self.constInt(-1));
+                        try self.emit(.{ .call = try self.gcArrAtOpt(cls) });
+                        if (cls == .any) {
+                            const er = self.gcElemRepr(recv) orelse return self.gcFail("an array of no known element type");
+                            if (er.isRef()) {
+                                const vt = self.vtOf(er);
+                                if (vt != .anyref) try self.emit(.{ .ref_cast = vt });
+                            }
+                        }
+                        try self.emit(.{ .local_get = owner });
+                        try self.emit(.{ .local_get = arrv });
+                        try self.emit(zero);
+                        try self.emit(.{ .local_get = arrv });
+                        try self.emit(.array_len);
+                        try self.emit(one);
+                        try self.emit(opOf(.i32, "sub"));
+                        try self.emit(.{ .call = try self.gcArrOp("slice", cls) });
+                        try self.emit(.{ .struct_set = ref });
+                        return;
+                    }
                     const b = self.builder();
                     const owner = try self.memName(self.nextMem());
                     const arr = try self.memName(self.nextMem());
@@ -21977,6 +22033,30 @@ const Emitter = struct {
                     return;
                 },
                 .identAccess => |ia| if (self.recordTypeOfExpr(ia.receiver.*)) |rty| if (self.fieldOffsetIn(rty, ia.member)) |off| {
+                    // Front 170 s7 P5-f — `rec.field.push(v)` in a GC module:
+                    // the field read by `struct.get`, grown by `gcArrPush`
+                    // (the local/global branch above's own GC twin), and
+                    // written back by `struct.set` (`gcFieldAssign`'s field
+                    // ref) — `push` rebinds its receiver wherever it is held.
+                    if (self.mode == .gc) {
+                        const ar = self.wasmTypeOf(recv);
+                        if (!ar.isArrRef()) return self.gcFail("a push onto a value of no known array type");
+                        const cls = ar.ref.arr;
+                        const er: Repr = if (cls == .any) (self.gcElemRepr(recv) orelse return self.gcFail("a push onto an array of no known element type")) else gcClsRepr(cls);
+                        const rrepr: Repr = .{ .ref = .{ .record = rty } };
+                        const ref: wat.FieldRef = .{ .ty = self.gcTyIndex(.{ .record = rty }), .field = off / 4 };
+                        const mem = try self.gcTemp(rrepr);
+                        try self.lowerCoerced(ia.receiver.*, rrepr);
+                        try self.emit(.{ .local_set = mem });
+                        try self.emit(.{ .local_get = mem });
+                        try self.emit(.{ .local_get = mem });
+                        try self.emit(.{ .struct_get = ref });
+                        try self.lowerCoerced(arg, er);
+                        if (cls == .any) try self.gcBox(er);
+                        try self.emit(.{ .call = try self.gcArrPush(cls) });
+                        try self.emit(.{ .struct_set = ref });
+                        return;
+                    }
                     const mem = try self.memName(self.nextMem());
                     try self.lowerValue(ia.receiver.*);
                     try self.emit(.{ .local_tee = mem });
