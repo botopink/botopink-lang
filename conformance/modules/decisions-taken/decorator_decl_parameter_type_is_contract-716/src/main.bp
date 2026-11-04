@@ -50,5 +50,6 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("init_executor_handle_typed");
     runCase("member_decl_as_code");
     runCase("init_executor_handle_on_method");
+    runCase("init_executor_handle_on_instance_method");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

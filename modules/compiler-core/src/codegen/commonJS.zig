@@ -2715,6 +2715,35 @@ const Emitter = struct {
         return try self.b.arrowExpr(params, try self.b.call(.{ .ident = name }, args));
     }
 
+    /// 144 B-147 — the value `af` names (a type's OWN method, named without
+    /// a call) is a JS arrow unbound over `self` when the method declares
+    /// one (an instance method: `self` its first parameter, counted in
+    /// `af.arity` like the checker's `associatedFnValue` counts every other
+    /// declared parameter) — `(self, …rest) => self.method(…rest)`, called
+    /// exactly as `decl(instance, …)` expects. Null for an associated fn with
+    /// no `self` (144 B-10's case, which the caller leaves to the existing
+    /// `Owner.method` read: a real `static` member there) and for a type
+    /// this module does not declare (an imported type's own module builds
+    /// its own arrow the same way when it emits the splice).
+    fn unboundMethodValue(self: *Emitter, af: envMod.AssocFnValue) !?js.Expr {
+        const d = self.eq_decls.get(af.type_name) orelse return null;
+        const m = for (d.methods) |m| {
+            if (std.mem.eql(u8, m.name, af.method)) break m;
+        } else return null;
+        if (m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self")) return null;
+        const rest = m.params.len - 1;
+        const params = try self.arena().alloc(js.Param, rest + 1);
+        params[0] = js.Param.id("__self");
+        const args = try self.arena().alloc(js.Expr, rest);
+        for (0..rest) |i| {
+            const pname = try std.fmt.allocPrint(self.arena(), "__a{d}", .{i});
+            params[i + 1] = js.Param.id(pname);
+            args[i] = .{ .name = pname };
+        }
+        const callee = try self.b.member(.{ .ident = "__self" }, af.method);
+        return try self.b.arrowExpr(params, try self.b.call(callee, args));
+    }
+
     /// 144 B-115 (decision 673) — whether `t` names one of the type
     /// parameters `gps`, or holds one.
     fn mentionsTypeParam(t: ast.TypeRef, gps: []const ast.GenericParam) bool {
@@ -5375,6 +5404,27 @@ const Emitter = struct {
                     };
                     if (isSelf) {
                         return self.b.member(if (self.self_is_param) js.Expr{ .ident = "self" } else .this, ia.member);
+                    }
+                    // 144 B-147 — the owner's path of an INSTANCE method
+                    // (`self` its first declared parameter) named without a
+                    // call: a decorator's `syntax decl: fn(self: …, …) -> …`
+                    // handle splices as `Owner.method` (decision 613) the
+                    // same as an associated fn's (144 B-10), but JS has no
+                    // class member a bare `Owner.method` would read (an
+                    // instance method lives on the prototype, reached only
+                    // through an instance) — `Owner.method` read `undefined`.
+                    // The value every other target gives is the method
+                    // unbound, `self` an explicit argument like any other
+                    // (erlang/beam: a qualified `module:fn/arity` reference);
+                    // the arrow `(self, …rest) => self.method(…rest)` calls
+                    // the same way.
+                    if (ia.receiver.* == .identifier and ia.receiver.*.identifier.kind == .ident) {
+                        if (self.lowerings) |lw| if (lw.get(id.loc)) |il| if (il == .assoc_fn_value) {
+                            const af = il.assoc_fn_value;
+                            if (std.mem.eql(u8, af.type_name, ia.receiver.*.identifier.kind.ident) and std.mem.eql(u8, af.method, ia.member)) {
+                                if (try self.unboundMethodValue(af)) |arrow| return arrow;
+                            }
+                        };
                     }
                     const recv = try self.buildExpr(ia.receiver.*);
                     // Tuple index access: `t._N` → `t[N]` (tuples are JS arrays).

@@ -980,6 +980,20 @@ codegen/
   type's module), beam the same `ext_fun` literal or a `make_fun3` over the
   entry, wasm a closure over `Box_wrap`'s trampoline (`lowerFnRef`)
   (`conformance/modules/associated/run/src/cases/associated_fn_as_value`, 144 B-10).
+  144 B-147 — `associatedFnValue` (`comptime/infer.zig`) carries the same
+  `assoc_fn_value` tag for an INSTANCE method (`self` its first declared
+  parameter), `arity` counting `self` like any other: a decorator's `syntax
+  decl: fn(self: …, …) -> …` splices `decl` as the method's owner's path too
+  (decision 613), and the unbound method it names is `self` an explicit
+  argument — erlang's and beam's qualified `module:fn/arity` reference is
+  exactly the real compiled method, `self` already its first parameter, so
+  neither needed its own change; erlang used to read `Owner` as the generic
+  field-read receiver, a bare unbound variable (`erlc` refused the module).
+  JS has no such reference (an instance method lives on the prototype, read
+  only through an instance): `commonJS.zig`'s `unboundMethodValue` builds the
+  arrow `(self, …rest) => self.method(…rest)` instead of the `Owner.method`
+  text that answers `undefined` there
+  (`conformance/modules/decisions-taken/decorator_decl_parameter_type_is_contract-716/cases/init_executor_handle_on_instance_method`).
   A receiver inference left untyped (a behavior's `default fn` records no
   lowering) routes through `method_owners` — `method/arity` → the one local type
   declaring or adopting it; two claimants leave no entry and the bare call

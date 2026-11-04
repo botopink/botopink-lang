@@ -1,0 +1,26 @@
+//// 144 B-147 — on an INSTANCE method (`self` the first declared parameter)
+//// the handle is still the method by its owner's path (decision 613), the
+//// method unbound: `self` an explicit argument like any other, so
+//// `e.call(u, "hi")` calls it on whatever instance it is handed, not the one
+//// annotated. Erlang used to read the owner's name as a runtime value — a
+//// bare unbound variable, and `erlc` refused the module.
+
+pub mod marks;
+pub mod registry;
+import {marks.registered};
+import {registry.all};
+import {io.terminal.print} from "std";
+
+pub type Users(id: i32) {
+    #[registered]
+    pub fn greet(self: Users, req: string) -> string {
+        return "hi " + self.id.toString() + " " + req;
+    }
+}
+
+pub fn main() -> void {
+    val u = Users(id: 1);
+    for (all()) { e ->
+        print(e.name + " " + e.call(u, "req"));
+    }
+}

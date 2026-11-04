@@ -21692,9 +21692,18 @@ fn associatedCallReturnType(
 }
 
 /// 144 B-10 (decision 430) — `T.f` read without a call, where `T` names a
-/// record, struct or enum and `f` is one of its associated fns (no `self`):
-/// the fn as a value, of its declared signature, and the lowering the
-/// backends without native static members place it by. Null for any other
+/// record, struct or enum and `f` is one of its associated fns: the fn as a
+/// value, of its declared signature, and the lowering the backends without
+/// native static members place it by. 144 B-147 extends this to an INSTANCE
+/// method (`self` the first declared parameter): the handle `decl` of a
+/// decorator's `syntax decl: fn(self: …, …) -> …` splices as the owner's
+/// path too (decision 613), and the value it names is the method unbound —
+/// `self` counted in `arity` like any other declared parameter, so a backend
+/// without a native unbound-method value (erlang, beam: a qualified
+/// `module:fn/arity` reference) places it exactly as the method is really
+/// compiled, self included. Erlang used to fall through to the generic
+/// field-read lowering, reading the type name `Users` as a runtime value —
+/// an unbound variable, `erlc` refused the module. Null for any other
 /// member read.
 fn associatedFnValue(env: *Env, ia: anytype, loc: ast.Loc) InferError!?TypedExpr {
     if (ia.optional) return null;
@@ -21703,7 +21712,6 @@ fn associatedFnValue(env: *Env, ia: anytype, loc: ast.Loc) InferError!?TypedExpr
     if (env.lookupTypeDef(typeName) == null) return null;
     if (!env.hasInherentMethod(typeName, ia.member)) return null;
     const params = env.getInherentMethodParams(typeName, ia.member) orelse return null;
-    if (params.len > 0 and std.mem.eql(u8, params[0].name, "self")) return null;
     const sigRaw = env.getInherentMethodType(typeName, ia.member) orelse return null;
     var seen = std.AutoHashMap(*T.TypeCell, *T.Type).init(env.arena);
     defer seen.deinit();

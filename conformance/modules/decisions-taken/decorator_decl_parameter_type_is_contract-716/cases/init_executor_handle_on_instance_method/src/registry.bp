@@ -1,0 +1,15 @@
+//// The run-time registry the executor writes to: each entry holds the
+//// annotated declaration itself, unbound — `self` an explicit argument,
+//// called when `main` runs.
+
+pub type Entry(name: string, call: fn(unknown, string) -> string)
+
+var entries: Entry[] = [];
+
+pub fn add(e: Entry) -> void {
+    entries.push(e);
+}
+
+pub fn all() -> Entry[] {
+    return entries;
+}

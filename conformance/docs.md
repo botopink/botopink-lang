@@ -5150,6 +5150,13 @@ refused at the annotation.
 
 <!-- example: modules/decisions-taken/decorator_decl_parameter_type_is_contract-716/cases/init_executor_handle_not_module_name -->
 
+An INSTANCE method's owner's path (`self` its first declared parameter) is the
+same method unbound: `self` an explicit argument like any other, so the value
+calls on whatever instance it is handed, not the one the annotation decorated
+(144 B-147):
+
+<!-- example: modules/decisions-taken/decorator_decl_parameter_type_is_contract-716/cases/init_executor_handle_on_instance_method -->
+
 A `compiler.*` call inside the executor is evaluated at build and enters the
 executor as a literal, exactly as a `val` read before it does (decision 614):
 `compiler.init({ -> register(compiler.name(decl)) })` and `val name =

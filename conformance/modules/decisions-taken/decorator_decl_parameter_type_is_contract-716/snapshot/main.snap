@@ -32,3 +32,5 @@ out about scoped about home
 out users!
 == init_executor_handle_on_method
 out make users made
+== init_executor_handle_on_instance_method
+out greet hi 1 req
