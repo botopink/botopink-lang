@@ -24,7 +24,7 @@ out resolved 5
 out caught negative -2
 out end
 == task_result_caught_by_js on erlang
-abort
+excluded `callFromJs` has no implementation for the erlang backend
 == task_result_caught_by_js on beam
 excluded `callFromJs` has no implementation for the beam backend
 == task_result_caught_by_js on wasm
