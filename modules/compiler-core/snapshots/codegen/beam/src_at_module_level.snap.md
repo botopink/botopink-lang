@@ -48,33 +48,38 @@ import {io.terminal.print, compiler} from "std";
     {line, [{location, "test@main.erl", 2}]}.
     {func_info, {atom, test@main}, {atom, main}, 0}.
   {label, 5}.
-    {allocate, 4, 0}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
+    {allocate, 5, 0}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 0}}.
+    {move, nil, {y, 1}}.
     {call, 0, {f, 3}}.
     {test, is_tagged_tuple, {f, 13}, [{x, 0}, 6, {atom, test@main@@SourceLocation}]}.
-    {get_tuple_element, {x, 0}, 3, {x, 0}}.
+    {get_tuple_element, {x, 0}, 1, {x, 0}}.
   {label, 13}.
-    {move, {y, 0}, {x, 1}}.
+    {move, {y, 1}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {y, 0}}.
+    {move, {x, 0}, {y, 1}}.
     {call, 0, {f, 3}}.
     {test, is_tagged_tuple, {f, 14}, [{x, 0}, 6, {atom, test@main@@SourceLocation}]}.
     {get_tuple_element, {x, 0}, 2, {x, 0}}.
   {label, 14}.
-    {move, {y, 0}, {x, 1}}.
+    {move, {y, 1}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {y, 0}}.
+    {move, {x, 0}, {y, 1}}.
     {call, 0, {f, 3}}.
     {test, is_tagged_tuple, {f, 15}, [{x, 0}, 6, {atom, test@main@@SourceLocation}]}.
-    {get_tuple_element, {x, 0}, 1, {x, 0}}.
+    {get_tuple_element, {x, 0}, 3, {x, 0}}.
   {label, 15}.
-    {move, {y, 0}, {x, 1}}.
+    {move, {y, 1}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, reverse, 2}}.
     {call, 1, {f, 17}}.
     {call, 0, {f, 3}}.
     {test, is_tagged_tuple, {f, 46}, [{x, 0}, 6, {atom, test@main@@SourceLocation}]}.
@@ -92,7 +97,7 @@ import {io.terminal.print, compiler} from "std";
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 17}}.
     {move, {atom, ok}, {x, 0}}.
-    {deallocate, 4}.
+    {deallocate, 5}.
     return.
 
 {function, '_botopink_main', 0, 7}.

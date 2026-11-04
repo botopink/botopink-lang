@@ -27,45 +27,50 @@ import {io.terminal.print} from "std";
     {line, [{location, "test@main.erl", 1}]}.
     {func_info, {atom, test@main}, {atom, f}, 0}.
   {label, 3}.
-    {allocate, 4, 0}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
+    {allocate, 5, 0}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 0}}.
-    {move, {integer, 3}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {integer, 2}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {y, 0}}.
+    {move, nil, {y, 1}}.
     {move, {integer, 1}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
+    {move, {y, 1}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {integer, 3}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, reverse, 2}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 2}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test, is_nonempty_list, {f, 11}, [{x, 1}]}.
     {get_list, {x, 1}, {x, 2}, {x, 1}}.
-    {move, {x, 2}, {y, 2}}.
-    {move, {y, 1}, {x, 0}}.
+    {move, {x, 2}, {y, 3}}.
+    {move, {y, 2}, {x, 0}}.
     {jump, {f, 10}}.
   {label, 11}.
     {move, {literal, <<"not a list">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
-    {deallocate, 4}.
+    {deallocate, 5}.
     return.
     {jump, {f, 10}}.
   {label, 10}.
     {move, {x, 0}, {x, 1}}.
     {test, is_nonempty_list, {f, 12}, [{x, 1}]}.
     {get_list, {x, 1}, {x, 2}, {x, 1}}.
-    {move, {x, 2}, {y, 3}}.
+    {move, {x, 2}, {y, 4}}.
     {jump, {f, 13}}.
   {label, 12}.
     {move, {literal, <<"assert pattern did not match">>}, {x, 0}}.
@@ -77,7 +82,7 @@ import {io.terminal.print} from "std";
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
-    {deallocate, 4}.
+    {deallocate, 5}.
     return.
 
 {function, main, 0, 5}.

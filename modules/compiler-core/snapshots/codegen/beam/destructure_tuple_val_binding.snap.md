@@ -20,8 +20,8 @@ import {io.terminal.print} from "std";
     {line, [{location, "test@main.erl", 1}]}.
     {func_info, {atom, test@main}, {atom, main}, 0}.
   {label, 3}.
-    {allocate, 4, 0}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
+    {allocate, 5, 0}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
     {move, {literal, <<"hello">>}, {x, 0}}.
     {test_heap, 3, 1}.
     {put_tuple2, {x, 0}, {list, [{integer, 12}, {x, 0}]}}.
@@ -37,18 +37,23 @@ import {io.terminal.print} from "std";
     {move, {y, 0}, {x, 0}}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
-    {move, {y, 2}, {x, 0}}.
-    {move, {y, 3}, {x, 1}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {y, 3}}.
+    {move, nil, {y, 4}}.
     {move, {y, 1}, {x, 0}}.
-    {move, {y, 3}, {x, 1}}.
+    {move, {y, 4}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 2}, {x, 0}}.
+    {move, {y, 4}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 4}, {x, 0}}.
+    {move, {y, 3}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, reverse, 2}}.
     {call, 1, {f, 9}}.
     {move, {atom, ok}, {x, 0}}.
-    {deallocate, 4}.
+    {deallocate, 5}.
     return.
 
 {function, '_botopink_main', 0, 5}.

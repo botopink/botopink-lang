@@ -80,12 +80,12 @@ import {io.terminal.print} from "std";
     {line, [{location, "test@main.erl", 2}]}.
     {func_info, {atom, test@main}, {atom, twice}, 1}.
   {label, 5}.
-    {allocate, 10, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}]}}.
+    {allocate, 11, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}]}}.
     {move, {x, 0}, {y, 0}}.
-    {'try', {y, 9}, {f, 17}}.
+    {'try', {y, 10}, {f, 17}}.
     {move, {atom, true}, {x, 0}}.
-    {'try', {y, 8}, {f, 21}}.
+    {'try', {y, 9}, {f, 21}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 3}}.
     {test, is_tagged_tuple, {f, 22}, [{x, 0}, 2, {atom, ok}]}.
@@ -112,7 +112,7 @@ import {io.terminal.print} from "std";
     {move, {x, 0}, {y, 5}}.
     {move, {y, 5}, {x, 0}}.
     {move, {x, 0}, {y, 1}}.
-    {try_end, {y, 8}}.
+    {try_end, {y, 9}}.
     {move, {literal, <<"deferred">>}, {x, 0}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
@@ -120,7 +120,7 @@ import {io.terminal.print} from "std";
     {move, {y, 1}, {x, 0}}.
     {jump, {f, 26}}.
   {label, 21}.
-    {try_case, {y, 8}}.
+    {try_case, {y, 9}}.
     {move, {x, 1}, {y, 2}}.
     {move, {x, 2}, {y, 3}}.
     {move, {literal, <<"deferred">>}, {x, 0}}.
@@ -133,10 +133,10 @@ import {io.terminal.print} from "std";
   {label, 26}.
     {jump, {f, 20}}.
   {label, 20}.
-    {try_end, {y, 9}}.
+    {try_end, {y, 10}}.
     {jump, {f, 19}}.
   {label, 17}.
-    {try_case, {y, 9}}.
+    {try_case, {y, 10}}.
     {test, is_eq_exact, {f, 18}, [{x, 0}, {atom, throw}]}.
     {test, is_tagged_tuple, {f, 18}, [{x, 1}, 2, {atom, '__bp_region'}]}.
     {get_tuple_element, {x, 1}, 1, {x, 0}}.
@@ -144,15 +144,20 @@ import {io.terminal.print} from "std";
     {move, {atom, true}, {x, 0}}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 7}}.
-    {move, {y, 6}, {x, 0}}.
-    {move, {y, 7}, {x, 1}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {y, 7}}.
+    {move, nil, {y, 8}}.
     {move, {literal, <<"caught: ">>}, {x, 0}}.
-    {move, {y, 7}, {x, 1}}.
+    {move, {y, 8}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 6}, {x, 0}}.
+    {move, {y, 8}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {x, 0}}.
+    {move, {y, 7}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, reverse, 2}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
     {make_fun3, {f, 59}, 0, 0, {x, 0}, {list, []}}.
@@ -168,7 +173,7 @@ import {io.terminal.print} from "std";
   {label, 18}.
     {bif, raise, {f, 0}, [{x, 2}, {x, 1}], {x, 0}}.
   {label, 19}.
-    {deallocate, 10}.
+    {deallocate, 11}.
     return.
 
 {function, unbound, 1, 7}.

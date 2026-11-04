@@ -52,8 +52,8 @@ import {io.terminal.print} from "std";
     {line, [{location, "test@main.erl", 2}]}.
     {func_info, {atom, test@main}, {atom, main}, 0}.
   {label, 5}.
-    {allocate, 12, 0}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}]}}.
+    {allocate, 16, 0}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}, {y, 10}, {y, 11}, {y, 12}, {y, 13}, {y, 14}, {y, 15}]}}.
     {move, {atom, true}, {x, 0}}.
     {call, 1, {f, 3}}.
     {move, {x, 0}, {y, 0}}.
@@ -63,15 +63,20 @@ import {io.terminal.print} from "std";
     {move, {x, 1}, {y, 1}}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 2}, {x, 1}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
+    {move, nil, {y, 3}}.
     {move, {literal, <<"OK:">>}, {x, 0}}.
-    {move, {y, 2}, {x, 1}}.
+    {move, {y, 3}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {y, 3}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, reverse, 2}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
     {make_fun3, {f, 44}, 0, 0, {x, 0}, {list, []}}.
@@ -81,18 +86,23 @@ import {io.terminal.print} from "std";
   {label, 12}.
     {test, is_tagged_tuple, {f, 47}, [{x, 0}, 2, {atom, error}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
-    {move, {x, 1}, {y, 3}}.
+    {move, {x, 1}, {y, 4}}.
     {move, nil, {x, 0}}.
-    {move, {x, 0}, {y, 4}}.
-    {move, {y, 3}, {x, 0}}.
-    {move, {y, 4}, {x, 1}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {y, 4}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, nil, {y, 6}}.
     {move, {literal, <<"ERR:">>}, {x, 0}}.
-    {move, {y, 4}, {x, 1}}.
+    {move, {y, 6}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 4}, {x, 0}}.
+    {move, {y, 6}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 6}, {x, 0}}.
+    {move, {y, 5}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, reverse, 2}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
     {make_fun3, {f, 44}, 0, 0, {x, 0}, {list, []}}.
@@ -102,29 +112,34 @@ import {io.terminal.print} from "std";
   {label, 47}.
     {case_end, {x, 0}}.
   {label, 11}.
-    {move, {x, 0}, {y, 5}}.
-    {move, {y, 5}, {x, 0}}.
+    {move, {x, 0}, {y, 7}}.
+    {move, {y, 7}, {x, 0}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 14}}.
     {move, {atom, false}, {x, 0}}.
     {call, 1, {f, 3}}.
-    {move, {x, 0}, {y, 6}}.
-    {move, {y, 6}, {x, 0}}.
+    {move, {x, 0}, {y, 8}}.
+    {move, {y, 8}, {x, 0}}.
     {test, is_tagged_tuple, {f, 49}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
-    {move, {x, 1}, {y, 7}}.
+    {move, {x, 1}, {y, 9}}.
     {move, nil, {x, 0}}.
-    {move, {x, 0}, {y, 8}}.
-    {move, {y, 7}, {x, 0}}.
-    {move, {y, 8}, {x, 1}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {y, 8}}.
+    {move, {x, 0}, {y, 10}}.
+    {move, nil, {y, 11}}.
     {move, {literal, <<"OK:">>}, {x, 0}}.
-    {move, {y, 8}, {x, 1}}.
+    {move, {y, 11}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 11}}.
+    {move, {y, 9}, {x, 0}}.
+    {move, {y, 11}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 11}}.
+    {move, {y, 11}, {x, 0}}.
+    {move, {y, 10}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, reverse, 2}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
     {make_fun3, {f, 44}, 0, 0, {x, 0}, {list, []}}.
@@ -134,18 +149,23 @@ import {io.terminal.print} from "std";
   {label, 49}.
     {test, is_tagged_tuple, {f, 50}, [{x, 0}, 2, {atom, error}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
-    {move, {x, 1}, {y, 9}}.
+    {move, {x, 1}, {y, 12}}.
     {move, nil, {x, 0}}.
-    {move, {x, 0}, {y, 10}}.
-    {move, {y, 9}, {x, 0}}.
-    {move, {y, 10}, {x, 1}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {y, 10}}.
+    {move, {x, 0}, {y, 13}}.
+    {move, nil, {y, 14}}.
     {move, {literal, <<"ERR:">>}, {x, 0}}.
-    {move, {y, 10}, {x, 1}}.
+    {move, {y, 14}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 14}}.
+    {move, {y, 12}, {x, 0}}.
+    {move, {y, 14}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 14}}.
+    {move, {y, 14}, {x, 0}}.
+    {move, {y, 13}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, reverse, 2}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
     {make_fun3, {f, 44}, 0, 0, {x, 0}, {list, []}}.
@@ -155,13 +175,13 @@ import {io.terminal.print} from "std";
   {label, 50}.
     {case_end, {x, 0}}.
   {label, 48}.
-    {move, {x, 0}, {y, 11}}.
-    {move, {y, 11}, {x, 0}}.
+    {move, {x, 0}, {y, 15}}.
+    {move, {y, 15}, {x, 0}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 14}}.
     {move, {atom, ok}, {x, 0}}.
-    {deallocate, 12}.
+    {deallocate, 16}.
     return.
 
 {function, '_botopink_main', 0, 7}.

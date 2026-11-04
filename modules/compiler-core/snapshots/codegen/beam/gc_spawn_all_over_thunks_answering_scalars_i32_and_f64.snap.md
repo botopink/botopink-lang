@@ -1574,8 +1574,8 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
     {line, [{location, "std@async.erl", 1}]}.
     {func_info, {atom, std@async}, {atom, 'array_range'}, 2}.
   {label, 3}.
-    {allocate, 6, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
+    {allocate, 7, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {gc_bif, '-', {f, 0}, 0, [{y, 1}, {y, 0}], {x, 0}}.
@@ -1587,31 +1587,36 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
     {test, is_eq_exact, {f, 119}, [{x, 0}, {integer, 1}]}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
+    {move, nil, {y, 3}}.
     {move, {y, 0}, {x, 0}}.
-    {move, {y, 2}, {x, 1}}.
+    {move, {y, 3}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, reverse, 2}}.
     {jump, {f, 120}}.
   {label, 119}.
     {gc_bif, '-', {f, 0}, 0, [{y, 1}, {y, 0}], {x, 0}}.
-    {move, {x, 0}, {y, 3}}.
-    {gc_bif, 'div', {f, 0}, 0, [{y, 3}, {integer, 2}], {x, 0}}.
+    {move, {x, 0}, {y, 4}}.
+    {gc_bif, 'div', {f, 0}, 0, [{y, 4}, {integer, 2}], {x, 0}}.
     {gc_bif, '+', {f, 0}, 1, [{y, 0}, {x, 0}], {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {call, 2, {f, 3}}.
-    {move, {x, 0}, {y, 4}}.
-    {gc_bif, 'div', {f, 0}, 0, [{y, 3}, {integer, 2}], {x, 0}}.
+    {move, {x, 0}, {y, 5}}.
+    {gc_bif, 'div', {f, 0}, 0, [{y, 4}, {integer, 2}], {x, 0}}.
     {gc_bif, '+', {f, 0}, 1, [{y, 0}, {x, 0}], {x, 0}}.
     {move, {y, 1}, {x, 1}}.
     {call, 2, {f, 3}}.
-    {move, {x, 0}, {y, 5}}.
-    {move, {y, 4}, {x, 0}}.
-    {move, {y, 5}, {x, 1}}.
+    {move, {x, 0}, {y, 6}}.
+    {move, {y, 5}, {x, 0}}.
+    {move, {y, 6}, {x, 1}}.
     {call, 2, {f, 122}}.
   {label, 120}.
   {label, 118}.
-    {deallocate, 6}.
+    {deallocate, 7}.
     return.
 
 {function, 'array_repeat', 2, 5}.
@@ -1619,8 +1624,8 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
     {line, [{location, "std@async.erl", 2}]}.
     {func_info, {atom, std@async}, {atom, 'array_repeat'}, 2}.
   {label, 5}.
-    {allocate, 6, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
+    {allocate, 7, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {test, is_ge, {f, 123}, [{integer, 0}, {y, 1}]}.
@@ -1642,20 +1647,24 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
     {move, {y, 2}, {x, 0}}.
     {move, {y, 2}, {x, 1}}.
     {call, 2, {f, 122}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
+    {move, nil, {x, 0}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, nil, {y, 5}}.
     {move, {y, 0}, {x, 0}}.
-    {move, {y, 3}, {x, 2}}.
-    {test_heap, 2, 3}.
-    {put_list, {x, 0}, {x, 2}, {x, 0}}.
-    {move, {x, 1}, {x, 2}}.
+    {move, {y, 5}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {x, 0}}.
+    {move, {y, 4}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, reverse, 2}}.
     {move, {x, 0}, {x, 1}}.
-    {move, {x, 2}, {x, 0}}.
+    {move, {y, 3}, {x, 0}}.
     {call, 2, {f, 122}}.
   {label, 126}.
   {label, 124}.
-    {deallocate, 6}.
+    {deallocate, 7}.
     return.
 %%% std/async — combinators over `Async<T>` (decisions 120 and 121 of
 %%% 1.0.10-beta, front 24 step E7).
@@ -2034,25 +2043,30 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
     {line, [{location, "std@async.erl", 16}]}.
     {func_info, {atom, std@async}, {atom, timeout}, 2}.
   {label, 27}.
-    {allocate, 3, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {allocate, 4, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
-    {test_heap, {alloc, [{words, 2}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 232}, 0, 0, {x, 0}, {list, [{y, 0}, {y, 1}]}}.
-    {move, {y, 2}, {x, 1}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
+    {move, nil, {y, 3}}.
     {test_heap, {alloc, [{words, 1}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 234}, 0, 0, {x, 0}, {list, [{y, 0}]}}.
-    {move, {y, 2}, {x, 1}}.
+    {make_fun3, {f, 232}, 0, 0, {x, 0}, {list, [{y, 0}]}}.
+    {move, {y, 3}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 3}}.
+    {test_heap, {alloc, [{words, 2}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 234}, 0, 0, {x, 0}, {list, [{y, 0}, {y, 1}]}}.
+    {move, {y, 3}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {y, 3}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, reverse, 2}}.
     {call, 1, {f, 81}}.
-    {deallocate, 3}.
+    {deallocate, 4}.
     return.
 % ── retry (1.0.11-beta front 97) ─────────────────────────────────────────────
 % How a fallible task is tried again: at most `maxAttempts` attempts, a pause
@@ -2407,8 +2421,8 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
     {line, [{location, "std@async.erl", 21}]}.
     {func_info, {atom, std@async}, {atom, retry}, 2}.
   {label, 37}.
-    {allocate, 4, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
+    {allocate, 7, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
@@ -2418,15 +2432,20 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
     {test, is_ne_exact, {f, 312}, [{y, 2}, {x, 0}]}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
-    {move, {y, 2}, {x, 0}}.
-    {move, {y, 3}, {x, 1}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {y, 3}}.
+    {move, nil, {y, 4}}.
     {move, {literal, <<"async.retry: ">>}, {x, 0}}.
-    {move, {y, 3}, {x, 1}}.
+    {move, {y, 4}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 2}, {x, 0}}.
+    {move, {y, 4}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 4}, {x, 0}}.
+    {move, {y, 3}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, reverse, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"">>}, {x, 0}}.
     {move, {x, 1}, {x, 2}}.
@@ -2441,7 +2460,7 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
     {move, {integer, 1}, {x, 2}}.
     {move, {y, 1}, {x, 1}}.
     {call, 3, {f, 35}}.
-    {deallocate, 4}.
+    {deallocate, 7}.
     return.
 % ── tests ────────────────────────────────────────────────────────────────────
 % Inline, the way every std module does it, run by `botopink test` and
@@ -2485,8 +2504,8 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
     {line, [{location, "std@async.erl", 23}]}.
     {func_info, {atom, std@async}, {atom, gated}, 2}.
   {label, 41}.
-    {allocate, 6, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
+    {allocate, 7, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {call, 0, {f, 39}}.
@@ -2501,22 +2520,27 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
   {label, 352}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
-    {move, {y, 1}, {x, 0}}.
-    {move, {y, 3}, {x, 1}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {y, 3}}.
+    {move, nil, {y, 4}}.
     {move, {literal, <<"gate never opened: ">>}, {x, 0}}.
-    {move, {y, 3}, {x, 1}}.
+    {move, {y, 4}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {y, 4}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 4}, {x, 0}}.
+    {move, {y, 3}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, reverse, 2}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
     {make_fun3, {f, 348}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
   {label, 353}.
-    {deallocate, 6}.
+    {deallocate, 7}.
     return.
 % Open `mine`, then answer `value` once `theirs` is open. Two of these over the
 % same pair of gates, crossed, can only BOTH answer when they run at the same
@@ -2668,23 +2692,28 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
     {line, [{location, "std@async.erl", 30}]}.
     {func_info, {atom, std@async}, {atom, flaky}, 2}.
   {label, 55}.
-    {allocate, 8, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}]}}.
+    {allocate, 10, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {test, is_lt, {f, 363}, [{y, 0}, {y, 1}]}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 2}}.
+    {move, nil, {y, 3}}.
+    {move, {literal, <<"failure ">>}, {x, 0}}.
+    {move, {y, 3}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 3}}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, integer_to_binary, 1}}.
-    {move, {y, 2}, {x, 1}}.
+    {move, {y, 3}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {literal, <<"failure ">>}, {x, 0}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {y, 3}, {x, 0}}.
     {move, {y, 2}, {x, 1}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {call_ext, 2, {extfunc, lists, reverse, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"">>}, {x, 0}}.
     {move, {x, 1}, {x, 2}}.
@@ -2694,21 +2723,26 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
-    {deallocate, 8}.
+    {deallocate, 10}.
     return.
   {label, 363}.
     {move, nil, {x, 0}}.
-    {move, {x, 0}, {y, 3}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, nil, {y, 5}}.
+    {move, {literal, <<"ok after ">>}, {x, 0}}.
+    {move, {y, 5}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 5}}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, integer_to_binary, 1}}.
-    {move, {y, 3}, {x, 1}}.
+    {move, {y, 5}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {y, 3}}.
-    {move, {literal, <<"ok after ">>}, {x, 0}}.
-    {move, {y, 3}, {x, 1}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {x, 0}}.
+    {move, {y, 4}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, reverse, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"">>}, {x, 0}}.
     {move, {x, 1}, {x, 2}}.
@@ -2718,7 +2752,7 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
-    {deallocate, 8}.
+    {deallocate, 10}.
     return.
 % What `nextDelay(policy, attempt)` answers, as text: the milliseconds, or
 % `none`.
@@ -3664,11 +3698,24 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
     {deallocate, 2}.
     return.
 
-{function, '-timeout/2-fun-2-', 2, 232}.
+{function, '-timeout/2-fun-2-', 1, 232}.
   {label, 231}.
     {line, [{location, "std@async.erl", 17}]}.
-    {func_info, {atom, std@async}, {atom, '-timeout/2-fun-2-'}, 2}.
+    {func_info, {atom, std@async}, {atom, '-timeout/2-fun-2-'}, 1}.
   {label, 232}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {call, 1, {f, 23}}.
+    {deallocate, 1}.
+    return.
+
+{function, '-timeout/2-fun-3-', 2, 234}.
+  {label, 233}.
+    {line, [{location, "std@async.erl", 17}]}.
+    {func_info, {atom, std@async}, {atom, '-timeout/2-fun-3-'}, 2}.
+  {label, 234}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -3677,19 +3724,6 @@ test "async: retry ---- a policy that is not usable is fatal, and the task is ne
     {move, {y, 1}, {x, 1}}.
     {call, 2, {f, 25}}.
     {deallocate, 2}.
-    return.
-
-{function, '-timeout/2-fun-3-', 1, 234}.
-  {label, 233}.
-    {line, [{location, "std@async.erl", 17}]}.
-    {func_info, {atom, std@async}, {atom, '-timeout/2-fun-3-'}, 1}.
-  {label, 234}.
-    {allocate, 1, 1}.
-    {init_yregs, {list, [{y, 0}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {y, 0}, {x, 0}}.
-    {call, 1, {f, 23}}.
-    {deallocate, 1}.
     return.
 
 {function, '__bp_tpl_7', 1, 281}.
@@ -4400,54 +4434,64 @@ import {io.terminal.print, async} from "std";
     {line, [{location, "test@main.erl", 3}]}.
     {func_info, {atom, test@main}, {atom, run}, 0}.
   {label, 7}.
-    {allocate, 4, 0}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
+    {allocate, 10, 0}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}, {y, 8}, {y, 9}]}}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 0}}.
+    {move, nil, {y, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
     {make_fun3, {f, 21}, 0, 0, {x, 0}, {list, []}}.
-    {move, {y, 0}, {x, 1}}.
+    {move, {y, 1}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {y, 0}}.
+    {move, {x, 0}, {y, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
     {make_fun3, {f, 23}, 0, 0, {x, 0}, {list, []}}.
-    {move, {y, 0}, {x, 1}}.
+    {move, {y, 1}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {y, 0}}.
+    {move, {x, 0}, {y, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
     {make_fun3, {f, 25}, 0, 0, {x, 0}, {list, []}}.
-    {move, {y, 0}, {x, 1}}.
+    {move, {y, 1}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {call_ext, 1, {extfunc, std@async, runAll, 1}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, reverse, 2}}.
+    {call_ext, 1, {extfunc, std@async, runAll, 1}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 2}, {x, 0}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 27}}.
     {move, nil, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, nil, {y, 4}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
     {make_fun3, {f, 57}, 0, 0, {x, 0}, {list, []}}.
-    {move, {y, 2}, {x, 1}}.
+    {move, {y, 4}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {y, 2}}.
+    {move, {x, 0}, {y, 4}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
     {make_fun3, {f, 59}, 0, 0, {x, 0}, {list, []}}.
-    {move, {y, 2}, {x, 1}}.
+    {move, {y, 4}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 4}, {x, 0}}.
+    {move, {y, 3}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, reverse, 2}}.
     {call_ext, 1, {extfunc, std@async, runAll, 1}}.
-    {move, {x, 0}, {y, 3}}.
-    {move, {y, 3}, {x, 0}}.
+    {move, {x, 0}, {y, 5}}.
+    {move, {y, 5}, {x, 0}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 27}}.
     {move, {atom, ok}, {x, 0}}.
-    {deallocate, 4}.
+    {deallocate, 10}.
     return.
 
 {function, main, 0, 9}.
@@ -4569,7 +4613,7 @@ import {io.terminal.print, async} from "std";
     {func_info, {atom, test@main}, {atom, '-run/0-fun-0-'}, 0}.
   {label, 21}.
     {allocate, 0, 0}.
-    {move, {integer, 3}, {x, 0}}.
+    {move, {integer, 1}, {x, 0}}.
     {call, 1, {f, 3}}.
     {deallocate, 0}.
     return.
@@ -4591,7 +4635,7 @@ import {io.terminal.print, async} from "std";
     {func_info, {atom, test@main}, {atom, '-run/0-fun-2-'}, 0}.
   {label, 25}.
     {allocate, 0, 0}.
-    {move, {integer, 1}, {x, 0}}.
+    {move, {integer, 3}, {x, 0}}.
     {call, 1, {f, 3}}.
     {deallocate, 0}.
     return.
@@ -4867,7 +4911,7 @@ import {io.terminal.print, async} from "std";
     {func_info, {atom, test@main}, {atom, '-run/0-fun-3-'}, 0}.
   {label, 57}.
     {allocate, 0, 0}.
-    {move, {float, 2.5}, {x, 0}}.
+    {move, {float, 1.5}, {x, 0}}.
     {call, 1, {f, 5}}.
     {deallocate, 0}.
     return.
@@ -4878,7 +4922,7 @@ import {io.terminal.print, async} from "std";
     {func_info, {atom, test@main}, {atom, '-run/0-fun-4-'}, 0}.
   {label, 59}.
     {allocate, 0, 0}.
-    {move, {float, 1.5}, {x, 0}}.
+    {move, {float, 2.5}, {x, 0}}.
     {call, 1, {f, 5}}.
     {deallocate, 0}.
     return.

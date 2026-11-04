@@ -31,33 +31,38 @@ import {io.terminal.print} from "std";
     {line, [{location, "test@main.erl", 1}]}.
     {func_info, {atom, test@main}, {atom, main}, 0}.
   {label, 3}.
-    {allocate, 4, 0}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
+    {allocate, 5, 0}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 0}}.
-    {move, {literal, <<"o">>}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {y, 0}}.
+    {move, nil, {y, 1}}.
     {move, {literal, <<"fo">>}, {x, 0}}.
-    {move, {y, 0}, {x, 1}}.
+    {move, {y, 1}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {literal, <<"o">>}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, reverse, 2}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
     {make_fun3, {f, 39}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
-    {move, {x, 0}, {y, 1}}.
+    {move, {x, 0}, {y, 2}}.
     {move, {literal, <<"foo">>}, {x, 0}}.
-    {test, is_eq_exact, {f, 42}, [{y, 1}, {x, 0}]}.
+    {test, is_eq_exact, {f, 42}, [{y, 2}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
     {jump, {f, 43}}.
   {label, 42}.
     {move, {atom, false}, {x, 0}}.
   {label, 43}.
-    {move, {x, 0}, {y, 2}}.
+    {move, {x, 0}, {y, 3}}.
     {move, {literal, <<"foo">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"bar">>}, {x, 0}}.
@@ -67,8 +72,8 @@ import {io.terminal.print} from "std";
   {label, 44}.
     {move, {atom, false}, {x, 0}}.
   {label, 45}.
-    {move, {x, 0}, {y, 3}}.
-    {move, {y, 2}, {x, 0}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 3}, {x, 0}}.
     {test, is_eq, {f, 46}, [{x, 0}, {atom, true}]}.
     {move, {integer, 1}, {x, 0}}.
     {test_heap, 2, 1}.
@@ -81,7 +86,7 @@ import {io.terminal.print} from "std";
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 9}}.
   {label, 47}.
-    {move, {y, 3}, {x, 0}}.
+    {move, {y, 4}, {x, 0}}.
     {test, is_eq, {f, 48}, [{x, 0}, {atom, true}]}.
     {move, {integer, 1}, {x, 0}}.
     {test_heap, 2, 1}.
@@ -95,7 +100,7 @@ import {io.terminal.print} from "std";
     {call, 1, {f, 9}}.
   {label, 49}.
     {move, {atom, ok}, {x, 0}}.
-    {deallocate, 4}.
+    {deallocate, 5}.
     return.
 
 {function, '_botopink_main', 0, 5}.

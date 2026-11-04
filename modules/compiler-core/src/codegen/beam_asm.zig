@@ -1198,14 +1198,17 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
                 if (binder_arm) count.* += 1;
             },
             .arrayLit => |al| {
-                // One slot for the cons accumulator `lowerArrayLit` parks on
-                // the stack while each element is evaluated.
+                // Two slots for the tail and the reversed-so-far accumulator
+                // `lowerListOf` parks on the stack while each element is
+                // evaluated (144 B-219 — the elements evaluate left to right
+                // and are consed onto the accumulator, then straightened out
+                // with `lists:reverse/2`).
                 // Elements are lowered one after another and each frees its
                 // slots once its value sits in `{x, 0}` (`lowerListOf` rewinds
                 // `next_y`), so the frame needs the widest element, not their
                 // sum: a literal table of a thousand records otherwise asks for
                 // more than the 1024 y-registers the loader allows.
-                if (al.elems.len > 0) count.* += 1;
+                if (al.elems.len > 0) count.* += 2;
                 var widest: u32 = 0;
                 for (al.elems) |el| {
                     var own: u32 = 0;
@@ -1228,10 +1231,11 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
             },
         },
         .binaryOp => |bin| {
-            // A string `+` chain is one concatenation: one stack slot for its
-            // segment list, then each segment's own needs.
+            // A string `+` chain is one concatenation: two stack slots for
+            // its segment list (`lowerListOf`'s tail and reversed-so-far
+            // accumulator, 144 B-219), then each segment's own needs.
             if (bin.op == .add and em.isStringExpr(&em.count_strings, e)) {
-                count.* += 1;
+                count.* += 2;
                 countStringSegments(em, e, count);
                 return;
             }
@@ -1261,9 +1265,11 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
                     }
                     if (cc.trailing.len > 0) count.* += 1;
                 }
-                // A print cell (`'__bp_print'([$args])`) builds its argument list on the stack.
+                // A print cell (`'__bp_print'([$args])`) builds its argument
+                // list on the stack — two slots (`lowerListOf`'s tail and
+                // reversed-so-far accumulator, 144 B-219).
                 if (cc.is_builtin and cc.args.len > 1) if (em.externalDeclFor(cc.callee)) |f| if (hostRefOf(f.implementations, f.params.len)) |ref| {
-                    if (std.mem.eql(u8, ref.symbol, Emitter.print_helper_template)) count.* += 1;
+                    if (std.mem.eql(u8, ref.symbol, Emitter.print_helper_template)) count.* += 2;
                 };
                 // `names.pop()` on a module-level `var` parks the popped pair
                 // and the rest it writes back (`primPop`). Counted for any
@@ -8895,6 +8901,15 @@ const Emitter = struct {
     /// `lowerExternalCall` without the adoption: the host's answer as it is.
     fn lowerHostCall(self: *Emitter, f: ast.FnDecl, cc: anytype, mode: CallMode, loc: ast.Loc) anyerror!void {
         if (try self.widthBodyCall(f, cc, mode)) return;
+        // 144 B-222 — checked before `missing_external` is set: an overflow
+        // of the fixed scratch buffer below is `error.TooManyOperands`, a
+        // bug in this emit, never a missing target, and the "every exit
+        // below is MissingExternalTarget" comment two lines down must stay
+        // true for the catch-all upstream (`emitBeamAsm`'s caller) to keep
+        // reporting it as `f`'s own name — otherwise a call this wide reads
+        // as "`f` has no implementation for the beam backend" instead of the
+        // scratch-buffer bug it is.
+        if (cc.args.len > max_staged) return error.TooManyOperands;
         // 06 C13 — every exit below is `error.MissingExternalTarget`; naming the
         // fn and the call site here is what turns it into a located diagnostic
         // upstream.
@@ -8902,7 +8917,6 @@ const Emitter = struct {
         const argc = cc.args.len + cc.trailing.len;
         const self_first = f.params.len > 0 and std.mem.eql(u8, f.params[0].name, "self");
         var exprs: [max_staged]ast.Expr = undefined;
-        if (cc.args.len > max_staged) return error.TooManyOperands;
         for (cc.args, 0..) |arg, i| exprs[i] = arg.value.*;
         // Decisions 431, 489, 490 — a `result: true` binding: its template, or
         // its `(module, symbol)` as the call it names, inside the `try` that
@@ -10899,7 +10913,17 @@ const Emitter = struct {
     // `countStaging` reserves the stack slots ahead of emission with the same
     // `exprMayCall` predicate.
 
-    const max_staged = 24;
+    // 144 B-222 — this is a fixed-size scratch buffer, not a BEAM limit (the
+    // loader admits far more than 1024 x-registers and far more than 24
+    // tuple elements): a record of 25+ fields or a call of 25+ arguments
+    // overflowed it, past where the guards below even run (`stageCall`
+    // writes `args.len` entries into `Staged.ops` before its caller checks
+    // `declared.len + 1 > max_staged`), so the index-out-of-bounds in a
+    // Debug/Safe build pre-empted every one of them. 255 is a generous
+    // margin over any arity this codebase's own fixtures exercise (a
+    // literal table of a thousand RECORDS compiles — B-89 — just never one
+    // record or one call this wide).
+    const max_staged = 255;
 
     /// Where the staged operands of one construction or call can be read.
     const Staged = struct {
@@ -10938,7 +10962,11 @@ const Emitter = struct {
             .function => false,
             .collection => |col| switch (col.kind) {
                 .arrayLit => |al| blk: {
-                    for (al.elems) |el| if (self.exprMayCall(strings, el)) break :blk true;
+                    // A non-empty literal always calls `lists:reverse/2` now
+                    // (`lowerListOf`, 144 B-219), which clobbers the whole
+                    // x-register file — not only when an element itself
+                    // calls.
+                    if (al.elems.len > 0) break :blk true;
                     if (al.spreadExpr) |se| break :blk self.exprMayCall(strings, se.*);
                     break :blk false;
                 },
@@ -11106,12 +11134,13 @@ const Emitter = struct {
         try self.placeStaged(&st);
     }
 
-    /// Build an Erlang list from an array literal. Elements are consed
-    /// right-to-left via `{put_list, Elem, Tail, {x, 0}}`, onto the trailing
-    /// spread's value when the literal has one. The spread arrives in one of
-    /// two fields: `spreadExpr` for an expression, `spread` for a bare name
-    /// (`[1, 2, ..rest]`) — which used to be dropped, so the literal was its
-    /// own elements and `list[3]` read past the end (`modules/array/run/src/cases/array_spread_literal`).
+    /// Build an Erlang list from an array literal. Each element evaluates
+    /// left to right, as written (144 B-219), and is consed onto the
+    /// trailing spread's value when the literal has one. The spread arrives
+    /// in one of two fields: `spreadExpr` for an expression, `spread` for a
+    /// bare name (`[1, 2, ..rest]`) — which used to be dropped, so the
+    /// literal was its own elements and `list[3]` read past the end
+    /// (`modules/array/run/src/cases/array_spread_literal`).
     fn lowerArrayLit(self: *Emitter, al: anytype) anyerror!void {
         if (al.spreadExpr) |se| return self.lowerListOf(al.elems, se.*);
         if (al.spread) |name| if (name.len > 0) {
@@ -11121,7 +11150,7 @@ const Emitter = struct {
     }
 
     /// Build the list `[elems… | tail]` (`tail` defaults to `[]`) into `{x, 0}`.
-    /// Takes one stack slot when `elems` is non-empty (`countLocalsInExpr`).
+    /// Takes two stack slots when `elems` is non-empty (`countLocalsInExpr`).
     fn lowerListOf(self: *Emitter, elems: []const ast.Expr, tail: ?ast.Expr) anyerror!void {
         const al = .{ .elems = elems };
         if (tail) |t| {
@@ -11137,28 +11166,40 @@ const Emitter = struct {
             // by the time `put_list` runs (`{heap_overflow, …}` from the
             // loader — `list_literal_of_records_len`).
             const scratch = self.scratchBase();
-            // The tail accumulator is parked on the *stack*, not in an
-            // x-register: an element that calls a function
-            // (`[node(), node()]`) frees the whole x-file, and the half-built
-            // list would be gone by the time `put_list` runs. `countLocalsInExpr`
-            // reserves this slot.
+            // Two slots on the *stack*, not x-registers: an element that
+            // calls a function (`[note(1), note(2)]`) frees the whole
+            // x-file, so both the real tail and the list built so far must
+            // survive it. `countLocalsInExpr` reserves these two.
             const acc_y = self.next_y;
             self.next_y += 1;
-            var i: usize = al.elems.len;
-            while (i > 0) {
-                i -= 1;
-                try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(acc_y));
-                const elem_y = self.next_y;
-                try self.lowerExprIntoX0(al.elems[i]);
+            const rev_y = self.next_y;
+            self.next_y += 1;
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(acc_y));
+            try beamEmitter.writeMoveOp(self.out, Op.nil, Dst.yr(rev_y));
+            // Each element's own expression evaluates in source (written)
+            // order (144 B-219: `[note(1), note(2), note(3)]` prints 1, 2, 3,
+            // never 3, 2, 1) — its value is consed onto `rev_y` as soon as
+            // it is evaluated, which assembles the elements' list backwards
+            // (BEAM's cons cells are naturally built tail-first). `lists:
+            // reverse/2` straightens `rev_y` out below and splices the real
+            // tail back on in the same BIF call, so no second pass over the
+            // elements is needed to get their written order back.
+            const elem_y = self.next_y;
+            for (al.elems) |elem| {
+                try self.lowerExprIntoX0(elem);
                 // The element's value is in `{x, 0}`; its stack slots are free
                 // for the next one (see `countLocalsInExpr`'s `arrayLit`).
                 self.next_y = elem_y;
                 // `{x, 0}` holds the element and `{x, scratch}` the reloaded
-                // tail — both must survive the cons allocation.
-                try beamEmitter.writeMoveOp(self.out, Op.yr(acc_y), Dst.xr(scratch));
+                // reversed-so-far list — both must survive the cons allocation.
+                try beamEmitter.writeMoveOp(self.out, Op.yr(rev_y), Dst.xr(scratch));
                 try beamEmitter.writeTestHeap(self.out, 2, scratch + 1);
                 try beamEmitter.writePutList(self.out, Op.xr(0), Op.xr(scratch), Dst.xr(0));
+                try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(rev_y));
             }
+            try beamEmitter.writeMoveOp(self.out, Op.yr(rev_y), Dst.xr(0));
+            try beamEmitter.writeMoveOp(self.out, Op.yr(acc_y), Dst.xr(1));
+            try self.emitPrimCallExt("lists", "reverse", 2, .non_tail);
         }
     }
 

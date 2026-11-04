@@ -25,36 +25,41 @@ import {io.terminal.print} from "std";
     {line, [{location, "test@main.erl", 1}]}.
     {func_info, {atom, test@main}, {atom, classify}, 1}.
   {label, 3}.
-    {allocate, 2, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {allocate, 3, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {test, is_eq_exact, {f, 10}, [{y, 0}, {integer, 0}]}.
     {move, {literal, <<"zero">>}, {x, 0}}.
-    {deallocate, 2}.
+    {deallocate, 3}.
     return.
   {label, 10}.
     {test, is_ne_exact, {f, 11}, [{y, 0}, {integer, 0}]}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 1}}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {y, 1}}.
+    {move, nil, {y, 2}}.
     {move, {literal, <<"nonzero: ">>}, {x, 0}}.
-    {move, {y, 1}, {x, 1}}.
+    {move, {y, 2}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 2}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, reverse, 2}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
     {make_fun3, {f, 43}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, map, 2}}.
     {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
-    {deallocate, 2}.
+    {deallocate, 3}.
     return.
   {label, 11}.
     {move, {literal, <<"null">>}, {x, 0}}.
-    {deallocate, 2}.
+    {deallocate, 3}.
     return.
 
 {function, main, 0, 5}.

@@ -649,3 +649,80 @@ test "beam: a literal table of 1100 nested records assembles (144 B-89)" {
     );
     try h.assertBeamRunLog(a, src.items, "1100\n", &.{});
 }
+
+// ── B-219 — a list literal's elements evaluate left to right ─────────────────
+
+test "beam: a list literal's elements evaluate left to right (144 B-219)" {
+    // `lowerListOf` consed the list tail-first — the natural order for
+    // BEAM's cons cells — and evaluated each element's own expression in
+    // that same reversed order, so a side effect inside the elements
+    // (`note(n)`'s print) fired 3, 2, 1 instead of the written 1, 2, 3.
+    try h.assertBeamRunLog(std.testing.allocator,
+        \\fn note(n: i32) -> i32 {
+        \\    print(n.toString());
+        \\    return n;
+        \\}
+        \\fn main() -> void {
+        \\    val xs = [note(1), note(2), note(3)];
+        \\    print(xs.length.toString());
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\1
+        \\2
+        \\3
+        \\3
+        \\
+    , &.{});
+}
+
+// ── B-222 — more than 24 operands (a record's fields, a call's arguments) ────
+
+test "beam: a record of 25 fields and a call of 25 arguments both lower (144 B-222)" {
+    // `max_staged` (24) is a fixed-size scratch buffer the operand-staging
+    // helpers (`Staged.ops`, `lowerRecordConstruct`'s `elems`, `lowerHostCall`'s
+    // `exprs`) write into — not a BEAM limit. A 25-field record construction
+    // or a 25-argument call overflowed it: `stageCall` indexed past the
+    // array's end before its caller's own `> max_staged` guard ran, so the
+    // record crashed with an unlocated `TooManyOperands` and a 25-argument
+    // `print(…)` was misreported as "`print` has no implementation for the
+    // beam backend" (`lowerHostCall` set `missing_external` to `print`
+    // before checking the argument count, so the catch-all upstream read
+    // the overflow as a missing target). `max_staged` is now 255, and the
+    // check in `lowerHostCall` runs before `missing_external` is set.
+    const a = std.testing.allocator;
+    var fields: std.ArrayList(u8) = .empty;
+    defer fields.deinit(a);
+    var ctor_args: std.ArrayList(u8) = .empty;
+    defer ctor_args.deinit(a);
+    var print_args: std.ArrayList(u8) = .empty;
+    defer print_args.deinit(a);
+    var i: usize = 1;
+    while (i <= 25) : (i += 1) {
+        const field = try std.fmt.allocPrint(a, "{s}f{d}: i32", .{ if (i == 1) "" else ", ", i });
+        defer a.free(field);
+        try fields.appendSlice(a, field);
+        const ctor = try std.fmt.allocPrint(a, "{s}f{d}: {d}", .{ if (i == 1) "" else ", ", i, i });
+        defer a.free(ctor);
+        try ctor_args.appendSlice(a, ctor);
+        const arg = try std.fmt.allocPrint(a, "{s}{d}", .{ if (i == 1) "" else ", ", i });
+        defer a.free(arg);
+        try print_args.appendSlice(a, arg);
+    }
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try src.appendSlice(a, "pub type Wide(");
+    try src.appendSlice(a, fields.items);
+    try src.appendSlice(a, ")\n\nfn main() -> void {\n    val w = Wide(");
+    try src.appendSlice(a, ctor_args.items);
+    try src.appendSlice(a, ");\n    print(w.f25.toString());\n    print(");
+    try src.appendSlice(a, print_args.items);
+    try src.appendSlice(a,
+        \\);
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    );
+    try h.assertBeamRunLog(a, src.items, "25\n1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25\n", &.{});
+}

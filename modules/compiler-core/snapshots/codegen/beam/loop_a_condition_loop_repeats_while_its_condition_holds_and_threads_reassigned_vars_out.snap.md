@@ -41,8 +41,8 @@ import {io.terminal.print} from "std";
     {line, [{location, "test@main.erl", 1}]}.
     {func_info, {atom, test@main}, {atom, count}, 1}.
   {label, 3}.
-    {allocate, 4, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
+    {allocate, 5, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 1}}.
@@ -53,16 +53,21 @@ import {io.terminal.print} from "std";
     {test, is_lt, {f, 13}, [{y, 1}, {y, 0}]}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 3}}.
+    {move, nil, {y, 4}}.
+    {move, {y, 2}, {x, 0}}.
+    {move, {y, 4}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 4}}.
     {move, {y, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, integer_to_binary, 1}}.
-    {move, {y, 3}, {x, 1}}.
+    {move, {y, 4}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {y, 3}}.
-    {move, {y, 2}, {x, 0}}.
+    {move, {x, 0}, {y, 4}}.
+    {move, {y, 4}, {x, 0}}.
     {move, {y, 3}, {x, 1}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {call_ext, 2, {extfunc, lists, reverse, 2}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
     {make_fun3, {f, 45}, 0, 0, {x, 0}, {list, []}}.
@@ -85,7 +90,7 @@ import {io.terminal.print} from "std";
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 15}}.
     {move, {y, 1}, {x, 0}}.
-    {deallocate, 4}.
+    {deallocate, 5}.
     return.
 
 {function, evens, 1, 5}.

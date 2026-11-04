@@ -41,31 +41,36 @@ val txt = box("hi");
     {line, [{location, "test@main.erl", 3}]}.
     {func_info, {atom, test@main}, {atom, many}, 0}.
   {label, 7}.
-    {allocate, 2, 0}.
-    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {allocate, 3, 0}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {literal, {test@main, many}}, {x, 0}}.
     {move, {atom, '$bp_unset'}, {x, 1}}.
     {call_ext, 2, {extfunc, persistent_term, get, 2}}.
     {test, is_eq_exact, {f, 14}, [{x, 0}, {atom, '$bp_unset'}]}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 0}}.
+    {move, nil, {y, 1}}.
     {call, 0, {f, 3}}.
-    {move, {y, 0}, {x, 1}}.
+    {move, {y, 1}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {y, 0}}.
-    {call, 0, {f, 3}}.
-    {move, {y, 0}, {x, 1}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {call, 1, {f, 5}}.
     {move, {x, 0}, {y, 1}}.
+    {call, 0, {f, 3}}.
+    {move, {y, 1}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, reverse, 2}}.
+    {call, 1, {f, 5}}.
+    {move, {x, 0}, {y, 2}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, {test@main, many}}, {x, 0}}.
     {call_ext, 2, {extfunc, persistent_term, put, 2}}.
-    {move, {y, 1}, {x, 0}}.
+    {move, {y, 2}, {x, 0}}.
   {label, 14}.
-    {deallocate, 2}.
+    {deallocate, 3}.
     return.
 
 {function, one, 0, 9}.

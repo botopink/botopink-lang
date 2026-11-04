@@ -25,48 +25,53 @@ import {io.terminal.print, compiler} from "std";
     {line, [{location, "test@main.erl", 2}]}.
     {func_info, {atom, test@main}, {atom, main}, 0}.
   {label, 3}.
-    {allocate, 3, 0}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {allocate, 4, 0}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, test@main@@Stub}, {integer, 1}]}}.
     {call_ext, 1, {extfunc, test@main@@Stub, where, 1}}.
     {move, {x, 0}, {y, 0}}.
     {move, nil, {x, 0}}.
     {move, {x, 0}, {y, 1}}.
+    {move, nil, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
     {test, is_tagged_tuple, {f, 8}, [{x, 0}, 6, {atom, test@main@@SourceLocation}]}.
-    {get_tuple_element, {x, 0}, 4, {x, 0}}.
+    {get_tuple_element, {x, 0}, 1, {x, 0}}.
   {label, 8}.
-    {move, {y, 1}, {x, 1}}.
+    {move, {y, 2}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {y, 1}}.
+    {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
     {test, is_tagged_tuple, {f, 9}, [{x, 0}, 6, {atom, test@main@@SourceLocation}]}.
-    {get_tuple_element, {x, 0}, 3, {x, 0}}.
+    {get_tuple_element, {x, 0}, 2, {x, 0}}.
   {label, 9}.
-    {move, {y, 1}, {x, 1}}.
+    {move, {y, 2}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {y, 1}}.
+    {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
     {test, is_tagged_tuple, {f, 10}, [{x, 0}, 6, {atom, test@main@@SourceLocation}]}.
-    {get_tuple_element, {x, 0}, 2, {x, 0}}.
+    {get_tuple_element, {x, 0}, 3, {x, 0}}.
   {label, 10}.
-    {move, {y, 1}, {x, 1}}.
+    {move, {y, 2}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {y, 1}}.
+    {move, {x, 0}, {y, 2}}.
     {move, {y, 0}, {x, 0}}.
     {test, is_tagged_tuple, {f, 11}, [{x, 0}, 6, {atom, test@main@@SourceLocation}]}.
-    {get_tuple_element, {x, 0}, 1, {x, 0}}.
+    {get_tuple_element, {x, 0}, 4, {x, 0}}.
   {label, 11}.
-    {move, {y, 1}, {x, 1}}.
+    {move, {y, 2}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 2}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, reverse, 2}}.
     {call, 1, {f, 13}}.
     {move, {atom, ok}, {x, 0}}.
-    {deallocate, 3}.
+    {deallocate, 4}.
     return.
 
 {function, '_botopink_main', 0, 5}.
