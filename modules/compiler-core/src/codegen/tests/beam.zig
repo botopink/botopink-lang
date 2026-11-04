@@ -726,3 +726,52 @@ test "beam: a record of 25 fields and a call of 25 arguments both lower (144 B-2
     );
     try h.assertBeamRunLog(a, src.items, "25\n1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25\n", &.{});
 }
+
+// ── B-236 — a long `.append()` chain does not recurse once per link ─────────
+
+test "beam: a 50-link .append() chain lowers without recursing one native frame per link (144 B-236)" {
+    // `primAppendList` staged a chained `recv.append(a).append(b).append(c)…`
+    // one link at a time: each link's receiver is itself an `.append()` call,
+    // so staging it went through `stageCall` → `stageOperands` →
+    // `lowerExprIntoX0` → `lowerCall` → `emitPrimMethod` → `emitPrimInline` →
+    // back into `primAppendList` — one native stack frame per link, unbounded
+    // in the chain's length. A library's palette-table builder, chaining one
+    // `.append()` per colour family (25 links over 26 families), crashed the
+    // compiler this way building for beam — `zig_probe_stack`, "aborting due
+    // to recursive panic". `appendChainLink` now walks the chain itself with
+    // an explicit loop before any staging happens, so the native recursion
+    // stays at a fixed depth whatever the chain's length; 50 is comfortably
+    // past the 25 that crashed it, while staying under `max_staged` (255, so
+    // the whole chain flattens into one call) and under the depth the
+    // checker's own, unrelated and much shallower recursion over the same
+    // shape tolerates — this fixture is `primAppendList`'s alone. Every
+    // element survives, in order: `out.length` is 51, `out[0]` is the base's
+    // `0`, `out[70]` the chain's last link.
+    const a = std.testing.allocator;
+    var chain: std.ArrayList(u8) = .empty;
+    defer chain.deinit(a);
+    var i: usize = 1;
+    while (i <= 70) : (i += 1) {
+        const link = try std.fmt.allocPrint(a, ".append([{d}])", .{i});
+        defer a.free(link);
+        try chain.appendSlice(a, link);
+    }
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try src.appendSlice(a, "fn make() -> i32[] {\n    return [0]");
+    try src.appendSlice(a, chain.items);
+    try src.appendSlice(a,
+        \\;
+        \\}
+        \\
+        \\fn main() -> void {
+        \\    val out = make();
+        \\    print(out.length.toString());
+        \\    print((out[0] ?? -1).toString());
+        \\    print((out[70] ?? -1).toString());
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    );
+    try h.assertBeamRunLog(a, src.items, "71\n0\n70\n", &.{});
+}

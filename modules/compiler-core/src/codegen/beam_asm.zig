@@ -9277,13 +9277,108 @@ const Emitter = struct {
         if (mode == .tail) try self.emitReturn();
     }
 
+    /// A link of an `.append()` chain (`<link.recv>.append(<link.arg>)`),
+    /// recognised only when it is unambiguously the plain array-`append`
+    /// shape `primAppendList` itself lowers — the same gates `lowerCall`
+    /// walks before it ever reaches `emitPrimMethod`/`emitPrimInline`: no
+    /// `?.`, no static-extension rewrite, no missing host method, and the
+    /// receiver's own instance lowering is the `array` prim. Anything else
+    /// (a user type's own `.append`, a chain built through `?.`, …) answers
+    /// null, so `primAppendList` below falls back to the single `stageCall`
+    /// it always used for that link — correct, just not flattened.
+    const AppendLink = struct { recv: *const ast.Expr, arg: *const ast.Expr };
+    fn appendChainLink(self: *const Emitter, e: *const ast.Expr) ?AppendLink {
+        const c = switch (e.*) {
+            .call => |c| c,
+            else => return null,
+        };
+        const cc = switch (c.kind) {
+            .call => |x| x,
+            else => return null,
+        };
+        if (cc.calleeExpr != null or cc.is_builtin or cc.optional) return null;
+        if (!std.mem.eql(u8, cc.callee, "append")) return null;
+        if (cc.args.len != 1 or cc.trailing.len != 0) return null;
+        const recv = cc.receiver orelse return null;
+        if (isOptionalChain(recv.*)) return null;
+        if (self.self_prim_kind == null or !self.self_prim_from_prelude) {
+            if (self.rewrites.get(c.loc) != null) return null;
+        }
+        if (hostMethods.missingAt(self.cross, &self.instance_lowerings, c.loc, cc.callee, .beam) != null) return null;
+        switch (self.instanceLowering(c.loc, recv.*) orelse return null) {
+            .prim => |k| if (k != .array) return null,
+            else => return null,
+        }
+        return .{ .recv = recv, .arg = cc.args[0].value };
+    }
+
     /// `recv.append(xs)` → `recv ++ xs` (`lists:append/2`; `xs` is already a list).
     /// The (often-literal) arg is lowered first into `x1`, then the receiver into
     /// `x0` — a simple receiver won't clobber `x1`.
+    ///
+    /// A CHAIN of appends (`a.append(b).append(c).append(d)…`) is flattened
+    /// here before any staging happens, rather than left to the ordinary
+    /// one-call-at-a-time path: each link's receiver is itself an `.append()`
+    /// call, and staging it that way recurses once per link through
+    /// `stageCall` → `stageOperands` → `lowerExprIntoX0` → `lowerCall` →
+    /// `emitPrimMethod` → `emitPrimInline` → back into `primAppendList` — one
+    /// native stack frame per link, unbounded in the chain's length (144
+    /// B-236: a library's palette-table builder, chaining one `.append()`
+    /// per colour family (25 links over 26 families), overflowed the
+    /// native stack mid-build — `zig_probe_stack`, "aborting due to
+    /// recursive panic"). `appendChainLink`
+    /// walks the chain itself with an explicit loop, collecting every link's
+    /// operand; the whole chain then stages as ONE call whatever its length
+    /// (bounded by `max_staged`, same as any other call), so the native
+    /// recursion stays at a fixed depth regardless of how many `.append()`s
+    /// are chained.
     fn primAppendList(self: *Emitter, recv_expr: *const ast.Expr, cc: anytype, mode: CallMode) anyerror!void {
-        const st = try self.stageCall(recv_expr, cc.args, cc.trailing);
-        try self.placeStaged(&st);
-        try self.emitPrimCallExt("lists", "append", 2, mode);
+        var collected: [max_staged]*const ast.Expr = undefined;
+        var n: usize = 0;
+        collected[n] = cc.args[0].value;
+        n += 1;
+        var base = recv_expr;
+        // `n + 1` (the base plus every collected argument) must fit
+        // `exprs` below (`[max_staged]ast.Expr`) — a chain longer than
+        // that still terminates safely: the remainder is `base` itself,
+        // staged as one operand and, if it is still a further `.append()`
+        // link, flattened the same way the next time it is lowered.
+        while (n < max_staged - 1) {
+            const link = self.appendChainLink(base) orelse break;
+            collected[n] = link.arg;
+            n += 1;
+            base = link.recv;
+        }
+        if (n == 1) {
+            // No chain: the ordinary two-operand shape.
+            const st = try self.stageCall(recv_expr, cc.args, cc.trailing);
+            try self.placeStaged(&st);
+            try self.emitPrimCallExt("lists", "append", 2, mode);
+            return;
+        }
+        // `collected[0..n]` holds the chain's arguments innermost-last
+        // (`collected[0]` is the outermost `.append`'s argument, the one
+        // closest to `base`'s far end); `exprs[0] = base`, then the chain's
+        // own left-to-right order follows. Stage the whole thing as one
+        // `[base, a1, a2, …, an]` operand list and concatenate it in a
+        // single `lists:append/1` over the materialised list of lists.
+        var exprs: [max_staged]ast.Expr = undefined;
+        exprs[0] = base.*;
+        var i: usize = 0;
+        while (i < n) : (i += 1) exprs[n - i] = collected[i].*;
+        const st = try self.stageOperands(exprs[0 .. n + 1], &[_]ast.TrailingLambda{});
+        try self.placeStaged(&st); // {x,0}..{x,n}
+        const live = @max(self.min_live, @as(u32, @intCast(n + 1)));
+        try beamEmitter.writeTestHeap(self.out, 2 * (n + 1), live);
+        var list_op = Op.nil;
+        var k: usize = n + 1;
+        while (k > 0) {
+            k -= 1;
+            try beamEmitter.writePutList(self.out, Op.xr(k), list_op, Dst.xr(live));
+            list_op = Op.xr(live);
+        }
+        try beamEmitter.writeMoveOp(self.out, list_op, Dst.xr(0));
+        try self.emitPrimCallExt("lists", "append", 1, mode);
     }
 
     /// `recv.push(x)` → `recv ++ [x]` (`lists:append/2`).
