@@ -2792,6 +2792,15 @@ fn emitWatPass(
     // They used to be dropped when a `main` existed, which left every reference
     // to one as a dangling `global.get`.
     try em.registerSymbols(program, true);
+    // 144 B-226 — a linked module's own `.use` aliases (`Shape as Area`,
+    // written in the LINKED module, not the entry's): dropped from `program`
+    // by the merge above (line ~2551, a linked module's `.use` is never
+    // carried into `decls`), so `registerSymbols`'s pass over the merged
+    // program alone never meets one. Registered here, over each linked
+    // module's own (pre-merge) declarations, so a call through such an
+    // alias — `Area.scaled(7)` for a behavior's associated fn, `assocSym` —
+    // resolves as it does when the same alias is the entry's own.
+    for (linked) |l| try em.registerUseAliases(l.program.decls);
     try em.typeFnValueGlobals(program);
     for (program.decls, owner.items) |decl, from| switch (decl) {
         .@"fn" => |f| if (f.genericParams.len > 0 and f.body.len > 0 and !f.isDeclare) {
@@ -5335,7 +5344,20 @@ const Emitter = struct {
         // spells is the alias, the function the linked owner defines is the
         // declared name. Register the alias beside the declared name in every
         // table a call consults, and map it back where the `call` is written.
-        for (program.decls) |decl| switch (decl) {
+        // 144 B-226 — a LINKED module's own aliases are these too
+        // (`registerUseAliases`, called over each `linked[i].program` in
+        // `emitWatPass`): the merge drops every linked module's `.use` from
+        // `program.decls` (its imports are already resolved by the checker),
+        // so this loop over the merged program alone never meets one, and
+        // `Area.scaled(7)` — `Shape` imported `as Area` inside the LINKED
+        // module itself, not the entry's own `.use` — had no entry in
+        // `import_aliases`, falling through every resolution to the
+        // misleading "behavior no type implements" fallback.
+        try self.registerUseAliases(program.decls);
+    }
+
+    fn registerUseAliases(self: *Emitter, decls: []const ast.DeclKind) !void {
+        for (decls) |decl| switch (decl) {
             .use => |u| for (u.imports) |imp| {
                 const alias = imp.alias orelse continue;
                 const leaf0 = imp.leaf();
@@ -20132,12 +20154,24 @@ const Emitter = struct {
         // A method on a behavior no type of the program implements: the value
         // is built by the host (`behavior_host_dispatch`), and the `declare fn`
         // answering that behavior with no wasm cell is what the program lacks.
+        // 144 B-226 — the candidate must actually ANSWER a behavior
+        // (`self.behavior_decls`, decision 831's own table): the old check,
+        // "not a record or enum", also matched every OTHER host-backed
+        // `declare fn` the module happens to link with no wasm cell at all
+        // (`std.io.os.arch`, the first of `external_missing` alphabetically,
+        // named whatever the real receiver's type and the real unresolved
+        // call were) — `conformance/modules/behavior` on wasm, once B-225's
+        // UAF stopped masking it, named `arch` for a call `Area.scaled`
+        // never reached. A candidate found here is still a best-effort
+        // guess (nothing ties it to `cc`'s own receiver), so the generic
+        // refusal below, which names the real call, is likelier to be right
+        // when none answers a behavior at all.
         if (cc.receiver != null and !cc.is_builtin and self.cur_template == null and (try self.behaviorImplementers(cc.callee, cc.args.len)).len == 0) {
             var best: ?[]const u8 = null;
             var it = self.external_missing.iterator();
             while (it.next()) |e| {
                 const rt = e.value_ptr.* orelse continue;
-                if (self.records.contains(rt) or self.enums.contains(rt)) continue;
+                if (!self.behavior_decls.contains(rt)) continue;
                 if (best == null or std.mem.lessThan(u8, e.key_ptr.*, best.?)) best = e.key_ptr.*;
             }
             if (best) |name| {

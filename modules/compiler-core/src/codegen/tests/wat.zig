@@ -6745,6 +6745,99 @@ test "wat: comptime units ---- two units each missing a wasm binding both carry 
     }
 }
 
+// 144 B-226 — a behavior's associated `default fn` called through an alias
+// (`Area.scaled(7)` for `import {base.Shape as Area}`) written in a LINKED
+// module (`mid`, not the entry `main`) failed to resolve: the merge that
+// builds the entry's one program drops every LINKED module's own `.use`
+// (its imports are already resolved by the checker, so the backend never
+// needed the raw import text — except here, `assocSym`'s alias lookup reads
+// it straight from the AST), so `registerSymbols`'s alias loop, run once
+// over the merged program, never met `mid`'s own `Shape as Area` and
+// `self.import_aliases` had no entry for it. `calleeSymbol` then answered
+// null, and every later resolution step fell through to the last one —
+// `cc.receiver != null`, `behaviorImplementers("scaled", 1)` empty (no
+// record or enum implements `Shape`, an associated-fn-only behavior) — the
+// "behavior no type implements" fallback, which used to name the first
+// `external_missing` entry whose return type is not a record or enum,
+// whatever it is: `conformance/modules/behavior` on wasm named `arch`
+// (`std.io.os.arch`) for this exact call, at a synthetic location inside a
+// doc comment. `registerUseAliases`, called over each linked module's own
+// (pre-merge) declarations too, fixes the alias; the fallback itself is
+// tightened to a real behavior's own `declare fn` (`self.behavior_decls`),
+// so an unrelated missing external never answers for a call that still
+// cannot resolve.
+test "wat: 144 B-226 ---- a behavior's associated fn called through an alias written in a linked module resolves" {
+    try h.assertWasmRunLogModules(std.testing.allocator, &.{
+        .{ .path = "base", .source =
+        \\pub behavior Shape {
+        \\    fn area(self: Self) -> i32;
+        \\
+        \\    fn unit() -> i32 {
+        \\        return 1;
+        \\    }
+        \\
+        \\    fn scaled(n: i32) -> i32 {
+        \\        return n * Shape.unit();
+        \\    }
+        \\}
+        },
+        .{ .path = "mid", .source =
+        \\import {base.Shape};
+        \\import {base.Shape as Area};
+        \\
+        \\pub fn run() -> i32 {
+        \\    return Area.scaled(7);
+        \\}
+        },
+        .{ .path = "main", .source =
+        \\import {io.terminal.print} from "std";
+        \\import {mid.run};
+        \\
+        \\pub fn main() -> void {
+        \\    print(run());
+        \\}
+        },
+    }, "7\n");
+}
+
+// 144 B-226 — box 2: a method on a behavior no type implements, built by the
+// host (`behavior_host_dispatch`, the `behavior_host_value_wasm_refused`
+// shape), is refused naming the `declare fn` that builds it with no wasm
+// cell — but the old check only asked that the candidate's return type is
+// not a record or enum, which every OTHER host-backed `declare fn` with no
+// wasm binding also passes: `alphaNoise` (returning `string`) sorts before
+// `makeGreeter` (returning `Greeter`, the behavior actually dispatched on)
+// and used to be named instead, naming no call this program ever makes.
+test "wat: 144 B-226 ---- the host-behavior fallback names a declare fn answering a behavior, never an unrelated missing external" {
+    try h.assertWasmRefusedAt(std.testing.allocator,
+        \\import {compiler, io.terminal.print} from "std";
+        \\
+        \\behavior Greeter {
+        \\    val tag: string;
+        \\
+        \\    fn greet(self: Self, who: string) -> string;
+        \\}
+        \\
+        \\#[compiler.external(.Erlang("ok"))]
+        \\declare fn alphaNoise() -> string;
+        \\
+        \\#[compiler.external(.Erlang("ok"))]
+        \\declare fn makeGreeter(tag: string) -> Greeter;
+        \\
+        \\fn shout(g: Greeter) -> string {
+        \\    return g.greet("world");
+        \\}
+        \\
+        \\fn greeter() -> Greeter {
+        \\    return makeGreeter("hey");
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    print(shout(greeter()));
+        \\}
+    , "`makeGreeter` has no implementation for the wasm backend", 16, 14);
+}
+
 // Decision 1032 (2), (3), 1034 (5), (8) — piece R2: `runner.runEntry` composes
 // a program from its unit files (the entry's `botopink.units`: the core,
 // std's units, the program's own `test@lib`, the entry), each loaded through
