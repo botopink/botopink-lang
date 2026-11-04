@@ -1,0 +1,21 @@
+//// `#[scaled(by)]` builds each member's code as a tree: `scaled` names the
+//// library's private `times` — resolved in this module wherever the member
+//// joins its type —, `make` reads the annotated type's own constructor, and
+//// `by` is a value known at build, spliced as its literal.
+
+import {compiler, compiler.Call, compiler.Lit, compiler.Member, compiler.Name} from "std";
+
+fn times(n: i32, by: i32) -> i32 {
+    return n * by;
+}
+
+pub fn scaled(syntax decl: unknown, comptime by: i32) -> void {
+    val made = Call(callee: Member(target: Name(compiler.name(decl)!), member: "make"), args: []);
+    val size = compiler.ast(Member(target: made, member: "size"));
+    compiler.addMember("madeSize", fn() -> i32 {
+        return size;
+    });
+    compiler.addMember("scaled", fn() -> i32 {
+        return compiler.ast(Call(callee: Name("times"), args: [Member(target: made, member: "size"), Lit(by)]));
+    });
+}

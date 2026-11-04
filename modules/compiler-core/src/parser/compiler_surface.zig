@@ -43,6 +43,11 @@ pub const load_builtin = "__compilerLoad";
 /// executor's body written at the call. No source can spell it.
 pub const init_here_builtin = "__compilerInitHere";
 
+/// Decisions 640 (3), 627 — the handle method `compiler.ast(node)` in a
+/// decorator's body is read onto (the decorator prelude's `__bp_declAst/2`,
+/// `comptime/runtime/prelude.zig` `decl_ast_fn`). No source can spell it.
+pub const decl_ast_method = "__bp_declAst";
+
 /// What a member is, for the table test and the mapping below.
 pub const Kind = enum {
     /// A read of the point: `compiler.module`.
@@ -512,6 +517,14 @@ fn mapCall(ctx: *Ctx, loc: ast.Loc, c: anytype) error{OutOfMemory}!ast.Expr {
     // at build, its answer a `Result` (`comptime/load.zig`).
     if (std.mem.eql(u8, name, "load")) return builtinCall(loc, load_builtin, args, c.trailing);
     if (member.kind == .site) {
+        // Decisions 640 (3), 627 — `compiler.ast(node)` in a decorator's body
+        // (and in a tree it hands the compiler, hoisted into the body by
+        // decision 642): the code the tree is, a build value that enters a
+        // member, an executor or a wrapper as that code where it is spliced.
+        // `decl.__bp_declAst(node)` to the machinery (`decl_ast_method`); a
+        // top-level `comptime` block has no declaration and stays refused.
+        if (ctx.site == null and std.mem.eql(u8, name, "ast")) if (ctx.decl) |d| if (!std.mem.eql(u8, d, comptime_blocks.handle_name))
+            return methodCall(ctx, loc, try ident(ctx, d, loc), decl_ast_method, args, c.trailing, c.typeArgs);
         const s = ctx.site orelse return refusal(ctx, loc, diagnostics.compiler_member_unknown, try std.fmt.allocPrint(ctx.alloc, "`compiler.{s}` reads a template's call site, and this body is no template", .{name}), "A template answers `-> expr T`; its body reads the call site through `compiler` (decision 576 (2)).");
         if (std.mem.eql(u8, name, "buildType"))
             return refusal(ctx, loc, diagnostics.compiler_member_unknown, "`compiler.buildType(source)` builds a type only as `compiler.addType`'s source yet", "Write `compiler.addType(name, compiler.buildType(\"(…)\"))`; a derived type built from its text joins with step B-140 (decision 578 (3)).");
@@ -714,6 +727,7 @@ fn readCall(read: ast.Expr) ?CallData {
 /// The name of the `comptime` parameter of a `Compiler` member (`compiler.bp`).
 fn valueParamName(callee: []const u8) []const u8 {
     if (std.mem.eql(u8, callee, "load")) return "path";
+    if (std.mem.eql(u8, callee, "ast")) return "node";
     return if (std.mem.eql(u8, callee, "typeInfo")) "t" else "source";
 }
 

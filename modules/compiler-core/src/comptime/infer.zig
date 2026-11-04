@@ -7166,19 +7166,19 @@ fn memberFnSource(
     // that is no `fn` literal is refused here, where the checker would.
     if (local) if (memberFn.firstMemberNotFn(dfn, declName)) |arg| return refuseMemberNotFn(env, arg, dfn.body);
     if (c.index >= fns.len) return decoratorError(env, a, "the decorator evaluator handed back a member function the body does not write", "Report it: `decl.addMember(name, fn…)` numbers the body's member functions in source order.");
-    const func = fns[c.index];
+    const written = fns[c.index];
     // A decorator of this module runs before its body is checked.
-    if (local) try refuseMemberFnShape(env, func, dfn.params, dfn.body);
+    if (local) try refuseMemberFnShape(env, written, dfn.params, dfn.body);
     const typeArgs: []const memberFn.TypeArg = (if (a.loc) |l| env.decoratorTypeArgs.get(l) else null) orelse &.{};
 
     // The member's types at this annotation.
-    for (try memberFn.typeNames(env.arena, func)) |n| for (typeArgs) |ta| {
+    for (try memberFn.typeNames(env.arena, written)) |n| for (typeArgs) |ta| {
         if (!std.mem.eql(u8, ta.name, n) or std.mem.indexOfScalar(u8, ta.spelled, '_') == null) continue;
         const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]`'s member `{s}` writes the type parameter `{s}`, which this annotation leaves unbound", .{ diagnostics.decorator_member_type, a.name, c.name, n });
         return decoratorError(env, a, msg, "A member function's types are known where the decorator is applied: bind the type parameter through `@Decl<T>` or an argument (decision 370 (2)).");
     };
-    if (func.kind.params.len > 0 and std.mem.eql(u8, func.kind.params[0], "self")) {
-        const t = func.kind.paramTypes[0];
+    if (written.kind.params.len > 0 and std.mem.eql(u8, written.kind.params[0], "self")) {
+        const t = written.kind.paramTypes[0];
         const spelled: []const u8 = switch (t) {
             .named => |n| blk: {
                 for (typeArgs) |ta| if (std.mem.eql(u8, ta.name, n)) break :blk ta.spelled;
@@ -7195,17 +7195,24 @@ fn memberFnSource(
     // Splice each decorator parameter's argument, then each local of the
     // body the member reads as the literal of the value the body handed
     // (decision 575 (4), the tree rule).
-    const captured = try memberFn.capturedLocals(env.arena, dfn, func);
+    const captured = try memberFn.capturedLocals(env.arena, dfn, written);
     const handed: []const std.json.Value = if (c.data) |d| (if (d == .array) d.array.items else &.{}) else &.{};
+    // Decisions 640 (3), 627 — a local holding code is spliced as that code.
+    const coded = try builtCodeLocals(env, a, sig, written, local, captured, handed);
+    const func = try memberFn.spliceCode(env.arena, written, coded);
     // Decision 716 (3) — the handle is the annotated type as code.
     const splices = try env.arena.alloc(memberFn.Splice, values.len + captured.len + 1);
     for (values, 0..) |v, j| splices[j] = .{ .param = sig.params[j].name, .lexeme = try splicedArgLexeme(env, dfn, sig.params[j], v.lexeme, local) };
     splices[values.len + captured.len] = .{ .param = declName, .lexeme = target };
     for (captured, 0..) |n, k| {
         const v: std.json.Value = if (k < handed.len) handed[k] else .null;
+        if (isCodeLocal(coded, n)) {
+            splices[values.len + k] = .{ .param = "", .lexeme = "" };
+            continue;
+        }
         const lit = (try memberFn.literalSource(env.arena, v)) orelse {
             const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]`'s member `{s}` reads `{s}`, a local of the decorator's body whose value is no literal", .{ diagnostics.decorator_member_local_not_literal, a.name, c.name, n });
-            return localNotLiteral(env, a, sig, func, local, n, msg, "A member holds a local of the decorator's body as a literal: a string, a number, a `bool`, `null` or an array of those (decisions 575 (4), 759).");
+            return localNotLiteral(env, a, sig, written, local, n, msg, "A member holds a local of the decorator's body as a literal: a string, a number, a `bool`, `null` or an array of those (decisions 575 (4), 759).");
         };
         splices[values.len + k] = .{ .param = n, .lexeme = lit };
     }
@@ -7214,6 +7221,62 @@ fn memberFnSource(
     // writes beyond the parameters resolves where the decorator wrote it.
     const renames: []const memberFn.Rename = if (local) &.{} else try memberRenames(env, a, dfn, c, func, splices, typeArgs);
     return memberFn.render(env.arena, c.name, func, splices, typeArgs, target, renames) catch return error.OutOfMemory;
+}
+
+/// Decisions 640 (3), 627 — of the body's locals a member or an executor
+/// reads (`captured`, their values `handed` in that order), the ones whose
+/// value is code — `compiler.ast(node)`'s `{'__bp_ast', Node}`, encoded
+/// `{"tuple": ["__bp_ast", node]}` by the decorator prelude — each with the
+/// code its tree builds (`ast_build.zig`): a `Lit` the value's literal, a
+/// `Name` the name as the tree writes it, resolved where the member is
+/// spliced as any name the member writes (decision 384's renames included).
+/// A tree that is no code is `ast-ill-formed` where the tree reads the local,
+/// called from the annotation (`localNotLiteral`'s place), naming the node; a
+/// `Syntax` node holds no `syntax` value here.
+fn builtCodeLocals(env: *Env, a: ast.Annotation, sig: envMod.DecoratorSig, written: ast.FunctionExpr, local: bool, captured: []const []const u8, handed: []const std.json.Value) InferError![]const memberFn.Code {
+    var out: std.ArrayListUnmanaged(memberFn.Code) = .empty;
+    for (captured, 0..) |n, k| {
+        if (k >= handed.len) break;
+        const tree = builtCodeTree(handed[k]) orelse continue;
+        const Ctx = struct {
+            env: *Env,
+            pub fn lit(self: @This(), v: std.json.Value, at: ast.Loc) ?*const ast.Expr {
+                const typed = templateEval.typedValue(self.env.arena, v) catch return null;
+                return valueToAstLiteral(self.env, typed, at, null);
+            }
+            pub fn syntax(_: @This(), _: std.json.Value) ?*const ast.Expr {
+                return null;
+            }
+        };
+        var b: astBuild.Builder(Ctx) = .{ .arena = env.arena, .ctx = .{ .env = env }, .origin = a.loc orelse .{ .line = 0, .col = 0 } };
+        switch (try b.build(tree)) {
+            .ok => |root| try out.append(env.arena, .{ .param = n, .expr = root }),
+            .ill => |m| {
+                const msg = if (std.mem.startsWith(u8, n, memberFn.build_read_prefix))
+                    try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]`'s `compiler.ast` tree is no code: {s}", .{ diagnostics.ast_ill_formed, a.name, m })
+                else
+                    try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]`'s `{s}` is a `compiler.ast` tree that is no code: {s}", .{ diagnostics.ast_ill_formed, a.name, n, m });
+                return localNotLiteral(env, a, sig, written, local, n, msg, "`compiler.ast(node)` builds code from a tree of `compiler.Node` records (decision 625 (2)): each node a kind `compiler.bp` declares, an `Arg` only in `Call.args`; in a decorator the code enters the member or the executor that reads it (decision 640 (3)).");
+            },
+        }
+    }
+    return out.items;
+}
+
+/// The tree of a `compiler.ast(node)` value as the decorator prelude encodes
+/// it, or null for any other value.
+fn builtCodeTree(v: std.json.Value) ?std.json.Value {
+    if (v != .object or v.object.count() != 1) return null;
+    const t = v.object.get("tuple") orelse return null;
+    if (t != .array or t.array.items.len != 2) return null;
+    const tag = t.array.items[0];
+    if (tag != .string or !std.mem.eql(u8, tag.string, preludeMod.ast_tag)) return null;
+    return t.array.items[1];
+}
+
+fn isCodeLocal(coded: []const memberFn.Code, n: []const u8) bool {
+    for (coded) |c| if (std.mem.eql(u8, c.param, n)) return true;
+    return false;
 }
 
 /// Decision 669 — the `print` / `panic` a member `owner` hands on as text
@@ -7255,23 +7318,30 @@ fn executorSource(
     const declName = memberFn.declParamName(dfn) orelse return decoratorError(env, a, "the decorator has no `@Decl` handle", "");
     const fns = try memberFn.collectExecutors(env.arena, dfn, declName);
     if (c.index >= fns.len) return decoratorError(env, a, "the decorator evaluator handed back an executor the body does not write", "Report it: `compiler.init(f)` numbers the body's executors in source order.");
-    const func = fns[c.index];
+    const written = fns[c.index];
     // A decorator of this module runs before its body is checked.
-    if (local) try refuseCaptures(env, func, dfn.params, dfn.body, true, true);
+    if (local) try refuseCaptures(env, written, dfn.params, dfn.body, true, true);
     const typeArgs: []const memberFn.TypeArg = (if (a.loc) |l| env.decoratorTypeArgs.get(l) else null) orelse &.{};
-    const captured = try memberFn.capturedLocals(env.arena, dfn, func);
+    const captured = try memberFn.capturedLocals(env.arena, dfn, written);
     const handed: []const std.json.Value = if (c.data) |d| (if (d == .array) d.array.items else &.{}) else &.{};
+    // Decisions 640 (3), 627 — a local holding code is spliced as that code.
+    const coded = try builtCodeLocals(env, a, sig, written, local, captured, handed);
+    const func = try memberFn.spliceCode(env.arena, written, coded);
     const splices = try env.arena.alloc(memberFn.Splice, values.len + captured.len + 1);
     for (values, 0..) |v, j| splices[j] = .{ .param = sig.params[j].name, .lexeme = try splicedArgLexeme(env, dfn, sig.params[j], v.lexeme, local) };
     splices[values.len + captured.len] = .{ .param = declName, .lexeme = annotated };
     for (captured, 0..) |n, k| {
         const v: std.json.Value = if (k < handed.len) handed[k] else .null;
+        if (isCodeLocal(coded, n)) {
+            splices[values.len + k] = .{ .param = "", .lexeme = "" };
+            continue;
+        }
         // Decision 787 — a `Module` (or a `Refused`) a `compiler.load` read
         // of the body answered: the record's constructor, under the names
         // the module's load helper imports (`load.withLoadHelper`).
         const lit = (try memberFn.literalSource(env.arena, v)) orelse (try loadMod.recordSource(env.arena, v)) orelse {
             const msg = try std.fmt.allocPrint(env.arena, "{s}: `#[{s}]`'s executor reads `{s}`, a local of the decorator's body whose value is no literal", .{ diagnostics.decorator_member_local_not_literal, a.name, n });
-            return localNotLiteral(env, a, sig, func, local, n, msg, "An executor holds a local of the decorator's body as a literal: a string, a number, a `bool`, `null` or an array of those (decisions 575 (4), 759).");
+            return localNotLiteral(env, a, sig, written, local, n, msg, "An executor holds a local of the decorator's body as a literal: a string, a number, a `bool`, `null` or an array of those (decisions 575 (4), 759).");
         };
         splices[values.len + k] = .{ .param = n, .lexeme = lit };
     }
@@ -21932,6 +22002,25 @@ fn inferHandleName(env: *Env, recvPtr: *ast.TypedExpr, callee: []const u8, typed
     } } } };
 }
 
+/// Decisions 640 (3), 627 — `compiler.ast(node)` in a decorator's body
+/// (`decl.__bp_declAst(node)`, as `parser/compiler_surface.zig` writes it):
+/// the code the tree builds, a build value whose type is the type that code
+/// has where a member or an executor splices it (`compiler.bp`'s `anyvalue`)
+/// — a fresh type at each call, as a template's `ast` is typed at expansion.
+/// The tree is read when it is spliced (`builtCodeLocals`).
+fn inferHandleAst(env: *Env, recvPtr: *ast.TypedExpr, callee: []const u8, typedArgs: []ast.CallArgOf(.typed), typedTrailing: []ast.TrailingLambdaOf(.typed), loc: ast.Loc) InferError!?ast.TypedExpr {
+    if (!std.mem.eql(u8, callee, compilerSurface.decl_ast_method) or typedArgs.len != 1) return null;
+    const d = recvPtr.getType().deref();
+    if (d.* != .named or !std.mem.eql(u8, d.named.name, ast.decl_type_name)) return null;
+    return ast.TypedExpr{ .call = .{ .loc = loc, .type_ = try env.freshVar(), .kind = .{ .call = .{
+        .receiver = recvPtr,
+        .callee = callee,
+        .is_builtin = false,
+        .args = typedArgs,
+        .trailing = typedTrailing,
+    } } } };
+}
+
 fn inferTemplateMethod(
     env: *Env,
     recvPtr: *ast.TypedExpr,
@@ -26278,6 +26367,9 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
             if (typedReceiver) |recvPtr| {
                 if (try inferSequenceNext(env, recvPtr, call.callee, typedArgs, typedTrailing, loc)) |te| return te;
                 if (try inferHandleName(env, recvPtr, call.callee, typedArgs, loc)) |te| return te;
+                // Decisions 640 (3), 627 — `compiler.ast` is the compiler's,
+                // no member of the declaration: read before 1106's refusal.
+                if (try inferHandleAst(env, recvPtr, call.callee, typedArgs, typedTrailing, loc)) |te| return te;
                 // Decision 1106 — a handle typed by a bare type parameter has
                 // no method.
                 if (call.receiver) |r| try refuseTypeParamHandleMember(env, r.*, recvPtr.getType(), loc, "call a method on");

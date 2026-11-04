@@ -637,6 +637,26 @@ pub fn render(
     return std.fmt.allocPrint(arena, "pub fn {s}{s}", .{ name, try spliceLexemes(arena, text[2..], splices) });
 }
 
+/// Decisions 640 (3), 627 — a local of the decorator's body whose value is
+/// code (`compiler.ast(node)`, a hoisted read of a tree included), and that
+/// code built (`infer.zig` `builtCodeOf`).
+pub const Code = struct { param: []const u8, expr: *const ast.Expr };
+
+/// Decisions 640 (3), 627 — `func` with each read of a `codes` local
+/// replaced by its code: the tree enters the member, the executor or the
+/// wrapper as the code it is, where the local is read (613's direction: what
+/// the build knows flows into run-time code). A name the function binds
+/// itself is left alone. The copy is `func`'s own: the decorator's body is
+/// untouched.
+pub fn spliceCode(arena: std.mem.Allocator, func: ast.FunctionExpr, codes: []const Code) error{OutOfMemory}!ast.FunctionExpr {
+    if (codes.len == 0) return func;
+    const bound = try boundNames(arena, func.kind.params, func.kind.body);
+    var sub: Substitution = .{ .arena = arena, .splices = &.{}, .typeArgs = &.{}, .owner = "", .bound = &bound, .codes = codes };
+    var f = func;
+    f.kind.body = try sub.clone([]ast.Stmt, func.kind.body);
+    return f;
+}
+
 // ── decision 669 — a member written as text ────────────────────────────────
 
 /// Decision 669 — the member a decorator hands `decl.addMember(source)` as
@@ -759,6 +779,15 @@ const Substitution = struct {
     owner: []const u8,
     bound: *const std.StringHashMapUnmanaged(void),
     renames: []const Rename = &.{},
+    /// Decisions 640 (3), 627 — the locals of the decorator's body holding
+    /// code (`spliceCode`): each read replaced by the code itself.
+    codes: []const Code = &.{},
+
+    fn codeOf(self: *const Substitution, n: []const u8) ?*const ast.Expr {
+        if (self.bound.contains(n)) return null;
+        for (self.codes) |c| if (std.mem.eql(u8, c.param, n)) return c.expr;
+        return null;
+    }
 
     fn spliceIndex(self: *const Substitution, n: []const u8) ?usize {
         if (self.bound.contains(n)) return null;
@@ -832,6 +861,7 @@ const Substitution = struct {
         if (T == ast.TypeRef) return self.typeRef(v);
         if (T == ast.Expr) switch (v) {
             .identifier => |id| if (id.kind == .ident) {
+                if (self.codeOf(id.kind.ident)) |code| return code.*;
                 if (self.spliceIndex(id.kind.ident)) |j| {
                     var out = v;
                     out.identifier.kind = .{ .ident = try self.placeholder(j) };
@@ -846,6 +876,15 @@ const Substitution = struct {
             .call => |c| if (c.kind == .call) {
                 const cc = c.kind.call;
                 if (cc.receiver == null and cc.calleeExpr == null and !cc.is_builtin) {
+                    // A local holding code called: the code is the callee.
+                    if (self.codeOf(cc.callee)) |code| {
+                        var out = v;
+                        out.call.kind.call.callee = "";
+                        out.call.kind.call.calleeExpr = @constCast(code);
+                        out.call.kind.call.args = try self.clone(@TypeOf(cc.args), cc.args);
+                        out.call.kind.call.trailing = try self.clone(@TypeOf(cc.trailing), cc.trailing);
+                        return out;
+                    }
                     const callee: ?[]const u8 = if (self.spliceIndex(cc.callee)) |j| try self.placeholder(j) else self.renamed(cc.callee);
                     if (callee) |to| {
                         var out = v;

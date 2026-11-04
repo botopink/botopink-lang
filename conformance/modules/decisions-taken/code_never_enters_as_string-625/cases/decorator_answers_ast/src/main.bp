@@ -1,0 +1,44 @@
+//// Decisions 640 (3), 627 — `compiler.ast(node)` is admitted in a decorator's
+//// body: the code a tree of `compiler.Node` records builds is a build value
+//// that enters a member or an executor as the code it is, where it is read —
+//// a `val` of the body (627's `val client = compiler.ast(…)`), or the call
+//// itself written inside the member's `fn` literal (decision 642: evaluated
+//// at build, spliced as its answer). A `Name` the decorator's tree writes
+//// resolves as any name its member writes: in the decorator's module
+//// (`sizes`' private `times`, not this module's), a name the member binds
+//// as that binding.
+
+import {compiler, compiler.Binary, compiler.Call, compiler.Lit, compiler.Name, io.terminal.print} from "std";
+import {scaled} from "sizes";
+
+fn times(n: i32, by: i32) -> i32 {
+    return n + by;
+}
+
+fn announce(word: string) -> void {
+    print("registered " + word);
+}
+
+fn traced(syntax decl: unknown) -> void {
+    val call = compiler.ast(Call(callee: Name("announce"), args: [Lit(compiler.name(decl)!)]));
+    compiler.init({ -> call; });
+    compiler.addMember("twice", fn(n: i32) -> i32 {
+        return compiler.ast(Binary(op: "*", lhs: Name("n"), rhs: Lit(2)));
+    });
+}
+
+#[scaled(3)]
+pub type Box(size: i32) {
+    pub fn make() -> Box {
+        return Box(size: 7);
+    }
+}
+
+#[traced]
+pub type Crate(n: i32)
+
+pub fn main() -> void {
+    print(Box.madeSize().toString());
+    print(Box.scaled().toString());
+    print(Crate.twice(21).toString());
+}

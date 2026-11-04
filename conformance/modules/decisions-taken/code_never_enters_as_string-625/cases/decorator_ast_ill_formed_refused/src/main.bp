@@ -1,0 +1,22 @@
+//// Decisions 640 (3), 625 (2) — a decorator's `compiler.ast` tree that is no
+//// code is refused where the member reads it, called from the annotation,
+//// naming the node (`ast-ill-formed`): a `val` of the body here, the call
+//// written in the member itself in `direct.bp`.
+
+mod direct;
+
+import {compiler, compiler.Arg, compiler.Lit, io.terminal.print} from "std";
+
+fn held(syntax decl: unknown) -> void {
+    val built = compiler.ast(Arg(name: "x", value: Lit(1)));
+    compiler.addMember("value", fn() -> i32 {
+        return built;
+    });
+}
+
+#[held]
+pub type Box(n: i32)
+
+pub fn main() -> void {
+    print(Box.value().toString());
+}

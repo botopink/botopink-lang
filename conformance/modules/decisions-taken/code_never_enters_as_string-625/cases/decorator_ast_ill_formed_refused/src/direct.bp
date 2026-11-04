@@ -1,0 +1,13 @@
+//// The call written in the member itself: a type node where an expression
+//// stands.
+
+import {compiler, compiler.NamedType} from "std";
+
+fn direct(syntax decl: unknown) -> void {
+    compiler.addMember("value", fn() -> string {
+        return compiler.ast(NamedType("string"));
+    });
+}
+
+#[direct]
+pub type Crate(n: i32)

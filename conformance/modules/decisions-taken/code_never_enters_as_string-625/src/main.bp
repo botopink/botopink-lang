@@ -39,6 +39,8 @@ fn runCase(comptime name: string) -> void {
 
 pub async fn main() -> Async<Result<void, string>> {
     runCase("ast_ill_formed_refused");
+    runCase("decorator_answers_ast");
+    runCase("decorator_ast_ill_formed_refused");
     runCase("template_answers_ast");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

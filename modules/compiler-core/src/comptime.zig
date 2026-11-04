@@ -2398,6 +2398,7 @@ pub const decl_reflection_src =
     \\    pub declare fn addType(self: Self, name: string, source: string) -> void;
     \\    pub declare fn compile(self: Self, executor: fn()) -> void;
     \\    pub declare fn implement(self: Self, source: Implementation) -> void;
+    \\    pub declare fn __bp_declAst(self: Self, node: unknown) -> unknown;
     \\}
     \\pub type __Source(file: string, line: i32, col: i32, root: string = "")
     \\pub type __ExprContext(source: __Source, text: string, multiline: bool)

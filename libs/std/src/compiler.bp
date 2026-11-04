@@ -120,7 +120,9 @@ pub behavior Compiler {
     fn build(self: Self, comptime source: string) -> anyvalue;
     // Code built from a tree of `Node`s, typed at the call (decision 625
     // (2)); a tree that is no code — an `Arg` outside a `Call`, a `Name`
-    // nothing binds — is refused here, naming the node.
+    // nothing binds — is refused here, naming the node. In a decorator's
+    // body the code is a build value a member or an executor reads as the
+    // code it is (decisions 640 (3), 627).
     fn ast(self: Self, comptime node: Node) -> anyvalue;
     // Whether `v` is a `syntax` value — code as written — rather than a
     // value known at build: what a hole of `code` is spliced as (`Syntax(e)`

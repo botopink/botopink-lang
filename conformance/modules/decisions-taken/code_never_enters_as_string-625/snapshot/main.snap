@@ -18,3 +18,15 @@ out short
 out [2, 4]
 out four 4
 out 6
+== decorator_answers_ast
+out registered Crate
+out 7
+out 21
+out 42
+== decorator_ast_ill_formed_refused
+refused error: ast-ill-formed: `#[direct]`'s `compiler.ast` tree is no code: `NamedType(named: "string")` is a type, not an expression: a type node stands where a type is written — an `FnParam`'s annotation, a `Fn`'s `ret`
+at src/direct.bp:8:25
+from src/direct.bp:12:3
+refused error: ast-ill-formed: `#[held]`'s `built` is a `compiler.ast` tree that is no code: `Arg(name: "x", value: …)` is an argument outside a `Call`: an `Arg` is only an element of `Call.args`
+at src/main.bp:13:16
+from src/main.bp:17:3

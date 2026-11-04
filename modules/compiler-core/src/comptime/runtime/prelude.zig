@@ -58,6 +58,10 @@ pub const decorator_fail_tag = "__bp_decorator_fail";
 pub const code_tag = "__bp_code";
 /// `{'__bp_ast', Node}` — what `ast/2` returns (decision 625 (2)).
 pub const ast_tag = "__bp_ast";
+
+/// Decisions 640 (3), 627 — the decorator prelude's `compiler.ast(node)`,
+/// `decl.__bp_declAst(node)` to the machinery (`parser/compiler_surface.zig`).
+pub const decl_ast_fn = "__bp_declAst";
 /// Decision 637 — the resident function a template call in a body that runs
 /// at build is lowered to the argument of (`infer.zig`
 /// `lowerBuildTemplateCalls`): `'__bp_captureOf'(Text, Holes)`.
@@ -520,6 +524,15 @@ pub fn decoratorForms(b: Ast.Builder) Error![]const Ast.Form {
         }),
         try b.function("compile", &.{ V("_Decl"), V("Index"), V("Captured") }, &.{}, &.{
             try b.call("__bp_contribute", &.{try b.map(&.{ Ast.field("kind", Ast.str("compile")), Ast.field("index", V("Index")), Ast.field("data", try b.call(meta_json_fn, &.{V("Captured")})) })}),
+        }),
+        // Decisions 640 (3), 627 — `compiler.ast(node)` in a decorator's
+        // body: the tree as the template's `ast/2` answers it, a build value
+        // a member or an executor reads as the code it is
+        // (`member_fn.astSource`).
+        // Named apart from the capture API's `ast/2`, which a template
+        // annotation's module renders beside this prelude's imports.
+        try b.function(decl_ast_fn, &.{ V("_Decl"), V("Node") }, &.{}, &.{
+            try b.tuple(&.{ A(ast_tag), V("Node") }),
         }),
         try b.function("setMeta", &.{ V("_Decl"), V("Key"), V("Value") }, &.{}, &.{
             try b.call("__bp_contribute", &.{try b.map(&.{ Ast.field("kind", Ast.str("meta")), Ast.field("key", V("Key")), Ast.field("value", V("Value")) })}),
