@@ -8797,3 +8797,61 @@ test "wat: gc ---- a type with a `bytes` field leaves the module a GC one (front
         \\
     );
 }
+
+// 144 B-246 — a `null` slot of a GC tuple literal is the null `anyref` the
+// slot's reader tests. `wasmTypeOf(null)` answered the linear word, so the
+// slot went in as a boxed `0`, whatever held the literal (an array a fn
+// returns, a returned tuple, an annotated `val`): a `?i32` read `0`, a
+// `?string` trapped on its cast.
+test "wat: gc ---- a tuple literal's null optional slot is absent (144 B-246)" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\fn rows() -> #(a: i32, b: ?i32, c: ?string)[] {
+        \\    return [#(0, null, null), #(1, 7, "x")];
+        \\}
+        \\fn one() -> #(i32, ?i32, ?string) {
+        \\    return #(2, null, null);
+        \\}
+        \\pub fn main() -> void {
+        \\    val rs = rows();
+        \\    for (rs) { r ->
+        \\        print(r.a);
+        \\        print(r.b == null);
+        \\        print(r.c == null);
+        \\        print(r.b ?? -1);
+        \\        print(r.c ?? "none");
+        \\    };
+        \\    print(rs.at(0)?.b ?? -1);
+        \\    print(rs.at(0)?.c ?? "none");
+        \\    print(rs.at(1)?.b ?? -1);
+        \\    print(rs.at(1)?.c ?? "none");
+        \\    val t = one();
+        \\    print(t._1 == null);
+        \\    print(t._2 == null);
+        \\    val u: #(i32, ?i32, ?string) = #(3, null, null);
+        \\    print(u._1 ?? -1);
+        \\    print(u._2 ?? "none");
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\0
+        \\true
+        \\true
+        \\-1
+        \\none
+        \\1
+        \\false
+        \\false
+        \\7
+        \\x
+        \\-1
+        \\none
+        \\7
+        \\x
+        \\true
+        \\true
+        \\-1
+        \\none
+        \\
+    );
+}

@@ -8991,6 +8991,14 @@ const Emitter = struct {
         const declared = self.expected_tuple;
         self.expected_tuple = null;
         for (tl.elems, 0..) |el, i| {
+            // 144 B-246 — a `null` slot (an optional's absent value) is the
+            // null `anyref` the slot's reader tests, whatever the slot's type:
+            // `wasmTypeOf(null)` answers the linear word, so it went in as a
+            // boxed `0` — read back as `0`, or a cast failure for `?string`.
+            if (isNullLit(el)) {
+                try self.emit(.{ .ref_null = .anyref });
+                continue;
+            }
             var r = self.wasmTypeOf(el);
             if (as0) |ts| if (i < ts.len) {
                 r = self.reprOf(ts[i]);
