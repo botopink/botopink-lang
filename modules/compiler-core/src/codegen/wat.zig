@@ -27091,6 +27091,15 @@ const Emitter = struct {
     /// parameters the same way, off the first element's own task value. Null
     /// when the call is no generic call, or nothing binds.
     fn bindAwaitedGeneric(self: *Emitter, call: ast.Expr, v: ast.TypeRef) ?ast.TypeRef {
+        return self.bindGenericCall(call, v, false);
+    }
+
+    /// `bindAwaitedGeneric`'s walk; `host` also reads a host-declared generic
+    /// (`declare fn delay<T>(…)`, `host_generic_decls`), as `genericRetByFnArg`
+    /// does. The awaited read keeps it off: a `T` it binds is taken as a
+    /// generic body's erased value (`gcAwaitedRead`'s `boxed_arr`), which a
+    /// host function's task never is.
+    fn bindGenericCall(self: *Emitter, call: ast.Expr, v: ast.TypeRef, host: bool) ?ast.TypeRef {
         const cc = switch (call) {
             .call => |c| switch (c.kind) {
                 .call => |x| x,
@@ -27104,7 +27113,7 @@ const Emitter = struct {
         // receiver (`genericResultArg`'s own rule, just above).
         if (cc.receiver != null and !self.isNamespaceReceiver(cc)) return null;
         const callee = self.import_aliases.get(cc.callee) orelse cc.callee;
-        const f = if (self.generic_fns.get(callee)) |g| g.decl else return null;
+        const f = if (self.generic_fns.get(callee)) |g| g.decl else if (host) (self.host_generic_decls.get(callee) orelse return null) else return null;
         const ar = self.reg_arena.allocator();
         var subs: std.ArrayListUnmanaged(TypeSub) = .empty;
         var pi: usize = 0;
@@ -27145,11 +27154,26 @@ const Emitter = struct {
         return substTypeParams(ast.TypeRef, ar, v, subs.items) catch null;
     }
 
+    /// 144 B-244 — what a thunk's tail answers. A tail that is itself a call
+    /// to a generic function (`{ -> async.delay(1, "x") }`) answers its
+    /// declared return with ITS type parameters bound by its own arguments
+    /// (`Async<string>`, not `delay`'s bare `Async<T>`), so the outer call's
+    /// binding walk (`genericRetByFnArg`) never binds its own `T` to the
+    /// inner function's parameter name. A tail calling a generic function
+    /// whose own thunk argument does the same is bound through `typeRefOf`'s
+    /// own `genericRetByFnArg`, which reads that thunk here again, however
+    /// deep.
+    fn thunkTailTypeRef(self: *Emitter, tail: ast.Expr) ?ast.TypeRef {
+        const t = self.typeRefOf(tail) orelse return null;
+        if (!self.typeConcrete(t)) if (self.bindGenericCall(tail, t, true)) |b| return b;
+        return t;
+    }
+
     /// What a function argument answers: a lambda's last expression's type
     /// (an `async { }` block's value), a value of a written function type
     /// its declared return.
     fn fnArgReturn(self: *Emitter, arg: ast.Expr) ?ast.TypeRef {
-        if (thunkTail(arg)) |tail| return self.typeRefOf(tail);
+        if (thunkTail(arg)) |tail| return self.thunkTailTypeRef(tail);
         const t0 = self.typeRefOf(arg) orelse return null;
         // Decision 1102 — a value written through a function-shaped alias
         // (`Composition<T>`, std's stamps' answer) is the function it names.

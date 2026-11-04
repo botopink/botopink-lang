@@ -401,7 +401,12 @@ adapter); `attemptTask` contains what the thunk raises before its task's first
 (`host_generic_decls`, `genericRetByFnArg` binding a thunk's `T` — `fn() -> T`
 or `fn() -> @Async<T>` — from what the argument answers, through a namespace
 call too, and `resultShapeOf` reading that shape), so `case` over
-`await failure.attemptTask(…)` types a nested `@Result`.
+`await failure.attemptTask(…)` types a nested `@Result`. A thunk whose tail is
+itself a call to a generic function (`{ -> async.delay(1, "x") }`, a host-declared
+one included) answers that call's return with its own type parameters bound by its
+own arguments first (`thunkTailTypeRef` over `bindGenericCall`, 144 B-244), so the
+outer `T` never binds to the inner function's parameter name; deeper nesting binds
+through `typeRefOf`'s own `genericRetByFnArg` reading each thunk the same way.
 
 ## `@Async` as a state machine (decisions 392–394, front 140 step 4)
 

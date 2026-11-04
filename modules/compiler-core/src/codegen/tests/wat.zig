@@ -4672,6 +4672,51 @@ test "wat: gc ---- an awaited generic call binds T through a composite task valu
     );
 }
 
+// 144 B-244 — a generic call whose thunk argument's tail is itself a call to
+// a DIFFERENT generic function: `timeout<T>(task: fn() -> Async<T>, …)` over
+// `{ -> async.delay(1, "in time") }`, `delay<T>(millis, value: T)`. The
+// thunk's answer read as `delay`'s own declared `Async<T>`, its `T` never
+// bound by `delay`'s own arguments, so `timeout`'s `T` bound to `delay`'s
+// bare parameter name and the module fell to linear memory ("an awaited
+// task of a type parameter"). The inner call's own type parameters are now
+// bound from its arguments before its answer binds the outer call's; one level
+// deeper (`timeout`'s thunk calling `timeout`) binds through the inner
+// `timeout`'s own read of its thunk. Only a host-declared inner generic was
+// unbound (a bodied one answers its specialisation's return). Checked
+// compiled only: `delay`'s task imports the browser host's `bp_host.delay`,
+// which this harness's runner does not provide.
+test "wat: gc ---- a generic thunk's tail calling another generic fn binds the outer T" {
+    const allocator = std.testing.allocator;
+    const src =
+        \\async fn run() -> Async<void> {
+        \\    val inTime = await async.timeout({ -> async.delay(1, "in time") }, 1000);
+        \\    print("timeout " + inTime.unwrapOr("-") + "/" + async.errorText(inTime));
+        \\    val nested = await async.timeout({ -> async.timeout({ -> async.delay(1, 41) }, 1000) }, 1000);
+        \\    case nested {
+        \\        Ok(inner) -> print("nested " + (inner.unwrapOr(0) + 1).toString());
+        \\        Error(e) -> print("nested error " + e);
+        \\    }
+        \\}
+        \\pub async fn main() -> Async<void> {
+        \\    await run();
+        \\}
+        \\
+        \\import {async, io.terminal.print} from "std";
+    ;
+    var outputs = try h.generate(allocator, &.{.{ .path = "", .source = src }}, std.testing.io, h.configs[3]);
+    defer {
+        for (outputs.items) |*o| o.result.deinit(allocator);
+        outputs.deinit(allocator);
+    }
+    const o = for (outputs.items) |o| {
+        if (std.mem.eql(u8, o.name, "") or std.mem.eql(u8, o.name, "main")) break o;
+    } else return error.ModuleDidNotCompile;
+    if (std.mem.indexOf(u8, o.result.js, "(type $str (array (mut i8)))") == null) {
+        std.debug.print("\n=== the module fell back to linear memory ===\n{s}\n", .{o.result.js});
+        return error.GcFallback;
+    }
+}
+
 // Front 229 s4 — decision 985's wasm half: a lambda argument of a method's
 // specialisation is written against the copy's substituted parameter types,
 // the method's own type parameter included (`fold<A>`'s `A` bound to `f64`
