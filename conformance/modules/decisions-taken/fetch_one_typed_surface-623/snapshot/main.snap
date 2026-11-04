@@ -9,6 +9,8 @@ out true
 out NotAllowedOnHost
 out Network refused
 out Timeout
+== http_fetch_request on wasm
+excluded std-unsupported-on-target: std/io/http.fetch reaches `fetchHost`, which has no `.Wasm(…)` implementation for target 'wasm' on host 'wasi'
 == http_fetch_url_removed
 refused error: type mismatch: expected Request, got string
 at src/main.bp:7:37

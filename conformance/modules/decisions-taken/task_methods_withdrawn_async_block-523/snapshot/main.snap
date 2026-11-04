@@ -11,6 +11,8 @@ at src/main.bp:14:21
 out resolved 1
 out rejected negative
 == task_failure_rejects on erlang
-abort
+excluded `observe` has no implementation for the erlang backend
 == task_failure_rejects on beam
-abort
+excluded `observe` has no implementation for the beam backend
+== task_failure_rejects on wasm
+excluded `observe` has no implementation for the wasm backend

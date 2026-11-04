@@ -22,12 +22,18 @@ out asserts.throwsWith: message does not contain needle
 out Ok
 out asserts.throwsWith: message does not contain needle
 out asserts.throwsWith: body did not raise
+== std_asserts_throws_over_attempt on wasm
+excluded `raiseBoom` has no implementation for the wasm backend
 == std_failure_attempt_crash
 out Error crash
 out after
+== std_failure_attempt_crash on wasm
+excluded `shapeNamed` has no implementation for the wasm backend
 == std_failure_attempt_host
 out Error host: boom
 out Error host: refused
 out Error host: gone
 out Error host: {bad_input,7}
 out after
+== std_failure_attempt_host on wasm
+excluded `raiseError` has no implementation for the wasm backend

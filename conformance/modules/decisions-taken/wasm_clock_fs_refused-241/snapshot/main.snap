@@ -10,3 +10,5 @@ out 6869
 out 64
 out "a"
 out true
+== std_template_host_fns_across_modules on wasm
+excluded std-unsupported-on-target: std/io/os.eol has no `.Wasm(…)` implementation for target 'wasm' on host 'wasi'

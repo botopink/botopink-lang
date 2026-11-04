@@ -6,3 +6,5 @@ out Ok fallback
 out Ok a
 out -1
 out after
+== try_catch_host_raise_propagates on wasm
+excluded `sig` has no implementation for the wasm backend

@@ -15,3 +15,5 @@ out writeText over a directory: IsDirectory errors
 out walk of a file: NotDirectory errors/file.txt
 out readText of bytes that are not UTF-8: InvalidUtf8 errors/bad.bin 2
 out walk over a dangling link: Other errors fs.walk: dangling link "gone.bp"
+== fs_error_variants on wasm
+excluded `linkTo` has no implementation for the wasm backend

@@ -14,7 +14,9 @@ out 2 comments
 == component_default_fn_sync on erlang
 abort
 == component_default_fn_sync on beam
-abort
+excluded `pending` has no implementation for the beam backend
+== component_default_fn_sync on wasm
+excluded `pending` has no implementation for the wasm backend
 == component_method_sync
 out false
 out true
@@ -24,7 +26,9 @@ out menu b
 == component_method_sync on erlang
 abort
 == component_method_sync on beam
-abort
+excluded `pending` has no implementation for the beam backend
+== component_method_sync on wasm
+excluded `pending` has no implementation for the wasm backend
 == component_sync_plain_function
 out false
 out true
@@ -33,4 +37,6 @@ out card:direct
 == component_sync_plain_function on erlang
 abort
 == component_sync_plain_function on beam
-abort
+excluded `pending` has no implementation for the beam backend
+== component_sync_plain_function on wasm
+excluded `pending` has no implementation for the wasm backend

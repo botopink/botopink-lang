@@ -15,4 +15,4 @@ out true
 out 2000
 out true
 == import_std_folder_namespace on wasm
-refused std-unsupported-on-target: std/io/clock.nowMillis reaches `systemTimeWithUnit`, which has no `.Wasm(…)` implementation for target 'wasm' on host 'wasi'
+excluded std-unsupported-on-target: std/io/clock.nowMillis reaches `systemTimeWithUnit`, which has no `.Wasm(…)` implementation for target 'wasm' on host 'wasi'

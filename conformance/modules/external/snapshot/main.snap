@@ -58,7 +58,7 @@ out 0
 == external_erlang_only
 out hi
 == external_erlang_only on commonJS
-abort
+refused `listToBinary` has no implementation for the node backend
 == external_erlang_only on wasm
 refused error: `listToBinary` has no implementation for the wasm backend
 at src/main.bp:23:11

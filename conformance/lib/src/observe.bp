@@ -29,6 +29,13 @@ pub fn refusedAnswer(name: string, buildText: string, refusals: Refusal[]) -> Ob
     return Observed(name: name, snap: Snap(refusals: refusals, build: linesOf(buildText)));
 }
 
+/// The answer of a case whose own manifest excludes the built target (decision 989 (3)): the build
+/// lines first, then the refusals — same shape as `refusedAnswer`, but printed as `excluded` rather
+/// than `refused` (`records.Snap.excluded`), since the two are different semantic cases.
+pub fn excludedAnswer(name: string, buildText: string, refusals: Refusal[]) -> Observed {
+    return Observed(name: name, snap: Snap(refusals: refusals, excluded: true, build: linesOf(buildText)));
+}
+
 /// The answer of a case that ran: the build lines, then what it printed, `abort` when the run failed.
 pub fn ranAnswer(name: string, buildText: string, printed: string, failed: bool, failure: string) -> Observed {
     return Observed(name: name, snap: Snap(build: linesOf(buildText), stdout: printed, abort: failed), stderr: failure);
@@ -68,8 +75,12 @@ fn candidateBody(file: SnapFile, o: Observed, target: string) -> string {
         // A `case` assigning, not `try … catch null`: wasm's GC lowering types that `catch` by its
         // `null`.
         case parseBody(a.body) {
-            Ok(snap) { kept = snap; }
-            Error(_) { kept = null; }
+            Ok(snap) {
+                kept = snap;
+            }
+            Error(_) {
+                kept = null;
+            }
         }
     }
     return renderBody(candidate(kept, o.snap, o.stderr));

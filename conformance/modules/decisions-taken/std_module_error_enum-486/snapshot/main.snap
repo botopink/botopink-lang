@@ -20,3 +20,5 @@ out regex.compile of a bad pattern: host
 out clock.parseIso8601 of a timestamp: ok
 out clock.parseIso8601 of bad text: NotRfc3339
 out process.run of a missing binary: host
+== std_host_error_variants on wasm
+excluded std-unsupported-on-target: std/json.parse has no `.Wasm(…)` implementation for target 'wasm' on host 'wasi'

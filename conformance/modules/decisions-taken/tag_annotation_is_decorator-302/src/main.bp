@@ -28,12 +28,12 @@ fn runCase(comptime name: string) -> void {
     if (comptime loaded.mainAsync())
         compiler.init({ async ->
             val ran = adapter.ranOf(await loaded.run());
-            answers.push(observe.ranAnswer(name, adapter.buildOutput(loaded), ran.printed, ran.failed, ran.failure));
+            answers.push(adapter.ranAnswerOf(name, adapter.buildOutput(loaded), ran));
         })
     else
         compiler.init({ ->
             val ran = adapter.ranOf(loaded.run());
-            answers.push(observe.ranAnswer(name, adapter.buildOutput(loaded), ran.printed, ran.failed, ran.failure));
+            answers.push(adapter.ranAnswerOf(name, adapter.buildOutput(loaded), ran));
         });
 }
 

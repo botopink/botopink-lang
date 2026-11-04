@@ -7,6 +7,9 @@
 ////
 ////     botopink-cell 1                 the format and its version, always line 1
 ////     refused <message line>          the compiler refuses the module: its
+////     excluded <message line>         the case's own manifest excludes the built
+////                                       target (decision 989 (3)) — same shape as
+////                                       `refused` below, never together in one run
 ////     at <file>:<line>:<col>            `error…` line, and where (when located)
 ////     label <text>                    the label printed beside the caret (485)
 ////     from <file>:<line>:<col>        one `called from` line of a raise at build,
@@ -55,6 +58,10 @@ pub type Refusal(
 /// One module's answer.
 pub type Snap(
     refusals: Refusal[] = [],
+    // Whether `refusals` above print as `excluded` instead of `refused` (decision 989 (3)): the
+    // case's own manifest leaves the built target out, never a build-time diagnostic. The two never
+    // mix in one run.
+    excluded: bool = false,
     // The lines the build bodies printed (789), each without its newline.
     build: string[] = [],
     // What the program printed, exactly.
@@ -101,6 +108,7 @@ pub fn parse(text: string) -> Result<Snap, Malformed> {
     var stdout = "";
     var stderr: string[] = [];
     var abort = false;
+    var excluded = false;
     // 0 start · 1 build · 2 output · 3 after `no-final-newline` · 4 after `abort` · 5 stderr · 6 refusals
     var phase = 0;
     var lastOutEmpty = false;
@@ -122,12 +130,13 @@ pub fn parse(text: string) -> Result<Snap, Malformed> {
         val count = refusals.length;
         val last: ?Refusal = refusals.at(count - 1);
 
-        if (word == "refused") {
+        if (word == "refused" || word == "excluded") {
             if (phase > 1 && phase != 6)
-                return fail(n, "`refused` comes before any output");
+                return fail(n, "`refused`/`excluded` comes before any output");
             phase = 6;
+            if (word == "excluded") excluded = true;
             if (!hasRest)
-                return fail(n, "`refused` names the compiler's message");
+                return fail(n, "`refused`/`excluded` names the message");
             refusals = refusals.append([Refusal(message: rest)]);
         } else if (word == "at") {
             if (!hasRest) return fail(n, "`at` names `<file>:<line>:<col>`");
@@ -191,9 +200,9 @@ pub fn parse(text: string) -> Result<Snap, Malformed> {
                 return fail(n, "`stderr` names an abort: it follows `abort`");
             phase = 5;
             stderr = stderr.append([rest]);
-        } else return fail(n, "unknown record (refused, at, label, from, build, out, no-final-newline, abort, stderr)");
+        } else return fail(n, "unknown record (refused, excluded, at, label, from, build, out, no-final-newline, abort, stderr)");
     }
-    val snap = Snap(refusals: refusals, build: build, stdout: stdout, abort: abort, stderr: stderr);
+    val snap = Snap(refusals: refusals, excluded: excluded, build: build, stdout: stdout, abort: abort, stderr: stderr);
     // One spelling: whatever the rules above let through must render back.
     if (render(snap) != text)
         return fail(n, "not the canonical spelling of its records");
@@ -210,8 +219,9 @@ pub fn render(snap: Snap) -> string {
     for (snap.build) { b ->
         out = out + record("build", b);
     }
+    val refusalWord = if (snap.excluded) "excluded" else "refused";
     for (snap.refusals) { r ->
-        out = out + "refused " + r.message + "\n";
+        out = out + refusalWord + " " + r.message + "\n";
         if (r.at) {
             at ->
             out = out + "at " + at + "\n";
@@ -259,11 +269,12 @@ fn sameRefusal(e: Refusal, o: Refusal) -> bool {
         && sameLines(e.frames, o.frames);
 }
 
-/// Whether the observed answer is the accepted one: the refusals, the build
-/// lines, the output and the abort equal, and every `stderr` claim contained in
-/// `observedStderr`.
+/// Whether the observed answer is the accepted one: the refusals (and whether they are `excluded`
+/// rather than `refused`), the build lines, the output and the abort equal, and every `stderr` claim
+/// contained in `observedStderr`.
 pub fn matches(expected: Snap, observed: Snap, observedStderr: string) -> bool {
     if (expected.refusals.length != observed.refusals.length) return false;
+    if (expected.excluded != observed.excluded) return false;
     var i = 0;
     while (i < expected.refusals.length) {
         val e = expected.refusals.at(i) ?? Refusal(message: "");
@@ -286,7 +297,7 @@ pub fn candidate(expected: ?Snap, observed: Snap, observedStderr: string) -> Sna
             e ->
             kept = e.stderr.filter({ s -> observedStderr.contains(s) });
         }
-    return Snap(refusals: observed.refusals, build: observed.build, stdout: observed.stdout, abort: observed.abort, stderr: kept);
+    return Snap(refusals: observed.refusals, excluded: observed.excluded, build: observed.build, stdout: observed.stdout, abort: observed.abort, stderr: kept);
 }
 
 fn splitLines(text: string) -> string[] {
@@ -357,7 +368,10 @@ pub fn parseBody(body: string) -> Result<Snap, Malformed> {
     // A `case`, not `try … catch { m -> … }`: wasm's GC lowering takes no catch binder yet.
     return case parse(HEADER + "\n" + body) {
         Ok(snap) -> snap;
-        Error(m) -> throw Malformed(line: if (m.line > 1) m.line - 1 else 1, reason: m.reason);
+        Error(m) -> throw Malformed(line: if (m.line > 1)
+            m.line - 1
+        else
+            1, reason: m.reason);
     };
 }
 

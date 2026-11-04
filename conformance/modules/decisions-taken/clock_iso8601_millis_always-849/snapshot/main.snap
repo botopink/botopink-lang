@@ -7,3 +7,5 @@ out 1969-12-31T23:59:59.999Z
 out 1234567890123
 out 1234567890000
 out 1234567890123
+== clock_iso8601_millis_always on wasm
+excluded std-unsupported-on-target: std/io/clock.formatIso8601 reaches `formatIso8601Host`, which has no `.Wasm(…)` implementation for target 'wasm' on host 'wasi'

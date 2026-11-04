@@ -6,4 +6,6 @@ at src/main.bp:8:12
 out 8
 out 3
 == host_unknown_parameter on commonJS
-abort
+excluded std-unsupported-on-target: std/erlang.element has no `.JavaScript(…)` implementation for target 'commonJS'
+== host_unknown_parameter on wasm
+excluded std-unsupported-on-target: std/erlang.element has no `.Wasm(…)` implementation for target 'wasm' on host 'wasi'

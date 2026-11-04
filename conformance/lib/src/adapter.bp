@@ -4,7 +4,7 @@
 
 import {io.os, compiler.Diagnostic, compiler.Module, compiler.RunFailure, compiler.RunFailureKind} from "std";
 import {records.Refusal};
-import {observe.Observed, observe.refusedAnswer, observe.ranAnswer};
+import {observe.Observed, observe.refusedAnswer, observe.excludedAnswer, observe.ranAnswer};
 
 /// The target the program runs on: `commonJS`, `erlang`, `beam` or `wasm` (989 (7), piece 3:
 /// `io.os.target()`, never readable at comptime).
@@ -39,14 +39,19 @@ pub fn ranOf(r: Result<string, RunFailure>) -> Ran {
 
 /// A run's answer, rendered by kind (decision 989 (3)): `.Refused` and `.Excluded` are the loaded
 /// module's own answer, a message only, never a build-time diagnostic — so each renders as a
-/// refusal with no `at`, `label` or `from`. `.Failed`, `.Abort` and an ordinary success keep
-/// rendering as `ranAnswer` already does.
+/// refusal with no `at`, `label` or `from`: `.Refused` as `refused <message>`, `.Excluded` as
+/// `excluded <message>` — two different meanings, two different record kinds. `.Failed`, `.Abort`
+/// and an ordinary success keep rendering as `ranAnswer` already does.
+///
+/// Every call site of this module's `runCase` goes through here, never through `ranAnswer` or
+/// `refusedAnswer` directly, so a loaded case's target refusal always renders correctly — never
+/// only the sites that opted in.
 pub fn ranAnswerOf(name: string, buildText: string, ran: Ran) -> Observed {
     if (!ran.failed)
         return ranAnswer(name, buildText, ran.printed, ran.failed, ran.failure);
     return case ran.kind {
         .Refused -> refusedAnswer(name, buildText, [Refusal(message: ran.failure)]);
-        .Excluded -> refusedAnswer(name, buildText, [Refusal(message: ran.failure)]);
+        .Excluded -> excludedAnswer(name, buildText, [Refusal(message: ran.failure)]);
         .Failed -> ranAnswer(name, buildText, ran.printed, ran.failed, ran.failure);
         .Abort -> ranAnswer(name, buildText, ran.printed, ran.failed, ran.failure);
     };

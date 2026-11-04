@@ -5,11 +5,15 @@ at src/main.bp:15:22
 == stage_comptime_block_in_run
 out [title,body] (now)
 out [x,y,z]| ok
+== stage_comptime_block_in_run on wasm
+excluded std-unsupported-on-target: std/io/clock.nowMillis reaches `systemTimeWithUnit`, which has no `.Wasm(…)` implementation for target 'wasm' on host 'wasi'
 == stage_imported
 out usaPad: Any
 out usaAgora: Run
 out usaLabel: Build
 out pad 2
+== stage_imported on wasm
+excluded std-unsupported-on-target: std/io/clock.nowMillis reaches `systemTimeWithUnit`, which has no `.Wasm(…)` implementation for target 'wasm' on host 'wasi'
 == stage_of_functions
 out padAll: Any
 out agora: Run
@@ -24,3 +28,5 @@ out [a,b]
 out oi!
 out padding: 8px;padding: 8px;
 out 4.0
+== stage_of_functions on wasm
+excluded std-unsupported-on-target: std/io/clock.nowMillis reaches `systemTimeWithUnit`, which has no `.Wasm(…)` implementation for target 'wasm' on host 'wasi'
