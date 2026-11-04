@@ -8887,3 +8887,69 @@ test "wat: gc ---- a generic fn's unbound return type reads a bool tail's own bo
         \\
     );
 }
+
+// Front 170 s7 P5-g — "the GC module does not type-check: a value of another
+// type" (`await`'s `await_result_print`): an async block whose value awaits a
+// task an earlier `val` bound to another async block. The block's settle repr
+// is read while the body's locals are declared, before that earlier binding is
+// lowered, so the awaited name was not yet known as a task and the block was
+// read as settling with the task itself: `case await w` cast the `$result` it
+// settles with to a `$task` (`__task_wait` in `run__body`), `print(await w)`
+// printed it as one (`__pr0`). It reads what the earlier block settles with.
+test "wat: gc ---- an async block awaiting an earlier failing block's task settles with its Result (front 170 s7 P5-g)" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\async fn run(n: i32) -> Async<void> {
+        \\    val t = async {
+        \\        if (n > 0) throw "late " + n.toString();
+        \\        return n;
+        \\    };
+        \\    val w = async {
+        \\        val z = await t;
+        \\        return z;
+        \\    };
+        \\    case await w {
+        \\        Error(e) -> print(e);
+        \\        Ok(v) -> print(v);
+        \\    }
+        \\    val u = async {
+        \\        return await t;
+        \\    };
+        \\    print(await u);
+        \\}
+        \\pub async fn main() -> Async<void> {
+        \\    await run(3);
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\late 3
+        \\Error("late 3")
+        \\
+    );
+}
+
+// Front 170 s7 P5-g — the same read over a block that cannot fail: the outer
+// block settles with the `i32` the earlier one does, where it was read as the
+// task and printed through a refused conversion ("convert ref").
+test "wat: gc ---- an async block awaiting an earlier block's task settles with its value (front 170 s7 P5-g)" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\async fn run(n: i32) -> Async<void> {
+        \\    val t = async {
+        \\        return n + 1;
+        \\    };
+        \\    val w = async {
+        \\        val z = await t;
+        \\        return z;
+        \\    };
+        \\    print(await w);
+        \\}
+        \\pub async fn main() -> Async<void> {
+        \\    await run(3);
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\4
+        \\
+    );
+}

@@ -24359,6 +24359,18 @@ const Emitter = struct {
         if (v == .jump and v.jump.kind == .@"return") return null;
         if (v == .jump and v.jump.kind == .await_) {
             const inner = v.jump.kind.await_.*;
+            // Front 170 s7 P5-g — the block awaits a task an earlier `val` of
+            // the enclosing body bound to an async block (`val t = async {
+            // … }; val w = async { val z = await t; return z; }`). This runs
+            // while `emitLocalDecls` walks the body, before `t`'s binding is
+            // lowered and its type recorded, so `isTaskExpr(t)` cannot tell
+            // it is a task, and the block was read as settling with the task
+            // itself: `case await w` / `print(await w)` cast a `$result` to a
+            // `$task`. What `t` settles with was recorded by that same walk.
+            if (plainIdentName(inner)) |n| {
+                const rn = self.resolveName(n);
+                if (self.locals.contains(rn)) if (self.gc_block_locals.get(rn)) |r| return r;
+            }
             if (!self.isTaskExpr(inner)) return self.wasmTypeOf(inner);
             const g = self.gcAwaitedRead(inner) catch return null;
             return if (g.void_) null else g.repr;
