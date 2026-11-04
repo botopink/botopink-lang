@@ -2193,8 +2193,8 @@ error[dependency-target-missing]: <dependency> declares no <target> target — a
 
 so no dependency is compiled for a target it does not hold. A cell that writes no `"targets"` holds its
 dependencies' (770): it runs on those and the others are audited
-(`decisions-taken/dependency_target_missing_refused-676/cases/narrowing_on_dependency_target_missing`,
-`decisions-taken/targets_default_is_dependencies_intersection-770/cases/targets_default_is_dependencies_intersection`).
+(`decisions-taken/dependency_target_missing_refused-676/cells/narrowing_on_dependency_target_missing`,
+`decisions-taken/targets_default_is_dependencies_intersection-770/cells/targets_default_is_dependencies_intersection`).
 
 A target on which the cell must be refused for a reason that *is the cell's claim* is not narrowed
 away — its refusal is its answer, `snapshot/targets/<t>/<module>.snap`.

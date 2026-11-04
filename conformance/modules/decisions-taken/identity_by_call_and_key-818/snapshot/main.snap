@@ -1,0 +1,17 @@
+botopink-cell 2
+== identity_by_call_and_key
+out made on
+out made x
+out made y
+out made mostra 1
+out made mostra 2
+out on | x,y | mostra 1 mostra 2
+out on | y,x | mostra 1 mostra 2
+out made off
+out off | y,x | mostra 1 mostra 2
+== key_not_component
+refused error: key-not-component: `#[key(…)]` names a component's place, and this expression answers `i32`, not a `Component<T>`
+at src/main.bp:8:13
+== key_type
+refused error: key-type: a key is a value `==` compares as one — a `string`, an integer or an enum —, not `Id`
+at src/main.bp:15:34

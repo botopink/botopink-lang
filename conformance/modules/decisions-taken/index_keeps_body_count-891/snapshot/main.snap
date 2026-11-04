@@ -1,0 +1,8 @@
+botopink-cell 2
+== index_keeps_body_count
+out made header
+out made x
+out made footer
+out header,x,footer
+out made y
+out header,x,y,footer

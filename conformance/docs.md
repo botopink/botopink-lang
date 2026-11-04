@@ -3092,7 +3092,7 @@ body's:
 A lambda of the type `Composition<T>` is a component without hooks, and a
 component may be called by hand with a scope and a place (decision 815):
 
-<!-- example: modules/decisions-taken/composition_function_again-815/cells/composition_function_again -->
+<!-- example: modules/decisions-taken/composition_function_again-815/cases/composition_function_again -->
 
 **Places** (decisions 816–821). A render's cells form a tree that std's
 `Scope` keeps: a hook's state — `use memo`'s slot — lives in its cell, and a
@@ -3110,13 +3110,13 @@ written. `use c`, the root and a hand run with `Place.none()` keep the place
 the value carries; `Place.key(k)` puts `k` in the item's stead. A value made
 outside every function carries none and takes the root's place.
 
-<!-- example: modules/decisions-taken/hooks_state_by_tree_place-816/cells/hooks_state_by_tree_place -->
+<!-- example: modules/decisions-taken/hooks_state_by_tree_place-816/cases/hooks_state_by_tree_place -->
 
-<!-- example: modules/decisions-taken/cells_by_place_and_identity-817/cells/cells_by_place_and_identity -->
+<!-- example: modules/decisions-taken/cells_by_place_and_identity-817/cases/cells_by_place_and_identity -->
 
-<!-- example: modules/decisions-taken/place_written_by_the_call-820/cells/place_written_by_the_call -->
+<!-- example: modules/decisions-taken/place_written_by_the_call-820/cases/place_written_by_the_call -->
 
-<!-- example: modules/decisions-taken/place_numbered_in_component_body-821/cells/place_numbered_in_component_body -->
+<!-- example: modules/decisions-taken/place_numbered_in_component_body-821/cases/place_numbered_in_component_body -->
 
 `#[key(k)]`, the one annotation an expression takes, is written before an
 expression answering a `Component<T>` — `pessoas.map({ p -> #[key(p.id)]
@@ -3126,13 +3126,13 @@ item's state (decision 818 (3)); before any other expression it is
 function — is `key-type`. Two siblings with one key fail at run time,
 `key-duplicate` (decision 819 (5)).
 
-<!-- example: modules/decisions-taken/identity_by_call_and_key-818/cells/identity_by_call_and_key -->
+<!-- example: modules/decisions-taken/identity_by_call_and_key-818/cases/identity_by_call_and_key -->
 
 <!-- example: modules/decisions-taken/composition_takes_its_place-819/cells/composition_takes_its_place -->
 
-<!-- example: modules/decisions-taken/identity_by_call_and_key-818/cells/key_not_component -->
+<!-- example: modules/decisions-taken/identity_by_call_and_key-818/cases/key_not_component -->
 
-<!-- example: modules/decisions-taken/identity_by_call_and_key-818/cells/key_type -->
+<!-- example: modules/decisions-taken/identity_by_call_and_key-818/cases/key_type -->
 
 `use all(cs)` (decision 827) resolves a run-time list of components under one
 `use`: `all`'s cell stands at the call's place and entry `i` runs under it with
@@ -3145,9 +3145,9 @@ follows its position.
 
 <!-- example: modules/decisions-taken/use_all_resolves_a_list-827/cells/use_all_resolves_a_list -->
 
-<!-- example: modules/decisions-taken/all_entries_by_index-884/cells/all_entries_by_index -->
+<!-- example: modules/decisions-taken/all_entries_by_index-884/cases/all_entries_by_index -->
 
-<!-- example: modules/decisions-taken/index_keeps_body_count-891/cells/index_keeps_body_count -->
+<!-- example: modules/decisions-taken/index_keeps_body_count-891/cases/index_keeps_body_count -->
 
 `await c` over a component is refused at the `await`, in a body or outside
 every body, `await-component` (decision 791 (4)): `await` takes an `Async<T>`
@@ -3171,7 +3171,7 @@ scope crosses a process only as `scope.detach()` (`scope-foreign` otherwise),
 and a scope used after its root's `close()` fails `scope-closed` on every
 target (decisions 824, 825) (`comptime/context_lower.zig`).
 
-<!-- example: modules/decisions-taken/component_root_run-822/cells/component_root_run -->
+<!-- example: modules/decisions-taken/component_root_run-822/cases/component_root_run -->
 
 <!-- example: modules/decisions-taken/root_closed_by_run-825/cells/root_closed_by_run -->
 
