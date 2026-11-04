@@ -16454,7 +16454,22 @@ const Emitter = struct {
                 try self.lowerLambdaValue(f.kind.params, f.kind.body, e.getLoc());
             },
             .loop => |lp| try self.lowerLoop(lp),
-            else => return self.refuse(e.getLoc(), "the wasm backend has no lowering for a `{s}` expression", .{@tagName(e)}),
+            // Decision 1021 (10) — a declaration or an assignment used in
+            // expression position (an arrow-form case arm that is one,
+            // `Ok(s) -> kept = s;`) runs as a statement; it answers the
+            // neutral value of whatever this position wants, never a value
+            // of its own — commonJS refuses a `val`/destructure the same
+            // way in value position (`error.BindingInValuePosition`), and
+            // `armLastStmt`/`lowerArmBodyStmts` already give an arm's own
+            // binding this exact treatment. This is the fallback for every
+            // other position a binding reaches (the one a module that falls
+            // back to linear memory for an unrelated gap replays this
+            // exact statement through, `case_arm_assigns_local` bundled
+            // beside `case_arm_name_is_also_a_type`'s own GC gap).
+            .binding => {
+                _ = try self.emitStmt(.{ .expr = e }, false);
+                try self.pushZero();
+            },
         }
     }
 
@@ -18215,8 +18230,17 @@ const Emitter = struct {
         self.arm_box_as = null;
         const lam = armLambda(body) orelse {
             // Decision 1021 (10) — an arm that assigns (`Ok(s) -> kept = s;`)
-            // runs as a statement; the arm answers the neutral value.
-            if (self.mode == .gc and !box and body == .binding and body.binding.kind == .assign) {
+            // or, as `armLastStmt` below already treats unconditionally, any
+            // other binding (`val`/destructure) runs as a statement; the arm
+            // answers the neutral value — boxed into `unknown` the same way
+            // when the case itself is (`self.cur_result` is already
+            // `unknown` here then, decision 1021 (10)'s own rule applied no
+            // further than `!box`: a case this module's own embedding boxes
+            // (`compiler.load(…).run()`, `case_arm_assigns_local`) fell
+            // through to `lowerAsUnknown`, which has no case for a binding
+            // expression — `the wasm backend has no lowering for a
+            // \`binding\` expression`).
+            if (self.mode == .gc and body == .binding) {
                 _ = try self.emitStmt(.{ .expr = body }, false);
                 try self.emit(self.zeroOf(self.cur_result));
                 return;
@@ -18289,6 +18313,20 @@ const Emitter = struct {
             },
             .binding => {
                 // `val x = …` in tail position is not a value
+                _ = try self.emitStmt(last, false);
+                try self.emit(self.zeroOf(self.cur_result));
+                return .value;
+            },
+            // Decision 1021 (10) — a bare `for` over an array, lowered by
+            // `gcCollectionLoop`, has no value of its own when it keeps no
+            // accumulator: `val x = …` in tail position is not a value, and
+            // neither is this. This arm's own `cur_result` may be a GC
+            // reference inherited from the enclosing function
+            // (`case_arm_ending_in_for`'s `Many(vs)` arm, nested in
+            // `flatten`, which answers `i32[]`); guessing the loop's type as
+            // a bare `i32` and asking `emitConvert` to turn it into that
+            // reference has no GC form (`gcFail("convert ref")`).
+            .loop => |lp| if (self.mode == .gc and lp.generator == null and !lp.condition and self.isArrayExpr(lp.iter.*)) {
                 _ = try self.emitStmt(last, false);
                 try self.emit(self.zeroOf(self.cur_result));
                 return .value;

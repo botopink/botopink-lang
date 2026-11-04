@@ -5365,6 +5365,80 @@ test "wat: decision 1021 (10) ---- a case arm that assigns runs as a statement i
     , "n4\nnegative\n");
 }
 
+// Front 229 s8 — the previous fixture ran this exact statement-arm assign
+// un-boxed (`!box` in `lowerArmBodyStmts`); a case whose VALUE is itself
+// boxed into `unknown` (here, through a parameter typed `unknown`) routed
+// the same `ast.Expr.binding` through `lowerAsUnknown`/`gcAsUnknown`, which
+// had no case for it and fell to `lowerExpr`'s own catch-all — "the wasm
+// backend has no lowering for a `binding` expression". `lowerExpr` now
+// carries a `.binding` arm (decision 1021 (10)'s own rule, applied with no
+// `!box` restriction): the declaration or assignment runs for its side
+// effect and answers the neutral value, valued as 409/525 give a binding
+// used in expression position.
+test "wat: decision 1021 (10) ---- a case arm that assigns, boxed into `unknown`, runs as a statement in the GC lowering" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\import {io.terminal.print} from "std";
+        \\
+        \\fn parse(n: i32) -> Result<string, string> {
+        \\    if (n < 0) throw "negative";
+        \\    return "n" + n.toString();
+        \\}
+        \\
+        \\fn sink(v: unknown) -> void {}
+        \\
+        \\pub fn main() -> void {
+        \\    var kept = "none";
+        \\    sink(case parse(4) {
+        \\        Ok(s) -> kept = s;
+        \\        Error(e) -> kept = e;
+        \\    });
+        \\    print(kept);
+        \\    case parse(-4) {
+        \\        Ok(s) -> kept = s;
+        \\        Error(e) -> kept = e;
+        \\    }
+        \\    print(kept);
+        \\}
+    , "n4\nnegative\n");
+}
+
+// Front 229 s8 — `case_arm_ending_in_for`'s `Many(vs)` arm: a block whose last
+// statement is a bare `for` (no value of its own) in an arm of a `case`
+// nested deep inside a function answering a GC reference (`i32[]`); `cur_result`
+// here is still that outer reference (nothing resets it for a statement-position
+// `case`), so `armLastStmt` asked `emitConvert` to turn the `for`'s own neutral
+// placeholder into a reference — a word-to-reference conversion `emitConvert`
+// has no GC form for (`gcFail("convert ref")`). The `for`'s own GC lowering
+// (`gcCollectionLoop`) and `wasmTypeOf`'s `.loop` arm now agree on the
+// context's own neutral value (`self.cur_result`'s zero) instead of a bare
+// `i32`, so no conversion is asked for.
+test "wat: decision 1021 (10) ---- a case arm ending in a bare `for`, nested in a function answering an array, needs no conversion in the GC lowering" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\import {io.terminal.print} from "std";
+        \\
+        \\fn flatten(ns: i32[][]) -> i32[] {
+        \\    var out: i32[] = [];
+        \\    for (ns) { items ->
+        \\        case items.length() {
+        \\            0 {
+        \\                out.push(0 - 1);
+        \\            }
+        \\            _ {
+        \\                for (items) { k ->
+        \\                    out.push(k);
+        \\                }
+        \\            }
+        \\        }
+        \\    }
+        \\    return out;
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    print(flatten([[1, 2], [], [3]]));
+        \\}
+    , "[1, 2, -1, 3]\n");
+}
+
 // Decision 1027 — the same-package half of the cell `wasm_same_shape_types_distinct` (its
 // package-qualified half needs a dependency, its conformance case's): each declared group's
 // brand keeps two declarations of one shape two types.
