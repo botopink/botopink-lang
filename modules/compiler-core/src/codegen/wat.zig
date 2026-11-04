@@ -1966,10 +1966,24 @@ fn pruneUnreached(
         // A module's `val`s all run when it is loaded (`val _x = @print("boot")`),
         // whoever names them.
         // A dependency's `test` block is never run by the program that links it.
-        const root = if (owner.items[i] == own and !own_roots)
+        // Front 170 s7 (956) — the prelude enum `YieldStep` (`withYieldStepDecl`,
+        // decision 122) is a splice no declaration's body ever names: a `for`
+        // loop over an `Iter` / `AsyncIter` desugars to a `.next()` this GC
+        // lowering steps through `self.enums.get("YieldStep")`
+        // (`lowerGenMethod`), never through an AST reference `collectStrings`
+        // could follow. Reachability-by-name keeps it when the module that
+        // spliced it is the entry's own, and drops it when a `.next()`-using
+        // `for` loop lives in a linked dependency instead (a loaded package,
+        // decision 982) — `for_loop_sources-956`'s `wasm: a next() with no
+        // YieldStep declared`. It is kept unconditionally instead: its mere
+        // presence already means some module's checker found a `.next()` to
+        // lower, splice-only record types (`spliceNamedRecords`) keep the
+        // same way.
+        const is_yield_step = d == .type_ and std.mem.eql(u8, d.type_.name, "YieldStep");
+        const root = is_yield_step or (if (owner.items[i] == own and !own_roots)
             d == .val or (declName(d) == null and d != .@"test")
         else
-            owner.items[i] == own or declName(d) == null or d == .val;
+            owner.items[i] == own or declName(d) == null or d == .val);
         if (root) {
             keep[i] = true;
             try queue.append(ar, i);

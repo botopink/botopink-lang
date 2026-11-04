@@ -7796,24 +7796,27 @@ test "wat: gc ---- the fallback note names the attempt whose refusal is returned
     try std.testing.expect(std.mem.indexOf(u8, note, ":10:") == null);
 }
 
-// B-233 — a `.gc` gap met inside a `for` desugared over several/open sources
-// (decision 956, `parser/exprs.zig` `buildForWritten`) used to name the gap at
-// the GENERATED wrapper's own column: `ast.for_written_synthetic_col +
-// <real column> * ast.for_written_col_stride + <byte offset in the built
-// text>`, an internal key that keeps two such loops' tokens from colliding,
-// never meant to reach a diagnostic raw — and unlike `foreign_origin`'s
-// synthetic-SITE convention, which inflates the LINE for code with no real
-// backing at all, here the line was always real and only the column was
-// absurd. `loaded`'s `firstOver` (line 8 of its own file) walks `names` bare,
-// `tens()` as a non-driving source and the open range `0...`: the non-driving
-// `tens()` source is read through a built `iter for` wrapped in a by-hand
-// `.next()` (`lowerGenMethod`), which gaps here — reliably, through a loaded
-// package's own `.gc` pass (`self.loaded_pkg`, decisions 787, 792; a plain
-// top-level module with the same body never gaps, since this gap turns on
-// the private `YieldStep` splice a loaded package's reachability walk prunes
-// away). The fallback note must now name the `for`'s own real column
-// (`8:5`), never the synthetic one (`200050208` before this fix).
-test "wat: gc ---- the fallback note for a desugared `for`'s `.next()` gap in a loaded package names the `for`'s real column, not its synthetic one (B-233)" {
+// Front 170 s7 (956) — a `for` desugared over several/open sources
+// (decision 956, `parser/exprs.zig` `buildForWritten`) used to meet a `.gc`
+// gap here every time, through a loaded package's own `.gc` pass
+// (`self.loaded_pkg`, decisions 787, 792): `loaded`'s `firstOver` (line 8 of
+// its own file) walks `names` bare, `tens()` as a non-driving source and the
+// open range `0...`; the non-driving `tens()` source is read through a built
+// `iter for` wrapped in a by-hand `.next()` (`lowerGenMethod`), which needs
+// the prelude enum `YieldStep` (decision 122) declared. `withYieldStepDecl`
+// splices it correctly into the loaded package's own module (`env.usesYieldStep`
+// propagates through `compiler.load()` exactly as it does for a plain
+// top-level module with the same body) — the gap was never there: `wat.zig`'s
+// `pruneUnreached` dropped the splice afterwards, because nothing in the AST
+// ever names `YieldStep` by string and a linked (non-entry) module's named
+// declarations are reachability-pruned, unlike the entry's own (144 B-233 only
+// fixed this gap's reported COLUMN, leaving the gap itself — and the stale
+// cross-reference that named it as 956's fix). `YieldStep` is now always kept
+// (`pruneUnreached`'s `is_yield_step` root, the same way `spliceNamedRecords`
+// already keeps the other splice-only declarations reachable across a link),
+// so `.next()` itself never gaps here any more (`std/compiler` meets a gap of
+// its own in this fixture, unrelated and out of scope — 164, never 956's).
+test "wat: gc ---- a desugared `for`'s `.next()` over a loaded package's own `YieldStep` splice meets no YieldStep gap any more (956, front 170 s7)" {
     const alloc = std.testing.allocator;
     const io = std.testing.io;
     const moduleMod = @import("../../module.zig");
@@ -7860,14 +7863,14 @@ test "wat: gc ---- the fallback note for a desugared `for`'s `.next()` gap in a 
         outputs.deinit(alloc);
     }
     const note = watCodegen.takeLinearNote();
-    try std.testing.expect(std.mem.indexOf(u8, note, "a next() with no YieldStep declared") != null);
-    try std.testing.expect(std.mem.indexOf(u8, note, "cases/sub/src/main.bp") != null);
-    // The real column (`for` sits at column 5 of line 8 of the loaded
-    // package's own file) — never the synthetic one
-    // (`for_written_synthetic_col + 5 * for_written_col_stride`, which
-    // printed as `8:200050208` with no fix).
-    try std.testing.expect(std.mem.endsWith(u8, note, ":8:5"));
-    try std.testing.expect(std.mem.indexOf(u8, note, ":8:200") == null);
+    // The `YieldStep` gap is gone — whatever fallback note remains (if any)
+    // is `std/compiler`'s own, unrelated `.gc` gap (164, out of 956's scope),
+    // never this one.
+    try std.testing.expect(std.mem.indexOf(u8, note, "YieldStep") == null);
+    const o = for (outputs.items) |o| {
+        if (std.mem.eql(u8, o.name, "main")) break o;
+    } else return error.ModuleNotEmitted;
+    try std.testing.expect(o.result.diagnostic == null);
 }
 
 // Front 170 s7 P5-d — P5-a's measurement table's single biggest GC-gap
