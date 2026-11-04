@@ -1,6 +1,7 @@
 # enum
 
 [cases/enum_declaration/src/main.bp](cases/enum_declaration/src/main.bp)
+[cases/enum_generic_written_type_equals_bare_ctor/src/main.bp](cases/enum_generic_written_type_equals_bare_ctor/src/main.bp)
 [cases/enum_implements_behavior/src/main.bp](cases/enum_implements_behavior/src/main.bp)
 [cases/enum_payload_value_prints/src/main.bp](cases/enum_payload_value_prints/src/main.bp)
 [cases/enum_section_ambiguous_path/src/main.bp](cases/enum_section_ambiguous_path/src/main.bp)

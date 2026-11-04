@@ -1,0 +1,21 @@
+//// A value of a generic enum whose type arguments are written (`val a:
+//// Two<i32>`) and a bare constructor of the same declaration
+//// (`Two.Pair(p: #(1, 2))`) are one type: `==` compares their payloads on
+//// every target. wasm read the two spellings as two types and folded the
+//// comparison to decision 210's "two different types are never equal",
+//// `false` for equal values (144 B-238).
+
+import {io.terminal.print} from "std";
+
+type Two<T> {
+    Pair(p: #(T, T)),
+    Nil,
+}
+
+pub fn main() -> void {
+    val a: Two<i32> = Two.Pair(p: #(1, 2));
+    print(a == Two.Pair(p: #(1, 2)));
+    print(a == Two.Pair(p: #(2, 2)));
+    print(Two.Pair(p: #(1, 2)) == a);
+    print(a != Two.Pair(p: #(1, 2)));
+}

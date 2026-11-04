@@ -10184,11 +10184,17 @@ const Emitter = struct {
 
     /// `recv?.field` over a GC optional record: null when `recv` is, else the
     /// field (a scalar in its box).
-    fn gcOptionalField(self: *Emitter, ia: anytype, rty: []const u8) anyerror!void {
+    fn gcOptionalField(self: *Emitter, ia: anytype, rty: []const u8, whole: ast.Expr) anyerror!void {
         const ft = self.fieldTypeRefIn(rty, ia.member) orelse return self.gcFail("a field with no type");
         const off = self.fieldOffsetIn(rty, ia.member) orelse return self.gcFail("a field the record does not declare");
+        // B-238 — a type parameter's slot of a generic record (`Inner<T>(v:
+        // T)`) is an `anyref` already holding the value as an optional holds
+        // it (a scalar in its box, a reference as itself, a `bigint` in its
+        // `$box_big`): read as the optional the whole `recv?.field` is.
+        const erased = if (self.gcGenericFieldDecl(rty, ia.member)) |dr| dr == .ref and dr.ref == .unknown else false;
         const fr = self.reprOf(ft);
-        const cr = gcOptRepr(fr);
+        const cr = if (erased) self.wasmTypeOf(whole) else gcOptRepr(fr);
+        if (erased and cr != .ref) return self.gcFail("a generic slot read through `?.` as no optional");
         const cvt = self.vtOf(cr);
         const rrepr: Repr = .{ .ref = .{ .record = rty } };
         const tmp = try self.gcTemp(rrepr);
@@ -10203,7 +10209,9 @@ const Emitter = struct {
         self.open(&present);
         try self.emit(.{ .local_get = tmp });
         try self.emit(.{ .struct_get = .{ .ty = self.gcTyIndex(.{ .record = rty }), .field = off / 4 } });
-        if (!fr.isRef()) try self.gcBox(fr);
+        if (erased) {
+            if (cr.ref == .bigint) try self.gcUnboxBig() else if (cvt != .anyref) try self.emit(.{ .ref_cast = cvt });
+        } else if (!fr.isRef()) try self.gcBox(fr);
         const present_seq = self.seal(&present, .{ .value = cvt });
         try self.emit(.{ .@"if" = .{ .result = cvt, .then = .{ .seq = absent_seq }, .@"else" = .{ .seq = present_seq } } });
     }
@@ -15931,7 +15939,7 @@ const Emitter = struct {
                     // name prints by the variant's descriptor.
                     const enum_tr: ?ast.TypeRef = if (self.enumValueOf(lb.value.*)) |en| .{ .named = en } else null;
                     const gc_block: ?ast.TypeRef = if (self.mode == .gc and lb.value.* == .function and lb.value.function.kind.syntax == .asyncBlock) try self.asyncBlockTaskType(lb.value.*, false) else null;
-                    const bound_tr: ?ast.TypeRef = lb.typeAnnotation orelse (try self.failingAsyncTypeRef(lb.value.*)) orelse gc_block orelse self.typeRefOf(lb.value.*) orelse (try self.fnRefTypeRef(lb.value.*)) orelse enum_tr orelse try self.lambdaTaskTypeRef(lb.value.*);
+                    const bound_tr: ?ast.TypeRef = lb.typeAnnotation orelse (try self.failingAsyncTypeRef(lb.value.*)) orelse gc_block orelse self.typeRefOf(lb.value.*) orelse (try self.fnRefTypeRef(lb.value.*)) orelse enum_tr orelse (try self.lambdaTaskTypeRef(lb.value.*)) orelse try self.genericRecordArrayTypeRef(lb.value.*);
                     if (bound_tr) |tr| try self.local_typerefs.put(lb.name, tr);
                     // Decision 210 — the composite a `val` holds, for `==`
                     // over the name (`val t = #(P(x: 1), 2)`).
@@ -28333,6 +28341,18 @@ const Emitter = struct {
                     }
                     // `recv?.field` of a scalar field is a boxed optional
                     const rty = self.recordTypeOfExpr(ia.receiver.*) orelse return null;
+                    // B-238 — a type parameter's field of a generic record
+                    // (`Inner<T>(v: T)`): the payload is what the receiver's
+                    // type argument binds `T` to (`?string` for `s[0]?.v`
+                    // over an `Inner<string>[]`) — never the parameter's own
+                    // name, which read every payload as a boxed `i32` (a
+                    // string's address printed as a number).
+                    if (self.genericParamFieldArg(rty, ia.member, ia.receiver.*)) |at| {
+                        const inner = self.arena().create(ast.TypeRef) catch return null;
+                        inner.* = eagerTypeRef(at);
+                        if (inner.* == .optional) return self.optInfoOfTypeRef(inner.*);
+                        return self.optInfoOfTypeRef(.{ .optional = inner });
+                    }
                     // A field that is itself an optional array (`fields: ?Field[]`):
                     // the link is that pointer, `0` absent — not a box around it.
                     if (self.mode != .gc) if (self.fieldTypeRefIn(rty, ia.member)) |ftr| {
@@ -29004,6 +29024,77 @@ const Emitter = struct {
         return self.reprOf(t);
     }
 
+    /// B-238 — the type argument a value `recv` of the generic record `rec`
+    /// binds field `member` to, when the field is declared as one of `rec`'s
+    /// type parameters, bare (`v: T`), and `recv`'s type arguments are known
+    /// (`genericRecordTypeOf`). Null otherwise.
+    fn genericParamFieldArg(self: *Emitter, rec: []const u8, member: []const u8, recv: ast.Expr) ?ast.TypeRef {
+        const gps = self.record_generics.get(rec) orelse return null;
+        const ft = self.fieldTypeRefIn(rec, member) orelse return null;
+        if (ft != .named) return null;
+        const g = (self.genericRecordTypeOf(recv) catch return null) orelse return null;
+        if (!std.mem.eql(u8, g.generic.name, rec)) return null;
+        for (gps, 0..) |gp, i| if (std.mem.eql(u8, gp.name, ft.named)) {
+            return if (i < g.generic.args.len) g.generic.args[i] else null;
+        };
+        return null;
+    }
+
+    /// B-238 — the generic record type, its arguments written, that `e`
+    /// (or the payload of `e`'s optional) is a value of: its own type; an
+    /// element of an array of such (`xs[i]`, `xs.at(i)`, `xs.first()`); a
+    /// constructor whose arguments bind every parameter (`eqCtorTypeArgs`).
+    fn genericRecordTypeOf(self: *Emitter, e0: ast.Expr) anyerror!?ast.TypeRef {
+        var e = e0;
+        while (e == .collection and e.collection.kind == .grouped) e = e.collection.kind.grouped.*;
+        if (self.typeRefOf(e)) |t0| {
+            var t = eagerTypeRef(t0);
+            if (t == .optional) t = eagerTypeRef(t.optional.*);
+            if (t == .generic and !t.generic.is_builtin and self.records.contains(t.generic.name)) return t;
+        }
+        if (e != .call or e.call.kind != .call) return null;
+        const cc = e.call.kind.call;
+        if (self.indexArgs(cc)) |ix| {
+            if (ix.is_slice) return null;
+            return self.genericRecordElemOf(ix.recv);
+        }
+        if (cc.receiver) |r| if (std.mem.eql(u8, cc.callee, "at") or std.mem.eql(u8, cc.callee, "first"))
+            return self.genericRecordElemOf(r.*);
+        if (self.callKind(cc) == .record_ctor) {
+            const name = self.resolveRecordName(cc.callee) orelse return null;
+            const gps = self.record_generics.get(name) orelse return null;
+            if (gps.len == 0) return null;
+            const args = (try self.eqCtorTypeArgs(name, gps, e)) orelse return null;
+            return .{ .generic = .{ .name = name, .args = args, .is_builtin = false } };
+        }
+        return null;
+    }
+
+    /// B-238 — an array literal of a generic record's constructors whose
+    /// arguments bind every parameter (`[Inner(v: "a")]`): `Inner<string>[]`,
+    /// the type a `val` bound to it is read by (`s[0]?.v`). Null otherwise.
+    fn genericRecordArrayTypeRef(self: *Emitter, value: ast.Expr) anyerror!?ast.TypeRef {
+        if (!(value == .collection and value.collection.kind == .arrayLit)) return null;
+        const g = (try self.genericRecordElemOf(value)) orelse return null;
+        const p = try self.arena().create(ast.TypeRef);
+        p.* = g;
+        return .{ .array = p };
+    }
+
+    /// The generic record type (`genericRecordTypeOf`) of the elements of
+    /// the array `xs`: by its element type, else its first element's.
+    fn genericRecordElemOf(self: *Emitter, xs: ast.Expr) anyerror!?ast.TypeRef {
+        if (self.elemTypeRefOf(xs)) |t0| {
+            const t = eagerTypeRef(t0);
+            if (t == .generic and !t.generic.is_builtin and self.records.contains(t.generic.name)) return t;
+        }
+        if (xs == .collection and xs.collection.kind == .arrayLit) {
+            const al = xs.collection.kind.arrayLit;
+            if (al.elems.len > 0) return self.genericRecordTypeOf(al.elems[0]);
+        }
+        return null;
+    }
+
     /// The erased repr (`gcErasedRepr`) field `member` of `rec` is declared
     /// as, when `rec` is a generic record and the field names one of its
     /// type parameters; null otherwise.
@@ -29428,7 +29519,7 @@ const Emitter = struct {
         if (self.mode == .gc) {
             const rty = self.recordTypeOfExpr(ia.receiver.*) orelse return self.gcFail("a field of a receiver of no known record");
             const off = self.fieldOffsetIn(rty, ia.member) orelse return self.gcFail("a field the record does not declare");
-            if (ia.optional) return self.gcOptionalField(ia, rty);
+            if (ia.optional) return self.gcOptionalField(ia, rty, .{ .identifier = .{ .loc = loc, .kind = .{ .identAccess = ia } } });
             try self.lowerCoerced(ia.receiver.*, .{ .ref = .{ .record = rty } });
             try self.emit(.{ .struct_get = .{ .ty = self.gcTyIndex(.{ .record = rty }), .field = off / 4 } });
             // A type parameter's slot of a generic record: read as the
@@ -33441,7 +33532,19 @@ const Emitter = struct {
         // A primitive against a composite: two types, never equal.
         const t: ast.TypeRef = blk: {
             if (l_comp and r_comp) {
+                // Two bare constructors of one generic record in linear
+                // memory (`Box(value: #(big)) == Box(value: #(big))`): a
+                // type parameter's slot holds a word, which `$__eq_Box`
+                // compared as the word — two tuples' addresses, never equal.
+                // The arguments that bind the parameters type the slots.
+                if (self.mode == .linear) if (try self.eqBareCtorArgs(lt.?, rt.?, lhs, rhs)) |g| break :blk g;
                 if (std.mem.eql(u8, try self.eqKey(lt.?), try self.eqKey(rt.?))) break :blk lt.?;
+                // One generic declaration on both sides, its arguments written
+                // on one (`val a: Two<i32> = …`) and not recovered on the
+                // other (the bare `Two.Pair(p: #(1, 2))`): the checker typed
+                // both by the one type, so the written side's arguments are
+                // the bare side's too — one type, never decision 210's two.
+                if (self.eqSameGenericDecl(lt.?, rt.?)) |same| break :blk same;
                 // A tuple literal against a tuple of the same arity: the
                 // checker typed the literal by the other operand, so its
                 // integers take the other side's widths (`#(5, true)` against
@@ -33467,6 +33570,64 @@ const Emitter = struct {
         try self.emit(.{ .call = sym });
         if (negate) try self.emit(opOf(.i32, "eqz"));
         return true;
+    }
+
+    /// B-238 — `lt` and `rt` both the bare name of one generic record (no
+    /// type argument written on either side): the record's type arguments
+    /// as a constructor on either side binds them, each bare type-parameter
+    /// field typed by its argument's own type (`Box<#(u64)>` for
+    /// `Box(value: #(big))`). Null when neither side is such a constructor
+    /// or some parameter is bound by no bare field's argument.
+    fn eqBareCtorArgs(self: *Emitter, lt: ast.TypeRef, rt: ast.TypeRef, lhs: ast.Expr, rhs: ast.Expr) anyerror!?ast.TypeRef {
+        if (lt != .named or rt != .named or !std.mem.eql(u8, lt.named, rt.named)) return null;
+        const name = lt.named;
+        const gps = self.record_generics.get(name) orelse return null;
+        if (gps.len == 0) return null;
+        for ([_]ast.Expr{ lhs, rhs }) |side| {
+            if (try self.eqCtorTypeArgs(name, gps, side)) |args|
+                return .{ .generic = .{ .name = name, .args = args, .is_builtin = false } };
+        }
+        return null;
+    }
+
+    /// The type arguments a constructor call `e` of the generic record `name`
+    /// binds, read off the arguments of its bare type-parameter fields.
+    fn eqCtorTypeArgs(self: *Emitter, name: []const u8, gps: []const ast.GenericParam, e0: ast.Expr) anyerror!?[]ast.TypeRef {
+        var e = e0;
+        while (e == .collection and e.collection.kind == .grouped) e = e.collection.kind.grouped.*;
+        if (e != .call or e.call.kind != .call) return null;
+        const cc = e.call.kind.call;
+        if (self.callKind(cc) != .record_ctor) return null;
+        const r = self.resolveRecordName(cc.callee) orelse return null;
+        if (!std.mem.eql(u8, r, name)) return null;
+        const fields = self.records.get(name) orelse return null;
+        const trefs = self.record_field_typerefs.get(name) orelse return null;
+        const args = try self.reg_arena.allocator().alloc(ast.TypeRef, gps.len);
+        for (gps, args) |gp, *out| {
+            const i = for (trefs, 0..) |tr, k| {
+                if (tr == .named and std.mem.eql(u8, tr.named, gp.name)) break k;
+            } else return null;
+            if (i >= fields.len) return null;
+            const arg = self.argForField(cc.args, fields[i], i) orelse return null;
+            out.* = (try self.eqTypeOf(arg.value.*)) orelse return null;
+        }
+        return args;
+    }
+
+    /// B-238 — `a` and `b` name one generic record or payload enum, one of
+    /// them with its type arguments written (`Two<i32>`) and the other bare
+    /// (`Two`, a constructor whose arguments nothing here recovers): the
+    /// written one, which both are. Null for two different declarations, or
+    /// two that both write (different) arguments.
+    fn eqSameGenericDecl(self: *Emitter, a0: ast.TypeRef, b0: ast.TypeRef) ?ast.TypeRef {
+        const a = self.eqResolve(a0);
+        const b = self.eqResolve(b0);
+        const an = self.eqNominal(a) orelse return null;
+        const bn = self.eqNominal(b) orelse return null;
+        if (!std.mem.eql(u8, an, bn)) return null;
+        if (a == .generic and b == .named) return a;
+        if (b == .generic and a == .named) return b;
+        return null;
     }
 
     /// `#(…) == t` / `t == #(…)` where `t`'s tuple type has the literal's

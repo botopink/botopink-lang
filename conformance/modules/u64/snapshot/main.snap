@@ -18,3 +18,8 @@ out true
 out true
 out true
 out true
+== u64_tuple_in_generic_record_equality
+out true
+out false
+out false
+out true

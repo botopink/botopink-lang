@@ -11,3 +11,8 @@ out o
 == index_tuple_literal
 out 1
 out a
+== index_generic_record_optional_field
+out 9
+out null
+out a
+out 8

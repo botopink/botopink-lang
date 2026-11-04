@@ -63,3 +63,8 @@ out Node.Leaf(value: 1)
 out Node.Children(items: [1, 2, 3])
 out Node.Leaf(value: 9)
 out Node.Children(items: [4])
+== enum_generic_written_type_equals_bare_ctor
+out true
+out false
+out true
+out false

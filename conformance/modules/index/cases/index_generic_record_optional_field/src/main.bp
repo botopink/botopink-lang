@@ -1,0 +1,19 @@
+//// `xs[i]?.v` over an array of a generic record reads the field its type
+//// parameter's slot holds as the optional of the type argument: `9` and
+//// `null` for an `Inner<i32>`, the string for an `Inner<string>`. wasm did
+//// not type-check the read in its GC form and, in linear memory, read
+//// every payload as an `i32` — a string's address printed as a number
+//// (144 B-238).
+
+import {io.terminal.print} from "std";
+
+type Inner<T>(v: T)
+
+pub fn main() -> void {
+    val arr = [Inner(v: 7), Inner(v: 9)];
+    print(arr[1]?.v);
+    print(arr[5]?.v);
+    val s = [Inner(v: "a")];
+    print(s[0]?.v);
+    print((arr[0]?.v ?? 0) + 1);
+}

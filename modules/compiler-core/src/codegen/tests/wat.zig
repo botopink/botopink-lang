@@ -4785,6 +4785,86 @@ test "wat: gc ---- equality over a generic enum's composite payload" {
     );
 }
 
+// 144 B-238 — a generic enum's value with its type arguments written
+// (`val a: Two<i32>`) against a bare constructor of the same declaration
+// (`Two.Pair(p: #(1, 2))`): one type, compared by its equality. The two
+// spellings' keys differed, and `==` folded to decision 210's "two
+// different types are never equal" — `false` for equal values.
+test "wat: gc ---- a written generic type equals a bare constructor of it" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\type Two<T> { Pair(p: #(T, T)), Nil }
+        \\pub fn main() -> void {
+        \\    val a: Two<i32> = Two.Pair(p: #(1, 2));
+        \\    print(a == Two.Pair(p: #(1, 2)));
+        \\    print(a == Two.Pair(p: #(2, 2)));
+        \\    print(Two.Pair(p: #(1, 2)) == a);
+        \\    print(a != Two.Pair(p: #(1, 2)));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\true
+        \\false
+        \\true
+        \\false
+        \\
+    );
+}
+
+// 144 B-238 — `xs[i]?.v` over an array of a generic record, `v` its type
+// parameter's slot: the slot already holds the value as the optional
+// holds it, read as the optional the checker typed the link by (`?string`
+// for a `Inner<string>`). It boxed the `anyref` again (the module did not
+// type-check, "`__arr_at_opt_any`") and, in linear memory, read every
+// payload as a boxed `i32` — a string's address printed as a number.
+test "wat: gc ---- an optional field read of a generic record's array element" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\type Inner<T>(v: T)
+        \\pub fn main() -> void {
+        \\    val arr = [Inner(v: 7), Inner(v: 9)];
+        \\    print(arr[1]?.v);
+        \\    print(arr[5]?.v);
+        \\    val s = [Inner(v: "a")];
+        \\    print(s[0]?.v);
+        \\    print((arr[0]?.v ?? 0) + 1);
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\9
+        \\null
+        \\a
+        \\8
+        \\
+    );
+}
+
+// 144 B-238 — `==` over two bare constructors of a generic record in
+// linear memory (a `u64` in a generic container has no GC form yet): a
+// type parameter's slot holds a word, and `$__eq_Box` compared the word —
+// two tuples' addresses, `false` for `Box(value: #(big)) == Box(value:
+// #(big))`. The arguments that bind the parameters type the slots.
+test "wat: linear ---- equality of bare generic record constructors compares the slots by their arguments' types" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\type Box<T>(value: T)
+        \\pub fn main() -> void {
+        \\    val big: u64 = 9000000000;
+        \\    print(Box(value: #(big)) == Box(value: #(big)));
+        \\    print(Box(value: #(big)) == Box(value: #(big + 1)));
+        \\    print(Box(value: #(big)) != Box(value: #(big)));
+        \\    print(Box(value: "a" + "b") == Box(value: "ab"));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\true
+        \\false
+        \\false
+        \\true
+        \\
+    );
+}
+
 test "wat: gc ---- bytes, and the string arrays and optional strings std-wasm answers" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\pub fn main() -> void {

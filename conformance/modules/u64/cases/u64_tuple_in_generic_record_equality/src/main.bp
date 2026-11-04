@@ -1,0 +1,17 @@
+//// Two bare constructors of a generic record compare their fields by the
+//// type the arguments bind: a `#(u64)` tuple under `T` equals another
+//// holding the same `u64`, and strings built apart compare by content.
+//// wasm's linear memory compared the type parameter's slot as a word —
+//// the two tuples' addresses — and answered `false` (144 B-238).
+
+import {io.terminal.print} from "std";
+
+type Box<T>(value: T)
+
+pub fn main() -> void {
+    val big: u64 = 9000000000;
+    print(Box(value: #(big)) == Box(value: #(big)));
+    print(Box(value: #(big)) == Box(value: #(big + 1)));
+    print(Box(value: #(big)) != Box(value: #(big)));
+    print(Box(value: "a" + "b") == Box(value: "ab"));
+}
