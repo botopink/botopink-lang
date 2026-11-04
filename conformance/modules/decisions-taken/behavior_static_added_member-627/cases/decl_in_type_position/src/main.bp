@@ -1,0 +1,24 @@
+//// Decision 627 — inside an added member `decl` names the annotated
+//// declaration in a type position too: `fn() -> decl` and `fn(c: decl) ->
+//// decl` are checked once, at the decorator, against the handle's contract
+//// (`unknown` here), and on `City` they are `fn() -> City` and
+//// `fn(c: City) -> City`.
+
+import {compiler, io.terminal.print} from "std";
+
+fn seeded(syntax decl: unknown, syntax seed: unknown) -> void {
+    compiler.addMember("seed", fn() -> decl {
+        return seed;
+    });
+    compiler.addMember("same", fn(c: decl) -> decl {
+        val kept: decl = c;
+        return kept;
+    });
+}
+
+#[seeded(City(name: "Lisbon"))]
+pub type City(name: string)
+
+pub fn main() -> void {
+    print(City.same(City.seed()).name);
+}

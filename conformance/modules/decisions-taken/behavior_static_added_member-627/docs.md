@@ -11,3 +11,10 @@ calls through the behavior, and prints `Hello, Ana`.
 Cells that also bear on it: `modules/decisions-taken/decorator_decl_parameter_type_is_contract-716/cases/decl_behavior_contract_refused`.
 
 [draft/main.bp](draft/main.bp)
+
+The cell `decl_in_type_position` shows the type position on a type: `#[seeded(City(name: "Lisbon"))]` adds `seed`,
+written `fn() -> decl`, and `same`, written `fn(c: decl) -> decl` with a `val kept: decl` in its body; both are
+checked once at the decorator against the contract `unknown`, and on `City` they are `fn() -> City` and
+`fn(c: City) -> City`. `main` prints `Lisbon`. The behavior's static above stays a draft.
+
+[cases/decl_in_type_position/src/main.bp](cases/decl_in_type_position/src/main.bp)

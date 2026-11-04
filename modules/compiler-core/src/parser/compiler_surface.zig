@@ -330,6 +330,9 @@ fn expandFn(P: Pass, name: []const u8, params: []ast.Param, returnRef: *?ast.Typ
         st.expr = .{ .binding = .{ .loc = st.expr.getLoc(), .kind = .{ .localBind = .{ .name = custom_tree_name, .value = c.args[0].value, .mutable = false } } } };
         ctx.custom = true;
     };
+    // Decision 842 (1) — a decorator's member held as a value: each read of
+    // a `val` holding a `fn` literal is the literal, before the trees are read.
+    if (ctx.decl != null and !template) try memberFn.inlineHeldLiterals(P.alloc, bodyRef);
     try walkStmts(&ctx, bodyRef);
     if (keyword) try liftReturns(&ctx, bodyRef.*);
     if (ctx.custom) returnRef.*.?.generic.name = ast.expr_custom_type_name;

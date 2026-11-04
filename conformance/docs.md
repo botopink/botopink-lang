@@ -4984,8 +4984,27 @@ is evaluated at build and spliced as its answer (decision 642; cell
 <!-- example: modules/decisions-taken/decorator_decl_parameter_type_is_contract-716/cases/decorator_member_captures_handle -->
 <!-- example: modules/decisions-taken/decorator_member_local_not_literal-759/cases/decorator_member_local_not_literal -->
 
+A member a decorator adds and then needs is held as a value (decision 842
+(1)): the decorator writes the `fn` literal once in a `val` of its body, adds it
+(`compiler.addMember("make", make)`) and hands the same value to its other
+members and its executor (`make().host()`), never reading it back through
+`decl`. A `fn` literal is a literal (759), and a tree spliced into a tree
+(575 (4)): each read of the `val` is the literal itself. A local holding any
+other value, handed to `addMember`, is `decorator-member-local-not-literal`
+at the read.
+
+<!-- example: modules/decisions-taken/added_member_handed_as_value-842/cases/added_member_handed_as_value -->
+
+Inside an added member `decl` names the annotated declaration in a type
+position too (decision 627): `fn() -> decl` and `fn(c: decl) -> decl` are
+checked once, at the decorator, against the handle's contract, and on `City`
+they are `fn() -> City` and `fn(c: City) -> City`.
+
+<!-- example: modules/decisions-taken/behavior_static_added_member-627/cases/decl_in_type_position -->
+
 Every parameter is typed (`decorator-member-fn-untyped`),
-the member is written at the call (`decorator-member-not-fn`), and a `self` is
+the member is a `fn` literal, written at the call or held by a `val`
+(`decorator-member-not-fn`), and a `self` is
 the type the member joins and every type parameter it writes is bound
 (`decorator-member-type`); a typed function expression is legal in every other
 position too (decision 408, § Lambdas and method chains). Every other name a
@@ -5081,7 +5100,14 @@ admits any declaration and keeps its type. Inside the executor the handle is
 the annotated declaration itself as a run-time value (decision 581 (2)):
 `add(Module(name: name, lifecycle: lifecycle, make: decl))` under `syntax decl:
 fn() -> string` is checked against `make`'s type at the decorator, and a
-declaration that does not meet the contract is refused at its annotation.
+declaration that does not meet the contract is refused at its annotation. A
+`decl` typed by a bare type parameter (`<T>(syntax decl: T)`) has no member,
+as `syntax decl: unknown` has none (decision 1106): `decl.make()` in a tree is
+the checker's refusal, located at the call, and `decl` is only handed on to
+another parameter typed by the same `T`; a member is read through a declared
+contract or from the value the decorator built.
+
+<!-- example: modules/decisions-taken/decl_type_param_no_member-1106/cases/decl_type_param_no_member -->
 
 <!-- example: modules/decisions-taken/decorator_decl_parameter_type_is_contract-716/cases/init_executor_handle_typed -->
 

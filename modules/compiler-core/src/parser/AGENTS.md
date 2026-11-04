@@ -1053,6 +1053,9 @@ literal. A read whose `comptime` argument (`Arrival.value` position of `members`
 `compiler-arg-at-run-time` there, naming the parameter and the value; a `syntax` position is never at run time, and
 `compiler.name(x)` / `compiler.text(x)` over a name the tree binds (`foldSyntax`) is the literal `"x"`. A bare `compiler`
 in a tree is `compiler-escapes`, which the checker reports there (`infer.zig` `refuseSurface`).
+Before any of that, a decorator's body has each `val` holding a `fn` literal read as the literal (decision 842 (1),
+`comptime/member_fn.zig` `inlineHeldLiterals`): the `val` goes, each later read is a copy of the literal, so
+`compiler.addMember("make", make)` is the member written at the call and `make()` in another tree calls it there.
 `compiler.name(e)` answers `?string` (decision 643): on a declaration handle it is the method
 `ast.decl_name_method` (typed `?string` by `infer.zig` `inferHandleName`, the handle's `name` when the body
 runs, `comptime/syntax_param.zig`) and `compiler.name(d)!` the field `d.name`; on a `syntax` parameter

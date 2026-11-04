@@ -7162,6 +7162,9 @@ fn memberFnSource(
 ) InferError![]const u8 {
     const declName = memberFn.declParamName(dfn) orelse return decoratorError(env, a, "the decorator has no `@Decl` handle", "");
     const fns = try memberFn.collect(env.arena, dfn, declName);
+    // A decorator of this module runs before its body is checked: a member
+    // that is no `fn` literal is refused here, where the checker would.
+    if (local) if (memberFn.firstMemberNotFn(dfn, declName)) |arg| return refuseMemberNotFn(env, arg, dfn.body);
     if (c.index >= fns.len) return decoratorError(env, a, "the decorator evaluator handed back a member function the body does not write", "Report it: `decl.addMember(name, fn…)` numbers the body's member functions in source order.");
     const func = fns[c.index];
     // A decorator of this module runs before its body is checked.
@@ -18686,6 +18689,7 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
             // this the field falls through every arm below and lands on a fresh
             // variable, so `a.x` on an `unknown` checks silently.
             try refuseUnknownUse(env, recvType, loc, "read a field of");
+            try refuseTypeParamHandleMember(env, ia.receiver.*, recvType, loc, "read a field of");
             try refuseResultMemberAccess(env, recvType, ia.member, false, loc);
             // Decision 353 — a template body's catalogue is answered at build,
             // where a declaration of the program is no value; decision 356 —
@@ -26274,6 +26278,9 @@ fn inferCallExprWith(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc, typed
             if (typedReceiver) |recvPtr| {
                 if (try inferSequenceNext(env, recvPtr, call.callee, typedArgs, typedTrailing, loc)) |te| return te;
                 if (try inferHandleName(env, recvPtr, call.callee, typedArgs, loc)) |te| return te;
+                // Decision 1106 — a handle typed by a bare type parameter has
+                // no method.
+                if (call.receiver) |r| try refuseTypeParamHandleMember(env, r.*, recvPtr.getType(), loc, "call a method on");
                 // Decision 523 — `map`, `then`, `mapError` and `catch` are
                 // withdrawn from a task: its value is read by `await`, and
                 // every composition of it is an `async { … }` block.
@@ -27526,13 +27533,7 @@ fn caseArmTypesAgree(a: *T.Type, b: *T.Type) bool {
 /// without a type `decorator-member-fn-untyped`.
 fn inferMemberFnCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr {
     const fnArg = call.args[1].value.*;
-    if (fnArg != .function or fnArg.function.kind.syntax != .fnExpr) {
-        env.lastError = TypeError.custom(
-            diagnostics.decorator_member_not_fn ++ ": `decl.addMember(name, f)` takes the member as a function expression written at the call",
-            "Write the member there — `decl.addMember(\"validate\", fn(self: T) -> R { … })` —: its body is where the decorator's parameters are spliced (decision 370 (2)).",
-        ).withLoc(fnArg.getLoc());
-        return error.TypeError;
-    }
+    if (fnArg != .function or fnArg.function.kind.syntax != .fnExpr) return refuseMemberNotFn(env, fnArg, env.decoratorBody orelse &.{});
     const func = fnArg.function;
     try refuseMemberFnShape(env, func, env.currentParams, env.decoratorBody orelse &.{});
 
@@ -27541,8 +27542,12 @@ fn inferMemberFnCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExp
     nameTyped.* = try inferExprTyped(env, call.args[0].value.*);
     try unifyAt(env, try env.namedType("string"), nameTyped.getType(), call.args[0].value.getLoc());
 
-    // The member's signature, the decorator's type parameters in scope.
-    const generics: std.StringHashMap(*T.Type) = if (env.fnGenericMap) |gm| gm.* else std.StringHashMap(*T.Type).init(env.arena);
+    // The member's signature, the decorator's type parameters in scope — and
+    // the handle, which names the annotated declaration in a type position
+    // too (decision 627: `fn() -> decl`), typed by its contract.
+    const handleTyped = try handleInTypePosition(env, func);
+    var generics = try treeGenerics(env, handleTyped);
+    const handleVar = typeParamHandleOf(env);
     const params = try env.arena.alloc(*T.Type, func.kind.paramTypes.len);
     for (func.kind.paramTypes, 0..) |pt, i| params[i] = try resolveTypeRefInContext(env, pt, generics);
     const ret = if (func.kind.returnType) |rt| try resolveTypeRefInContext(env, rt, generics) else try env.namedType("void");
@@ -27580,6 +27585,10 @@ fn inferMemberFnCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExp
     env.memberFnAt = func.loc;
     const savedMemberGenerics = env.memberFnGenerics;
     env.memberFnGenerics = &generics;
+    const savedFnGenerics = env.fnGenericMap;
+    if (handleTyped) env.fnGenericMap = &generics;
+    const savedHandleVar = env.typeParamHandle;
+    env.typeParamHandle = handleVar;
     const fnTyped = try env.arena.create(TypedExpr);
     fnTyped.* = blk: {
         defer {
@@ -27588,6 +27597,8 @@ fn inferMemberFnCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExp
             env.decoratorBody = savedBody;
             env.memberFnAt = null;
             env.memberFnGenerics = savedMemberGenerics;
+            env.fnGenericMap = savedFnGenerics;
+            env.typeParamHandle = savedHandleVar;
         }
         break :blk try inferFunctionExprExpected(env, func, func.loc, expected, false);
     };
@@ -27605,6 +27616,32 @@ fn inferMemberFnCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExp
         .args = typedArgs,
         .trailing = &.{},
     } } } };
+}
+
+/// Decisions 370 (2), 759, 842 (1) — the second argument of
+/// `decl.addMember(name, f)` that is no `fn` literal. A `val` of the body
+/// holding one reaches the checker as the literal
+/// (`member_fn.inlineHeldLiterals`); a local holding any other value is no
+/// literal a tree can hold (`decorator-member-local-not-literal`); anything
+/// else is `decorator-member-not-fn`. Located at the argument.
+fn refuseMemberNotFn(env: *Env, fnArg: ast.Expr, body: []const ast.Stmt) InferError {
+    // Decisions 759, 842 (1) — a `val` of the body holding a `fn` literal
+    // reaches here as the literal (`member_fn.inlineHeldLiterals`); a
+    // local holding any other value is no literal a tree can hold.
+    if (fnArg == .identifier and fnArg.identifier.kind == .ident) {
+        const n = fnArg.identifier.kind.ident;
+        const locals = memberFn.boundNames(env.arena, &.{}, body) catch return error.OutOfMemory;
+        if (locals.contains(n)) {
+            const msg = std.fmt.allocPrint(env.arena, "{s}: `decl.addMember(name, {s})` hands `{s}`, a local of the decorator's body whose value is no `fn` literal", .{ diagnostics.decorator_member_local_not_literal, n, n }) catch return error.OutOfMemory;
+            env.lastError = TypeError.custom(msg, "A member is a `fn` literal, written at the call or held by a `val` of the body — `val make = fn() -> R { … }; compiler.addMember(\"make\", make);` (decisions 759, 842 (1)).").withLoc(fnArg.getLoc());
+            return error.TypeError;
+        }
+    }
+    env.lastError = TypeError.custom(
+        diagnostics.decorator_member_not_fn ++ ": `decl.addMember(name, f)` takes the member as a function expression written at the call",
+        "Write the member there — `decl.addMember(\"validate\", fn(self: T) -> R { … })` —, or hold that `fn` literal in a `val` of the body and hand the `val` (decision 842 (1)): its body is where the decorator's parameters are spliced (decision 370 (2)).",
+    ).withLoc(fnArg.getLoc());
+    return error.TypeError;
 }
 
 /// Decision 998 (2) — an `async` executor where nothing awaits it, at its
@@ -27701,6 +27738,11 @@ fn inferCompileCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr
     if (func.kind.marker == .task) return refuseAsyncExecutor(env, func.loc);
     try refuseCaptures(env, func, env.currentParams, env.decoratorBody orelse &.{}, true, true);
     const expected = try env.funcType(&.{}, try env.freshVar());
+    // Decisions 627, 1106 — the handle in a type position, and a handle
+    // typed by a bare type parameter, as in a member (`inferMemberFnCall`).
+    const handleTyped = try handleInTypePosition(env, func);
+    var generics = try treeGenerics(env, handleTyped);
+    const handleVar = typeParamHandleOf(env);
 
     // Each `syntax x: T` parameter (a tree) is its `T` in the executor.
     const Rebound = struct { name: []const u8, was: *T.Type };
@@ -27733,6 +27775,10 @@ fn inferCompileCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr
     env.decoratorBody = null;
     // Decisions 787, 792 (7) — `Module.run()` is written here.
     env.initArgDepth += 1;
+    const savedFnGenerics = env.fnGenericMap;
+    if (handleTyped) env.fnGenericMap = &generics;
+    const savedHandleVar = env.typeParamHandle;
+    env.typeParamHandle = handleVar;
     const fnTyped = try env.arena.create(TypedExpr);
     fnTyped.* = blk: {
         defer {
@@ -27740,6 +27786,8 @@ fn inferCompileCall(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr
             env.inDecoratorFn = savedInDecorator;
             env.decoratorBody = savedBody;
             env.initArgDepth -= 1;
+            env.fnGenericMap = savedFnGenerics;
+            env.typeParamHandle = savedHandleVar;
         }
         break :blk try inferFunctionExprExpected(env, func, func.loc, expected, false);
     };
@@ -27793,6 +27841,80 @@ fn handleContract(env: *Env, handle: *T.Type) InferError!*T.Type {
     const d = handle.deref();
     if (d.* == .named and std.mem.eql(u8, d.named.name, ast.decl_type_name) and d.named.args.len == 1) return d.named.args[0];
     return env.namedType("unknown");
+}
+
+/// The decorator's handle (its `syntax decl` parameter) while its body is
+/// checked: its name and its type in the body (`__Decl` over the contract);
+/// null outside a decorator's body.
+fn decoratorHandle(env: *Env) ?struct { name: []const u8, ty: *T.Type } {
+    if (env.currentParams.len == 0) return null;
+    const h = env.currentParams[0].name;
+    const ty = env.lookup(h) orelse return null;
+    const d = ty.deref();
+    if (d.* != .named or !std.mem.eql(u8, d.named.name, ast.decl_type_name)) return null;
+    return .{ .name = h, .ty = ty };
+}
+
+/// Decision 627 — whether the tree `func` (a member, an executor) writes the
+/// handle in a type position (`fn() -> decl`, `x: decl`), its own or a `fn`
+/// literal's inside it.
+fn handleInTypePosition(env: *Env, func: ast.FunctionExpr) InferError!bool {
+    const h = decoratorHandle(env) orelse return false;
+    for (try memberFn.typeNames(env.arena, func)) |n| if (std.mem.eql(u8, n, h.name)) return true;
+    return false;
+}
+
+/// Decision 627 — the type names a tree the decorator writes resolves: the
+/// decorator's type parameters and, when the tree writes it in a type
+/// position (`withHandle`), the handle, which names the annotated
+/// declaration there as in an expression — typed by its contract
+/// (`handleContract`, decision 716): `unknown`, a behavior, a type parameter.
+/// The member joins the annotated declaration with the handle spelled as it
+/// (`member_fn.render`).
+fn treeGenerics(env: *Env, withHandle: bool) InferError!std.StringHashMap(*T.Type) {
+    var g = if (env.fnGenericMap) |gm| try gm.clone() else std.StringHashMap(*T.Type).init(env.arena);
+    if (withHandle) if (decoratorHandle(env)) |h| try g.put(h.name, try handleContract(env, h.ty));
+    return g;
+}
+
+/// Decision 1106 — a handle typed by a bare type parameter of the decorator
+/// (`<T>(syntax decl: T)`): such a `decl` has no member, as `syntax decl:
+/// unknown`'s has none (716 (1)). Null for any other contract.
+fn typeParamHandleOf(env: *Env) ?envMod.TypeParamHandle {
+    const h = decoratorHandle(env) orelse return null;
+    const gm = env.fnGenericMap orelse return null;
+    const c = h.ty.deref().named.args;
+    if (c.len != 1) return null;
+    const contract = c[0].deref();
+    if (contract.* != .typeVar) return null;
+    var it = gm.valueIterator();
+    while (it.next()) |v| {
+        const g = v.*.deref();
+        if (g.* == .typeVar and g.typeVar == contract.typeVar) return .{ .name = h.name, .cell = contract.typeVar };
+    }
+    return null;
+}
+
+/// Decision 1106 — a method called (`decl.make()`) or a field read on the
+/// handle while a tree is typed, the handle typed by a bare type parameter:
+/// it has no member, as an `unknown` one has none — refused at the read,
+/// never a fresh result left unchecked. `what` as `refuseUnknownUse` takes it.
+fn refuseTypeParamHandleMember(env: *Env, recv: ast.Expr, ty: *T.Type, loc: ast.Loc, what: []const u8) InferError!void {
+    const h = env.typeParamHandle orelse return;
+    if (recv != .identifier or recv.identifier.kind != .ident or !std.mem.eql(u8, recv.identifier.kind.ident, h.name)) return;
+    const d = ty.deref();
+    if (d.* != .typeVar or d.typeVar != h.cell) return;
+    var param: []const u8 = "T";
+    if (env.fnGenericMap) |gm| {
+        var it = gm.iterator();
+        while (it.next()) |e| {
+            const g = e.value_ptr.*.deref();
+            if (g.* == .typeVar and g.typeVar == h.cell and !std.mem.eql(u8, e.key_ptr.*, h.name)) param = e.key_ptr.*;
+        }
+    }
+    const msg = try std.fmt.allocPrint(env.arena, "cannot {s} `{s}`, a declaration typed by the type parameter `{s}`, which has no member", .{ what, h.name, param });
+    env.lastError = TypeError.custom(msg, try std.fmt.allocPrint(env.arena, "A handle typed by a bare type parameter has no member, as `syntax decl: unknown` has none: hand `{s}` only to another parameter typed by `{s}`, and read a member through a declared contract (`syntax {s}: B`, a behavior the type implements) or from the value the decorator built (decisions 716, 842 (1), 1106).", .{ h.name, param, h.name })).withLoc(loc);
+    return error.TypeError;
 }
 
 /// Decision 316 — a wrapper reads no handle and no local of the decorator's

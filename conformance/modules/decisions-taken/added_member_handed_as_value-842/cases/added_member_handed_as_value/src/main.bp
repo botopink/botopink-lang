@@ -1,0 +1,33 @@
+//// Decision 842 (1) — a member a decorator adds and then needs is held as a
+//// value: the decorator writes the `fn` literal once, in a `val`, adds it as
+//// `make`, and hands the same value to its other member `check` and to its
+//// executor — never read back through `decl`.
+
+import {compiler, io.terminal.print} from "std";
+
+pub behavior Endpoint {
+    fn host(self: Self) -> string;
+}
+
+fn endpoint(syntax decl: Endpoint, syntax base: Endpoint) -> void {
+    val make = fn() -> decl {
+        return base;
+    };
+    compiler.addMember("make", make);
+    compiler.addMember("check", fn() -> string {
+        return make().host() + " checked";
+    });
+    compiler.init({ -> print(make().host() + " registered") });
+}
+
+#[endpoint(Api(url: "api.local"))]
+pub type Api(url: string) implement Endpoint {
+    fn host(self: Self) -> string {
+        return self.url;
+    }
+}
+
+pub fn main() -> void {
+    print(Api.make().host());
+    print(Api.check());
+}

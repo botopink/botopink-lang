@@ -1,0 +1,22 @@
+//// Decision 1106 — a `decl` typed by a bare type parameter (`<T>(syntax
+//// decl: T)`) has no member, as `syntax decl: unknown` has none:
+//// `decl.make()` in the executor is the checker's refusal at the call, at
+//// the decorator, never a fresh result left unchecked that would surface per
+//// annotation or at run time.
+
+import {compiler, io.terminal.print} from "std";
+
+fn service<T>(syntax decl: T) -> void {
+    compiler.init({ -> print(decl.make()) });
+}
+
+#[service]
+pub type Users() {
+    pub fn make() -> string {
+        return "users made";
+    }
+}
+
+pub fn main() -> void {
+    print("main");
+}

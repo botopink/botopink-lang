@@ -975,6 +975,9 @@ pub const PatternNote = struct {
 /// the type's parameters to, with the parameter's name (`Env.typeParamVars`).
 pub const TypeParamVar = struct { ty: *T.Type, name: []const u8 };
 
+/// Decision 1106 — see `Env.typeParamHandle`.
+pub const TypeParamHandle = struct { name: []const u8, cell: *T.TypeCell };
+
 pub const Env = struct {
     /// Arena allocator ---- all Type and TypeCell nodes are allocated here.
     arena: std.mem.Allocator,
@@ -2078,6 +2081,13 @@ pub const Env = struct {
     /// hands on is typed (`infer.inferMemberFnCall`): `@typeInfo(T)` of one of
     /// them is the read's type alone (`infer.typedMetaReadOfTypeParam`).
     memberFnGenerics: ?*const std.StringHashMap(*T.Type) = null,
+    /// Decision 1106 — while a tree a decorator writes (a member, an
+    /// executor) is typed, a handle typed by a bare type parameter
+    /// (`<T>(syntax decl: T)`) — its name and the parameter's type variable:
+    /// it has no member (`infer.refuseTypeParamHandleMember`). A tree's other
+    /// values of type `T` (a member's `self: T`) keep theirs, checked again
+    /// where the member joins its type (395 (2)).
+    typeParamHandle: ?TypeParamHandle = null,
     /// Decision 8 §3.2 — where an inferred union was born: the `if` or `case`
     /// whose branches disagreed. A use the union refuses names it, so the
     /// author sees the widening and not only the refusal.

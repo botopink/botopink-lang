@@ -1,0 +1,4 @@
+botopink-cell 2
+== decl_type_param_no_member
+refused error: cannot call a method on `decl`, a declaration typed by the type parameter `T`, which has no member
+at src/main.bp:10:35

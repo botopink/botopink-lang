@@ -1120,7 +1120,25 @@ parser reads the surface onto the same internal form (`__Expr<T>`).
   type — `unknown`, a behavior, a function type, a type parameter), as in an
   executor (`inferCompileCall`), and `memberFnSource` splices it as the
   annotated type's name; a
-  second argument that is no function expression is `decorator-member-not-fn`.
+  second argument that is no function expression is `decorator-member-not-fn`
+  (`refuseMemberNotFn`; a local of the body holding another value is
+  `decorator-member-local-not-literal`, 759, and `memberFnSource` refuses it
+  first for a decorator of the module, `member_fn.firstMemberNotFn`, since its
+  evaluator would read the value as a member's index). **Decision 842 (1) — a
+  member held as a value:** `val make = fn() -> R { … }` in a decorator's body
+  is a tree, never a value the body computes: `parser/compiler_surface.zig`
+  runs `member_fn.inlineHeldLiterals` over a decorator's body before its trees
+  are read, so each later read of `make` is a copy of the literal (a call
+  `make()` the grouped literal called, `(fn() -> R { … })()`) and the `val`
+  goes; `addMember("make", make)` then receives the literal written at the
+  call, and another member or an executor calls it where it stands. A local
+  bound twice in the body is left as written. **Decision 627 — `decl` in a type
+  position:** a tree that writes the handle in a type position (`fn() -> decl`,
+  `x: decl`, a nested `fn` literal's included — `handleInTypePosition`)
+  resolves it through `treeGenerics`, the decorator's type parameters plus the
+  handle typed by its contract, set as `Env.fnGenericMap` while the tree is
+  typed; `member_fn.render` spells it as the annotated declaration (the
+  handle's splice, `Substitution.typeRef`).
   `syntax_param.useOf` does not count a read inside the member, so an argument
   not known at build (`t("…")`) is no `.value` read; `eraseFn` hands the
   runtime `decl.addMember(name, <k>)` (`k` in `member_fn.collect`'s order),
@@ -1200,6 +1218,13 @@ parser reads the surface onto the same internal form (`__Expr<T>`).
   `memberFnSource` splice it as the annotated declaration's name
   (`modules/decisions-taken/decorator_decl_parameter_type_is_contract-716/run/src/cases/init_executor_handle_typed`, `modules/decisions-taken/decorator_decl_parameter_type_is_contract-716/refused/src/cases/init_executor_handle_mistyped`,
   `modules/decisions-taken/decorator_decl_parameter_type_is_contract-716/refused/src/cases/decl_unknown_no_member`, `modules/decisions-taken/decorator_decl_parameter_type_is_contract-716/run/src/cases/member_decl_as_code`).
+  **Decision 1106:** a handle typed by a bare type parameter (`<T>(syntax decl:
+  T)`, `typeParamHandleOf`, held in `Env.typeParamHandle` while a tree is
+  typed) has no member: a method call or a field read on it is refused at the
+  read (`refuseTypeParamHandleMember`), as on an `unknown` one; a tree's other
+  values of type `T` (a member's `self: T`) keep theirs, checked again where
+  the member joins its type (395 (2))
+  (`modules/decisions-taken/decl_type_param_no_member-1106/cases/decl_type_param_no_member`).
 
 ## Typed meta (decisions 298, 370 (1))
 

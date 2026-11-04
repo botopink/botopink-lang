@@ -185,6 +185,161 @@ fn mayHoldExpr(comptime T: type) bool {
     };
 }
 
+// ── decision 842 (1) — a member held as a value ─────────────────────────────
+
+/// Decision 842 (1) — a member a decorator adds and then needs is held as a
+/// value: `val make = fn() -> decl { … }; compiler.addMember("make", make);
+/// compiler.addMember("check", fn() -> string { return make().host; });
+/// compiler.init({ -> register(make()) });`. A `fn` literal is a literal
+/// under 759 and a tree spliced into a tree under 575 (4): each read of the
+/// held local, after its `val`, is the literal itself, so `addMember` receives
+/// it written at the call (370 (2)) and another tree calls it where it stands.
+/// The `val` goes from the decorator's body: the literal is code of the
+/// program, never a value the body computes. A local bound more than once in
+/// the body (shadowed, or rebound in a nested scope) is left as written.
+/// Run by `parser/compiler_surface.zig` over a decorator's body, before its
+/// trees are read, so every reader of the body sees the literal in place.
+pub fn inlineHeldLiterals(arena: std.mem.Allocator, body: *[]ast.Stmt) std.mem.Allocator.Error!void {
+    var i: usize = 0;
+    while (i < body.len) {
+        const lit = heldLiteral(body.*[i]) orelse {
+            i += 1;
+            continue;
+        };
+        const name = body.*[i].expr.binding.kind.localBind.name;
+        const others = try arena.alloc(ast.Stmt, body.len - 1);
+        @memcpy(others[0..i], body.*[0..i]);
+        @memcpy(others[i..], body.*[i + 1 ..]);
+        const litBound = try boundNames(arena, lit.kind.params, lit.kind.body);
+        if ((try boundNames(arena, &.{}, others)).contains(name) or litBound.contains(name)) {
+            i += 1;
+            continue;
+        }
+        var h: HeldSplice = .{ .arena = arena, .name = name, .lit = lit };
+        for (others[i..]) |*s| s.* = try h.clone(ast.Stmt, s.*);
+        body.* = others;
+    }
+}
+
+/// The first `<declName>.addMember(name, f)` of `f`'s body whose `f` is no
+/// `fn` literal — what the checker refuses (`infer.refuseMemberNotFn`), found
+/// before a decorator of the module runs: its evaluator would read `f` as the
+/// index of a member the body does not write.
+pub fn firstMemberNotFn(f: ast.FnDecl, declName: []const u8) ?ast.Expr {
+    for (f.body) |*s| if (findMemberNotFn(ast.Stmt, s, declName)) |e| return e;
+    return null;
+}
+
+fn findMemberNotFn(comptime X: type, ptr: *const X, declName: []const u8) ?ast.Expr {
+    if (X == ast.Expr) {
+        if (ptr.* == .call and ptr.call.kind == .call) {
+            const c = ptr.call.kind.call;
+            if (isAddMemberOn(c, declName) and c.args.len == 2) {
+                const a = c.args[1].value.*;
+                if (a != .function or a.function.kind.syntax != .fnExpr) return a;
+            }
+        }
+    }
+    if (comptime !mayHoldExpr(X)) return null;
+    switch (@typeInfo(X)) {
+        .@"struct" => |s| inline for (s.fields) |fl| {
+            if (fl.is_comptime) continue;
+            if (findMemberNotFn(fl.type, &@field(ptr.*, fl.name), declName)) |e| return e;
+        },
+        .@"union" => |u| if (u.tag_type != null) {
+            switch (ptr.*) {
+                inline else => |*payload| if (findMemberNotFn(@TypeOf(payload.*), payload, declName)) |e| return e,
+            }
+        },
+        .optional => |o| if (ptr.*) |*inner| return findMemberNotFn(o.child, inner, declName),
+        .pointer => |p| switch (p.size) {
+            .one => if (@typeInfo(p.child) != .@"fn" and @typeInfo(p.child) != .@"opaque") return findMemberNotFn(p.child, ptr.*, declName),
+            .slice => for (ptr.*) |*e| if (findMemberNotFn(p.child, e, declName)) |x| return x,
+            else => {},
+        },
+        else => {},
+    }
+    return null;
+}
+
+/// `s` as `val <name> = fn(…) -> R { … };` — a `fn` literal held by a `val`.
+fn heldLiteral(s: ast.Stmt) ?ast.FunctionExpr {
+    if (s.expr != .binding or s.expr.binding.kind != .localBind) return null;
+    const b = s.expr.binding.kind.localBind;
+    if (b.mutable or b.typeAnnotation != null) return null;
+    if (b.value.* != .function or b.value.function.kind.syntax != .fnExpr) return null;
+    return b.value.function;
+}
+
+const HeldSplice = struct {
+    arena: std.mem.Allocator,
+    name: []const u8,
+    lit: ast.FunctionExpr,
+
+    fn literal(self: *HeldSplice) error{OutOfMemory}!*ast.Expr {
+        const p = try self.arena.create(ast.Expr);
+        // A fresh copy at each read: a later pass rewrites a tree in place.
+        p.* = .{ .function = try self.clone(ast.FunctionExpr, self.lit) };
+        return p;
+    }
+
+    fn clone(self: *HeldSplice, comptime T: type, v: T) error{OutOfMemory}!T {
+        if (T == ast.Expr) switch (v) {
+            .identifier => |id| if (id.kind == .ident and std.mem.eql(u8, id.kind.ident, self.name)) return (try self.literal()).*,
+            .call => |c| if (c.kind == .call) {
+                const cc = c.kind.call;
+                if (cc.receiver == null and cc.calleeExpr == null and !cc.is_builtin and std.mem.eql(u8, cc.callee, self.name)) {
+                    var out = v;
+                    out.call.kind.call.callee = "";
+                    // `(fn() -> R { … })()`: grouped, as the source would
+                    // write it, so the member prints back as it parses.
+                    const grouped = try self.arena.create(ast.Expr);
+                    grouped.* = .{ .collection = .{ .loc = c.loc, .kind = .{ .grouped = try self.literal() } } };
+                    out.call.kind.call.calleeExpr = grouped;
+                    out.call.kind.call.args = try self.clone(@TypeOf(cc.args), cc.args);
+                    out.call.kind.call.trailing = try self.clone(@TypeOf(cc.trailing), cc.trailing);
+                    return out;
+                }
+            },
+            else => {},
+        };
+        switch (@typeInfo(T)) {
+            .pointer => |ptr| switch (ptr.size) {
+                .one => {
+                    if (@typeInfo(ptr.child) == .@"fn" or @typeInfo(ptr.child) == .@"opaque") return v;
+                    const p = try self.arena.create(ptr.child);
+                    p.* = try self.clone(ptr.child, v.*);
+                    return p;
+                },
+                .slice => {
+                    if (ptr.child == u8) return v;
+                    const out = try self.arena.alloc(ptr.child, v.len);
+                    for (v, 0..) |item, k| out[k] = try self.clone(ptr.child, item);
+                    return out;
+                },
+                else => return v,
+            },
+            .optional => |o| return if (v) |x| try self.clone(o.child, x) else null,
+            .@"struct" => |s| {
+                if (T == ast.Loc or T == ast.TypeRef) return v;
+                var out = v;
+                inline for (s.fields) |fl| {
+                    if (fl.is_comptime) continue;
+                    @field(out, fl.name) = try self.clone(fl.type, @field(v, fl.name));
+                }
+                return out;
+            },
+            .@"union" => |u| {
+                if (u.tag_type == null or T == ast.TypeRef) return v;
+                switch (v) {
+                    inline else => |payload, tag| return @unionInit(T, @tagName(tag), try self.clone(@TypeOf(payload), payload)),
+                }
+            },
+            else => return v,
+        }
+    }
+};
+
 // ── the names a function binds and reads ────────────────────────────────────
 
 /// A name a member function reads, where it reads it.
@@ -632,6 +787,13 @@ const Substitution = struct {
     fn typeRef(self: *Substitution, t: ast.TypeRef) error{OutOfMemory}!ast.TypeRef {
         switch (t) {
             .named => |n| {
+                // Decision 627 — the handle in a type position (`-> decl`) is
+                // the annotated declaration, spelled as the splice writes it.
+                // No other spliced parameter is a type (the checker refused it).
+                if (self.spliceIndex(n)) |j| {
+                    const spelled = std.mem.trim(u8, self.splices[j].lexeme, " \t\r\n");
+                    if (isOneName(spelled)) return .{ .named = spelled };
+                }
                 for (self.typeArgs) |ta| if (std.mem.eql(u8, ta.name, n)) {
                     return .{ .named = if (std.mem.eql(u8, ta.spelled, self.owner)) "Self" else ta.spelled };
                 };
@@ -769,6 +931,33 @@ test "a member function: collected in order, its free names, rendered with each 
     try std.testing.expect(std.mem.indexOf(u8, text, "return [__bp_tpl_rules__Violation(field: \"confirm\", message: m)];") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "if (passwordsMatch(self))") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "val m = (t(\"signup.mismatch\"));") != null);
+}
+
+test "decision 842 (1) — a member held as a value: each read is the literal, the `val` gone" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const lexer = @import("../lexer.zig");
+    const parser = @import("../parser.zig");
+    var lx = lexer.Lexer.init(
+        \\fn endpoint(syntax decl: unknown) -> void {
+        \\    val make = fn() -> string { return "h"; };
+        \\    val other = 1;
+        \\    compiler.addMember("make", make);
+        \\    compiler.addMember("check", fn() -> string { return make() + "!"; });
+        \\}
+        \\import {compiler} from "std";
+    );
+    var p = parser.Parser.init(try lx.scanAll(arena));
+    const f = (try p.parse(arena)).decls[0].@"fn";
+    // The `val make` is gone; `val other` stays.
+    try std.testing.expectEqual(@as(usize, 3), f.body.len);
+    const found = try collect(arena, f, "decl");
+    try std.testing.expectEqual(@as(usize, 2), found.len);
+    try std.testing.expect(found[0].kind.returnType.?.named.len == "string".len);
+    var names: std.ArrayListUnmanaged(u8) = .empty;
+    for (try freeNames(arena, found[1])) |n| try names.print(arena, "{s} ", .{n.name});
+    try std.testing.expectEqualStrings("", names.items);
 }
 
 test "decision 669 — a member written as text: its free names renamed, its own bindings left alone" {
