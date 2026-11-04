@@ -662,13 +662,21 @@ fn emitProgramOptsX(
         // Every `require` target is a sibling in the one flat folder
         // (decision 1015, `Emitter.requireOf`).
         // A program entry (`fn main`) is required by nobody: its dependencies'
-        // bodies run first (decision 660). Any other module is required by the
-        // modules it names — a dependency that imports this one back is a
-        // cycle, and requiring it ahead of this module's own exports hands it
-        // an empty `exports` (`Right-hand side of 'instanceof' is not an
-        // object`). So the requires follow the declarations, exports bound,
-        // and only the auto-invoke of `main` comes after.
-        const front = has_main_0;
+        // bodies run first (decision 660). A `botopink test` file is a
+        // program entry too (the dep_inits doc comment above: "a program
+        // entry (a main/0, or test blocks) loads each before anything of its
+        // own") — its own top-level code (a `pub val` reading a registry an
+        // unimported dependency's executor populates, decision 665) is owed
+        // the same guarantee `fn main` gets: every dependency's executor ran
+        // before anything of this module's own ran (144 B-239). A module with
+        // neither (an ordinary library file nobody tests) IS required by the
+        // modules it names — a dependency that imports it back is a cycle,
+        // and requiring its dependencies ahead of its own exports hands that
+        // cycle an empty `exports` (`Right-hand side of 'instanceof' is not
+        // an object`). So only THAT module's requires follow its
+        // declarations, exports bound, before the auto-invoke of `main`
+        // (never written when this module has no `main`) comes after.
+        const front = has_main_0 or tests.items.len > 0;
         for (dep_inits, 0..) |dep, i| {
             const stmt: js.Item = .{ .stmt = .{
                 .expr = try em.requireCall(try em.requireOf(dep)),

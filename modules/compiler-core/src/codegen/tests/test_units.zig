@@ -135,3 +135,89 @@ test "erlang, beam: a pipe stage in a test body reaches the file's function thro
         }
     }
 }
+
+// 144 B-239 — the `dep_inits` doc comment above `emitProgramOptsX` in
+// `commonJS.zig` promises "a program entry (a main/0, or test blocks) loads
+// each [declared dependency] before anything of its own, imported or not"
+// (decisions 660, 677): an unimported dependency's `compiler.init` executor
+// runs before the program's own top-level code, exactly as it already does
+// for a module with `fn main`. commonJS placed a test-only module's (no `fn
+// main`) dependency require AFTER its own declarations instead of before
+// them, so a top-level `pub val` reading what the dependency's `#[registered]`
+// executor wrote (through a shared registry) read it before the executor had
+// run — the destructured/read value stayed empty, permanently, since a `val`
+// is computed once at module load. commonJS only: `has_main_0`'s twin for
+// test-only modules is this backend's own `front` placement decision.
+test "commonJS: a test-only module's unimported dependency inits before its own top-level code, like an entry module's" {
+    const alloc = std.testing.allocator;
+    const registry_src =
+        \\import {compiler} from "std";
+        \\
+        \\var entries: string[] = [];
+        \\
+        \\pub fn record(entry: string) -> void {
+        \\    entries.push(entry);
+        \\}
+        \\
+        \\pub fn names() -> string[] {
+        \\    return entries;
+        \\}
+        \\
+        \\pub fn registered(syntax decl: unknown) -> void {
+        \\    val name = compiler.name(decl)!;
+        \\    compiler.init({ -> record(name) });
+        \\}
+    ;
+    const unimported_dep_src =
+        \\import {registry.registered};
+        \\
+        \\#[registered]
+        \\pub fn web() -> string {
+        \\    return "web";
+        \\}
+    ;
+    const test_file_src =
+        \\import {registry.names};
+        \\
+        \\pub mod registry;
+        \\pub mod c;
+        \\
+        \\pub val capturedNames: string[] = names();
+        \\
+        \\test "sees the dependency's registration" {
+        \\    assert capturedNames.len() == 1;
+        \\}
+    ;
+    var cfg = h.configs[0]; // commonJS: 144 B-239 is this backend's own defect.
+    cfg.test_mode = true;
+    cfg.build_root = test_scratch.path(std.testing.io, "codegen/test_units_dep_init_order");
+    const modules = [_]codegen.Module{
+        .{ .path = "registry", .source = registry_src },
+        .{ .path = "c", .source = unimported_dep_src },
+        .{ .path = "main", .source = test_file_src },
+    };
+    var out = try codegen.generateWith(alloc, &modules, std.testing.io, cfg, .{ .execute = false });
+    defer {
+        for (out.items) |*o| o.result.deinit(alloc);
+        out.deinit(alloc);
+    }
+    for (out.items) |o| {
+        if (!std.mem.eql(u8, o.name, "main")) continue;
+        if (o.result.failed()) return error.ModuleDidNotCompile;
+        const js = o.result.js;
+        const dep_require = std.mem.indexOf(u8, js, "require(\"./test@c\")") orelse {
+            std.debug.print("\n=== generated main.js ===\n{s}\n=== missing: a require of the unimported dependency `c` ===\n", .{js});
+            return error.NeedleNotFound;
+        };
+        const own_val = std.mem.indexOf(u8, js, "const capturedNames") orelse {
+            std.debug.print("\n=== generated main.js ===\n{s}\n=== missing: this module's own `capturedNames` declaration ===\n", .{js});
+            return error.NeedleNotFound;
+        };
+        if (dep_require > own_val) {
+            std.debug.print("\n=== generated main.js ===\n{s}\n=== the unimported dependency's require lands AFTER this module's own top-level code; decision 660 says every dependency's executor runs before the program's own ===\n", .{js});
+            return error.DependencyInitAfterOwnCode;
+        }
+        return;
+    }
+    return error.ModuleDidNotCompile;
+}
