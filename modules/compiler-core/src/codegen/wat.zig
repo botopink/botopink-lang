@@ -12098,6 +12098,7 @@ const Emitter = struct {
         const section_wrapper = variant != null and fnames.len == 1 and std.mem.eql(u8, fnames[0], "_inner");
         if (!section_wrapper) try self.gcPutStr(shown);
         if (fnames.len > 0 and !section_wrapper) try self.gcPutStr("(");
+        const field_vts = try self.gcStructFieldVts(ty);
         for (fnames, 0..) |fname, i| {
             if (i >= trefs.len) return self.gcFail("a field with no type");
             const label = try std.fmt.allocPrint(ar, "{s}{s}: ", .{ if (i > 0) ", " else "", fname });
@@ -12110,7 +12111,7 @@ const Emitter = struct {
             // `$closure` reference: printed `fn/<arity>` (decision 1051; it
             // was the `i32` printer over the reference, 144 B-171).
             const fn_shape = try fnFieldShape(ar, trefs[i]);
-            const fsh = if (gen != null and mentionsGeneric(trefs[i], gen.?)) try self.gcErasedShape(gen.?, trefs[i]) else if (fn_shape) |fs| fs else if (isUnknownTypeRef(trefs[i])) try ar.dupe(u8, "U") else blk: {
+            const fsh0 = if (gen != null and mentionsGeneric(trefs[i], gen.?)) try self.gcErasedShape(gen.?, trefs[i]) else if (fn_shape) |fs| fs else if (isUnknownTypeRef(trefs[i])) try ar.dupe(u8, "U") else blk: {
                 const wide: ?u8 = switch (trefs[i]) {
                     .named => |n| i64CellCode(n),
                     else => null,
@@ -12118,6 +12119,15 @@ const Emitter = struct {
                 if (wide) |w| break :blk try ar.dupe(u8, &.{w});
                 break :blk try self.fieldShape(trefs[i]);
             };
+            // Front 170 s7 P5-g — `fieldShape` reads `i` for a declared type
+            // it knows no print shape of (a `?unknown`, a behavior, `bytes`,
+            // an `Async<T>`, an `AsyncIter<T>`), while the struct holds that
+            // field as the reference `gcStructFieldVts` declares: the `i32`
+            // printer over it did not type-check, so every module declaring
+            // such a type — `@embed`'s `Asset(bytes: bytes)` among them, its
+            // printer built for the type's `$__tinfo` whether printed or not —
+            // fell back to linear memory. Such a slot prints by what it holds.
+            const fsh = if (i < field_vts.len and field_vts[i].isRef() and !(try self.gcShapeVt(fsh0)).isRef()) "U" else fsh0;
             const px = try self.gcPrinter(fsh);
             try self.emit(get_v);
             try self.emit(.{ .struct_get = .{ .ty = tidx, .field = @intCast(i) } });
@@ -17087,7 +17097,15 @@ const Emitter = struct {
         // An array, a tuple or an all-unit enum: the printer of its shape.
         if (try self.printShapeOf(arg)) |shape| switch (shape[0]) {
             '[', '(', 'E', 'R' => {
-                const sym = try self.gcPrinter(shape);
+                // Front 170 s7 P5-g — an array a generic body answers (`fn
+                // mk<R>(f: fn() -> R) -> R[]`) is its erased `$arr_any`, each
+                // element boxed, whatever the call's `R` (`print(mk({ -> 3
+                // }))`): the shape of its instance (`[i`) names the
+                // `$arr_i32` printer, which did not type-check over it. Such
+                // an array prints each element by what it holds.
+                const r_arr = r.isArrRef() and r.ref.arr == .any;
+                const erased = shape[0] == '[' and r_arr and gcShapeClass(shape[1..]) != .any;
+                const sym = try self.gcPrinter(if (erased) "[U" else shape);
                 try self.lowerValue(arg);
                 try self.emit(.{ .call = sym });
                 if (last) try self.emit(self.builder().helper(.print_nl));

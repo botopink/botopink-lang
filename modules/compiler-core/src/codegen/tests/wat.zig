@@ -8220,3 +8220,83 @@ test "wat: gc ---- `rec.field.push(v)` / `.pop()` on a string array field (front
         \\
     );
 }
+
+// Front 170 s7 P5-g — "the GC module does not type-check: a value of another
+// type" (decision 668's `mapAll(["a", "bc"], { s -> s.length })`): an array a
+// generic body answers is its erased `$arr_any`, each element boxed, whatever
+// the call's `R`; printed by the shape of its instance (`[i`), the `$arr_i32`
+// printer took it and the module fell back to linear memory, which printed a
+// string's box as an address. It prints each element by what it holds.
+test "wat: gc ---- an array a generic body answers prints each element by what it holds (front 170 s7 P5-g)" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\fn mk<R>(f: fn() -> R) -> R[] {
+        \\    return [f()];
+        \\}
+        \\fn mapAll<T, R>(items: T[], f: fn(T) -> R) -> R[] {
+        \\    return items.map(f);
+        \\}
+        \\pub fn main() -> void {
+        \\    print(mk({ -> 3 }));
+        \\    print(mk({ -> "s" }));
+        \\    print(mapAll(["a", "bc"], { s -> s.length }));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\[3]
+        \\["s"]
+        \\[1, 2]
+        \\
+    );
+}
+
+// Front 170 s7 P5-g — the same diagnostic in a declared type's printer: a
+// field whose type `fieldShape` knows no print shape of (a behavior, a
+// `?unknown`) is a reference in the struct, but was printed by the `i32`
+// printer. It prints by what the slot holds.
+test "wat: gc ---- a behavior or `?unknown` field prints by what its slot holds (front 170 s7 P5-g)" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\behavior Greeter {
+        \\    fn greet(self: Self) -> string;
+        \\}
+        \\type Plain(word: string) implement Greeter {
+        \\    fn greet(self: Self) -> string {
+        \\        return self.word;
+        \\    }
+        \\}
+        \\type Holder(g: Greeter, extra: ?unknown)
+        \\pub fn main() -> void {
+        \\    val h = Holder(g: Plain(word: "hi"), extra: 7);
+        \\    print(h);
+        \\    print(Holder(g: Plain(word: "yo"), extra: null));
+        \\    print(h.g.greet());
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\Holder(g: Plain(word: "hi"), extra: 7)
+        \\Holder(g: Plain(word: "yo"), extra: null)
+        \\hi
+        \\
+    );
+}
+
+// Front 170 s7 P5-g — a declared type's printer is built for its `$__tinfo`
+// whether the program prints a value of it or not (`@embed`'s
+// `Asset(path, bytes: bytes, size, hash)`, decisions 519, 559, 836): a `bytes`
+// field's `i32` printer over its reference did not type-check, so a module that
+// only reads such a value's other fields fell back to linear memory.
+test "wat: gc ---- a type with a `bytes` field leaves the module a GC one (front 170 s7 P5-g)" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\type Doc(name: string, data: bytes)
+        \\pub fn main() -> void {
+        \\    val d = Doc(name: "n", data: bytes.fromUtf8("ab"));
+        \\    print(d.name);
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\n
+        \\
+    );
+}
