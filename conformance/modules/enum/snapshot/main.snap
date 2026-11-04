@@ -58,3 +58,8 @@ out picked Target.Top
 out mode Mode.Slow(n: 3) Mode.Fast
 out plus Target.Top Shape.Circle(radius: 2)
 out 23
+== enum_variant_array_payload_beside_scalar
+out Node.Leaf(value: 1)
+out Node.Children(items: [1, 2, 3])
+out Node.Leaf(value: 9)
+out Node.Children(items: [4])

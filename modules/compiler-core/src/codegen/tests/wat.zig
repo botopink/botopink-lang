@@ -7652,3 +7652,39 @@ test "wat: gc ---- a case arm name that is also a record, over a payload enum's 
         \\
     );
 }
+
+// 144 B-230 — a payload enum whose sibling variants' payloads are an array
+// and a scalar (`Node { Leaf(value: i32), Children(items: i32[]) }`)
+// mismatched the GC module's own operand-stack type check printing a
+// `Children` value: `gcDeclPrinter`'s field loop picks the field's printer
+// by `fieldShape`, which falls through to `typeRefShape` -> `arrayTypeShape`
+// for an array field; `arrayTypeShape`'s own `typeRefShape(elem)` call
+// answers nothing for a bare scalar named type (`i32`/`f64` — that branch
+// holds no case for one), and its own final fallback named only `[s` and
+// `[b`, so an `i32[]` / `f64[]` field fell through everything to the
+// caller's catch-all scalar shape (`i`): the GC printer picked for the
+// field was the plain `i32` printer, called with the field's real value — a
+// reference to `$arr_i32` — which `wat/typecheck.zig` catches as "a value
+// of another type" (never a silently wrong answer). No `case` is involved
+// at all: declaring and constructing the two variants is enough.
+test "wat: gc ---- a payload enum with an array-payload variant beside a scalar one prints both" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\type Node {
+        \\    Leaf(value: i32),
+        \\    Children(items: i32[]),
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    val a: Node = .Leaf(value: 1);
+        \\    val b: Node = .Children(items: [1, 2, 3]);
+        \\    print(a);
+        \\    print(b);
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\Node.Leaf(value: 1)
+        \\Node.Children(items: [1, 2, 3])
+        \\
+    );
+}

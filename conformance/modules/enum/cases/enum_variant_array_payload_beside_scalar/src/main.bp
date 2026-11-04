@@ -1,0 +1,24 @@
+//// 144 B-230 — a payload enum whose sibling variants carry different payload
+//// shapes (one an array, one a scalar) printed correctly on every target but
+//// wasm, where declaring and constructing both variants was enough: the GC
+//// lowering's own field printer picked the plain scalar printer for the
+//// array-typed field (`arrayTypeShape` named no shape for a bare `i32[]` /
+//// `f64[]` element, only `[s` and `[b`), and the module's own operand-stack
+//// type check caught the mismatch at build and fell back to linear memory.
+//// No `case` is involved at all.
+
+import {io.terminal.print} from "std";
+
+type Node {
+    Leaf(value: i32),
+    Children(items: i32[]),
+}
+
+pub fn main() -> void {
+    val a = Node.Leaf(value: 1);
+    val b = Node.Children(items: [1, 2, 3]);
+    print(a);
+    print(b);
+    print(Node.Leaf(value: 9));
+    print(Node.Children(items: [4]));
+}

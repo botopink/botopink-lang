@@ -50,5 +50,6 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("enum_section_leaf_beside_variant");
     runCase("enum_section_qualified_path");
     runCase("enum_value_template_hole");
+    runCase("enum_variant_array_payload_beside_scalar");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }

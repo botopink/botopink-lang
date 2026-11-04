@@ -22746,9 +22746,19 @@ const Emitter = struct {
             else => null,
         };
         if (nested) |ie| if (scalarCode(ie)) |c| return try std.fmt.allocPrint(self.arena(), "[[{c}", .{c});
+        // `typeRefShape(elem)` above answers nothing for a bare scalar named
+        // type (`i32`, `f64` — its own `.named` branch holds no case for
+        // one): a field or a variant's payload declared `i32[]` / `f64[]`
+        // fell through every branch above to this one, which named only
+        // `[s` and `[b`, so the caller's default ('i', the catch-all)
+        // shadowed the array entirely — a GC printer calling the whole
+        // array's own with a bare scalar, which the typecheck catches as a
+        // value of another type (144 B-230).
         return switch (scalarCode(elem) orelse return null) {
             's' => "[s",
             'b' => "[b",
+            'i' => "[i",
+            'f' => "[f",
             else => null,
         };
     }
