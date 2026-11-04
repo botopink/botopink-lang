@@ -27990,6 +27990,24 @@ const Emitter = struct {
         return self.optInfoOfTypeRef(t);
     }
 
+    /// `optInfoOf`, read for a narrowed identifier only: `optInfoOf` answers
+    /// null there on purpose (every reader but this one treats the name as
+    /// its plain payload, decision 28's `??` binder excepted — it still
+    /// needs the payload's own GC representation). `narrowed_opts` kept the
+    /// original `OptInfo` to restore the narrowing (`applyNarrowing`,
+    /// `dropNarrowing`); answered here with `boxed` cleared, because the
+    /// condition's value, once narrowed, reads already unboxed — the plain
+    /// identifier read does so itself (`narrowed_opts.get` beside its own
+    /// `local_get`), and `wasmTypeOfBase`'s narrowed fallback agrees
+    /// (`gcOptPayload`) — so the binder's `bind_tmp` never holds a box this
+    /// code would try to unbox again.
+    fn narrowedCondOptInfo(self: *Emitter, e: ast.Expr) ?OptInfo {
+        const n = plainIdentName(e) orelse return null;
+        var o = self.narrowed_opts.get(self.resolveName(n)) orelse return null;
+        o.boxed = false;
+        return o;
+    }
+
     /// The bare name `e` reads, when it reads one and nothing else.
     fn plainIdentName(e: ast.Expr) ?[]const u8 {
         return switch (e) {
@@ -34291,10 +34309,25 @@ const Emitter = struct {
         // is a local of its own, which the arm's reads resolve to until it ends.
         var binder_alias: ?struct { name: []const u8, prev: ?[]const u8 } = null;
         if (i.binding) |bname| {
-            const oi = self.optInfoOf(i.cond.*);
+            // `optInfoOf` answers null on a narrowed identifier on purpose —
+            // every OTHER reader treats the name as its plain payload there
+            // (`optInfoOf`'s own comment). A `??` binder over such a name
+            // (`kind ?? ""` once an outer `if (kind == null || hidden) …
+            // else …` narrowed `kind`, `routing/src/conventions.bp:104`)
+            // still needs the payload's own GC representation, which
+            // `narrowed_opts` kept exactly to restore the narrowing
+            // (`applyNarrowing`); `narrowedCondOptInfo` reads it back.
+            const oi = self.optInfoOf(i.cond.*) orelse self.narrowedCondOptInfo(i.cond.*);
             const cell: Cell = if (oi) |o| o.cell else .none;
             // The binder's repr: what the payload is (a GC module), or what its cell holds.
             const bty: Repr = if (self.mode == .gc) blk: {
+                // `null ?? x`: the condition can never be present (decision
+                // 28's binder still names it, as every `??` does), so the
+                // binder's own local is read only where the `if` never
+                // branches at runtime — `lowerCondition` already lowers a
+                // bare `null` to the wasm `0` the `if` tests on. Any locally
+                // consistent scalar type-checks the dead arm.
+                if (oi == null and isNullLit(i.cond.*)) break :blk .i32;
                 const o = oi orelse return self.gcFail("a binding over a condition that is no optional");
                 break :blk self.gcOptPayload(o) orelse return self.gcFail("an optional of no known payload");
             } else cell.ty();
@@ -34396,7 +34429,12 @@ const Emitter = struct {
             if (self.exprTail(last) != .value) continue;
             // The then-arm answering the binder (`a ?? b`'s `__bp_nullish`)
             // answers the payload's width, which a local of the binder's name
-            // an earlier `if` declared at another width does not tell.
+            // an earlier `if` declared at another width does not tell —
+            // `wasmTypeOf(last)` would read that EARLIER, unrelated `??`'s
+            // width (the shared synthetic local, still unaliased here: this
+            // occurrence's own binder declaration, which may alias it to a
+            // fresh name, runs later), so the fallback below only reads it
+            // when `cond`'s own payload is genuinely unknown.
             const binder_read = arm == 0 and if (i.binding) |bn| if (plainIdentName(last)) |ln| std.mem.eql(u8, ln, bn) else false else false;
             // An empty array literal answers the type the other arm gives
             // (`if (abs) [] else state.parts`): in a GC module it has no
@@ -34405,8 +34443,16 @@ const Emitter = struct {
             // Decision 1021 (10) — a `null` arm answers the other arm's
             // reference (its null reference, `zeroOf`).
             if (self.mode == .gc and isNullLit(last)) continue;
+            // Front 170 s7 P5-e — `cond`'s own `optInfoOf` answers null on a
+            // narrowed identifier (`kind ?? ""` once an outer `if` proved
+            // `kind` non-null) and on a bare `null` (`null ?? 0`); both are
+            // read the same way the binder's own declaration reads them
+            // (`narrowedCondOptInfo`, `isNullLit`), so this `if`'s value type
+            // never disagrees with the width the binder is about to be
+            // declared at.
+            const binder_oi = if (self.mode == .gc) self.optInfoOf(i.cond.*) orelse self.narrowedCondOptInfo(i.cond.*) else self.optInfoOf(i.cond.*);
             const lt = if (binder_read)
-                (if (self.optInfoOf(i.cond.*)) |oi| (if (self.mode == .gc) (self.gcOptPayload(oi) orelse self.wasmTypeOf(last)) else oi.cell.ty()) else self.wasmTypeOf(last))
+                (if (binder_oi) |oi| (if (self.mode == .gc) (self.gcOptPayload(oi) orelse self.wasmTypeOf(last)) else oi.cell.ty()) else if (self.mode == .gc and isNullLit(i.cond.*)) Repr.i32 else self.wasmTypeOf(last))
             else
                 self.wasmTypeOf(last);
             if (lt.isFloat()) {

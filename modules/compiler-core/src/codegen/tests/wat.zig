@@ -7855,3 +7855,73 @@ test "wat: gc ---- a payload enum with an array-payload variant beside a scalar 
         \\
     );
 }
+
+// Front 170 s7 P5-e — the optional binder's own GC-gap note, measured across
+// the full conformance+library corpus at 36 occurrences across 32 members:
+// 31 of them one site, `routing/src/conventions.bp:104`'s `kind ?? ""`. The
+// checker's own narrowing and the wasm backend's (`collectNullTestNames`)
+// disagree over a DOUBLY-parenthesised condition: `if ((kind == null ||
+// hidden)) return null else return ConventionFile(…, kind: kind ?? "")`
+// keeps `kind` a `?string` to the checker (`kind ?? ""` still compiles, on
+// every other target), but the backend's own narrowing unwraps the grouping
+// (`collectNullTestNames`'s `.grouped` case) and marks `kind` non-null in the
+// else branch (`applyNarrowing`) — every OTHER reader then treats it as its
+// plain payload (`optInfoOf`'s own narrowed short-circuit), but the `??`
+// binder read `optInfoOf(cond) == null` as "this condition is no optional at
+// all" and gave up. `narrowedCondOptInfo` answers it from what
+// `narrowed_opts` kept to restore the narrowing, `boxed` cleared (the
+// narrowed read is already unboxed); `ifValueType`'s own `binder_read` case
+// reads the same way, so the `if`'s own value type never disagrees with the
+// width the binder is declared at (it once read the shared synthetic
+// `__bp_nullish` local's STALE width from an unrelated, earlier `??`
+// elsewhere in the same module).
+test "wat: gc ---- a `??` over a condition an outer `if` already narrowed non-null reads the narrowed payload, not a gap (front 170 s7 P5-e)" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\fn kindOf(file: string) -> ?string {
+        \\    if (file == "page.bp") return "page" else return null;
+        \\}
+        \\pub fn describe(path: string) -> string {
+        \\    val kind = kindOf(path);
+        \\    var hidden = false;
+        \\    if ((kind == null || hidden))
+        \\        return "none"
+        \\    else
+        \\        return kind ?? "fallback";
+        \\}
+        \\pub fn main() -> void {
+        \\    print(describe("page.bp"));
+        \\    print(describe("x.bp"));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\page
+        \\none
+        \\
+    );
+}
+
+// Front 170 s7 P5-e — the measurement's one other member,
+// `conformance/modules/decisions-taken/mixed_literals_infer_union-150`'s
+// `array_literal_numeric_join` case: `ns.at(1) ?? null ?? 0` is
+// right-associative (`a ?? b ?? c` is `a ?? (b ?? c)`), so its ELSE arm is
+// itself a `??` over a bare `null` literal condition — always absent. The
+// binder still names it (every `??` does), and `optInfoOf` has nothing to
+// answer for a literal `null`; the never-taken then-arm (`lowerCondition`
+// already lowers a bare `null` to the wasm `0` the `if` tests) just needs a
+// type that locally checks, not a real optional.
+test "wat: gc ---- `null ?? x`'s never-taken binder arm still type-checks in the GC lowering (front 170 s7 P5-e)" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\pub fn main() -> void {
+        \\    val ns = [null, 7, 8];
+        \\    print(ns.at(0) ?? null ?? 0);
+        \\    print(ns.at(1) ?? null ?? 0);
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\0
+        \\7
+        \\
+    );
+}
