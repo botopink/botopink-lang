@@ -18351,12 +18351,26 @@ const Emitter = struct {
             if (pt == .bool_) try self.bool_locals.put(p, {});
         };
         if (unbox == null and lam.params.len == 1) {
-            const p = lam.params[0];
-            try self.declareLocal(p, self.locals.get(subj) orelse .i32);
+            const p0 = lam.params[0];
+            const ty = self.locals.get(subj) orelse .i32;
+            // A catch-all arm's binder over a record subject (`_ { o -> … }`,
+            // decision 150, `noteCaseSubject`) is a wasm local of its own when
+            // a SIBLING `case` earlier in this function already bound the same
+            // source name over a DIFFERENT record type: `declareLocal`'s
+            // "already declared" no-op (one wasm local, one type) left `o`
+            // locked to the first case's record, so the second case's `o.field`
+            // read it back at the first case's type (`emitConvert`'s
+            // `gcFail("convert ref")`, e.g. two sibling `case`s over `Box` then
+            // `Pt` sharing a catch-all binder named `o`). `bindTargetAs` is the
+            // established fresh-name-on-type-clash path every other binder
+            // here already takes (`gcArrayHof`'s `elem_param`).
+            const p = try self.bindTargetAs(p0, ty);
+            try self.declareLocal(p, ty);
             if (self.str_locals.contains(subj)) try self.str_locals.put(p, {});
             if (record orelse self.local_types.get(subj)) |t| try self.local_types.put(p, t);
             try self.emit(.{ .local_get = subj });
             try self.emit(.{ .local_set = p });
+            self.installShadow(p0, p);
         }
         if (lam.body.len == 0) {
             try self.emit(self.zeroOf(self.cur_result));
@@ -22392,14 +22406,53 @@ const Emitter = struct {
     /// trailing `return`).
     fn lambdaTailType(self: *Emitter, body: []const ast.Stmt) Repr {
         if (body.len == 0) return .i32;
-        const last = body[ast.lastRealIndex(body)].expr;
+        const idx = ast.lastRealIndex(body);
+        const last = body[idx].expr;
         return switch (last) {
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| if (r) |v| self.wasmTypeOf(v.*) else .i32,
                 else => .i32,
             },
+            // A bare name as the tail, bound by a `val`/`var` earlier in this
+            // SAME body: this probe runs ahead of the body's own emission
+            // (`gcMapTail`'s pre-pass over `xs.map({ e -> val out = f(e); out })`,
+            // run before any of its locals exist, to size the result array's
+            // element class), so `wasmTypeOf` cannot yet read the binding from
+            // `self.locals` and falls back to its `.i32` "unknown name" default —
+            // read as a real GC reference's answer one level up
+            // (`gcFail("convert ref")`). Trace the name back to the nearest
+            // binding of it in this body and answer that binding's own value's
+            // type instead.
+            .identifier => |id| switch (id.kind) {
+                .ident => |n| blk: {
+                    const t = self.wasmTypeOf(last);
+                    if (t != .i32) break :blk t;
+                    break :blk self.lambdaBoundTailType(body, idx, n) orelse t;
+                },
+                else => self.wasmTypeOf(last),
+            },
             else => self.wasmTypeOf(last),
         };
+    }
+
+    /// The type of the nearest `val`/`var <name> = <value>;` before index
+    /// `before` of `body` binding `name` — the trace `lambdaTailType` follows
+    /// for a bare-name tail whose binding its own body has not been emitted
+    /// far enough to answer yet.
+    fn lambdaBoundTailType(self: *Emitter, body: []const ast.Stmt, before: usize, name: []const u8) ?Repr {
+        var i = before;
+        while (i > 0) {
+            i -= 1;
+            const s = body[i].expr;
+            switch (s) {
+                .binding => |b| switch (b.kind) {
+                    .localBind => |lb| if (std.mem.eql(u8, lb.name, self.resolveName(name))) return self.wasmTypeOf(lb.value.*),
+                    else => {},
+                },
+                else => {},
+            }
+        }
+        return null;
     }
 
     // ── array element shapes ─────────────────────────────────────────────────
@@ -34585,6 +34638,17 @@ const Emitter = struct {
     /// True when an if-branch body ends in a void expression (a void
     /// builtin call like `@print`/`@panic`/`@todo`, or a valueless
     /// `return`). Drives the statement-form `(if ...)` emission above.
+    ///
+    /// A tail that is itself a nested `if` (no `case`, no `call`: a chain of
+    /// bare control flow a parser's state machine writes, each arm ending in
+    /// an assignment) is void exactly when ITS arms are — recursively — even
+    /// with no `else` (an absent branch is as void as one that is). Missing
+    /// this made `wasmTypeOf`/`ifValueType` read such a chain's `i32`
+    /// "neutral value" (decision 1021 (10)'s answer for a bare binding) as a
+    /// real value one level up, which an enclosing `fn` answering a GC
+    /// reference then had no GC conversion for (`gcFail("convert ref")`,
+    /// e.g. `json.decode`'s `readValue`, a nested `if (c == 123) { … if
+    /// (m.isError()) { … } else { … } }` with no `else` of its own).
     fn branchIsVoid(body: []const ast.Stmt) bool {
         if (body.len == 0) return true;
         const last = body[ast.lastRealIndex(body)].expr;
@@ -34599,6 +34663,10 @@ const Emitter = struct {
                 else => false,
             },
             .binding => true,
+            .branch => |b| switch (b.kind) {
+                .if_ => |i| branchIsVoid(i.then_) and (if (i.else_) |els| branchIsVoid(els) else true),
+                .tryCatch => false,
+            },
             else => false,
         };
     }

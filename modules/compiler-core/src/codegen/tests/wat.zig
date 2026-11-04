@@ -5527,6 +5527,81 @@ test "wat: decision 1021 (10) ---- a case arm ending in a bare `for`, nested in 
     , "[1, 2, -1, 3]\n");
 }
 
+// Front 170 s7 P5, reason "convert ref" — `xs.map({ e -> val out = ...; out; })`:
+// `gcArrayHof`'s own pre-pass (`gcMapTail`) sizes the output array's element
+// class by probing the lambda's tail BEFORE the body is emitted, so a bare
+// name tail bound by a `val` earlier in that same (not yet emitted) body reads
+// `wasmTypeOf`'s `.i32` "unknown local" default instead of the binding's own
+// value's type — a `Entry` record read back as `i32` one level up, which
+// `emitConvert` then has no GC form to turn into the record the loop's output
+// array actually holds (`gcFail("convert ref")`). `lambdaTailType` now traces
+// such a tail back to its own binding (`lambdaBoundTailType`) instead of
+// trusting `wasmTypeOf`'s default.
+test "wat: front 170 s7 P5 ---- a `.map` lambda whose tail is a `val` bound earlier in the same body answers that binding's own type" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\import {io.terminal.print} from "std";
+        \\
+        \\type Entry(name: string, value: string)
+        \\
+        \\fn put(entries: Entry[], fresh: Entry, name: string) -> Entry[] {
+        \\    val result = entries.map({ e ->
+        \\        val hit = e.name == name;
+        \\        val out = if (hit) fresh else e;
+        \\        out;
+        \\    });
+        \\    return result;
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    val r = put([Entry(name: "a", value: "1"), Entry(name: "b", value: "2")], Entry(name: "a", value: "9"), "a");
+        \\    print(r);
+        \\}
+    , "[Entry(name: \"a\", value: \"9\"), Entry(name: \"b\", value: \"2\")]\n");
+}
+
+// Front 170 s7 P5, reason "convert ref" — two sibling `case`s over DIFFERENT
+// record types, each with a catch-all arm binder of the SAME source name
+// (`_ { o -> … }`, decision 150, `conformance/modules/case/cases/
+// case_catch_all_binder_record`): `declareLocal` is "declare once" (one wasm
+// local, one type — locals cannot change type mid-function), so the second
+// `case`'s `declareLocal("o", Pt)` was a no-op over the first `case`'s
+// `declareLocal("o", Box)`. `o`'s own wasm local stayed `Box`-typed, so the
+// second `case`'s `o.label` read it back as `Box` where its own record type
+// recovery (`local_types`, kept separately and NOT "declare once") correctly
+// said `Pt` — a conversion `emitConvert` has no GC form for between two
+// unrelated named records (`gcFail("convert ref")`). The binder now goes
+// through `bindTargetAs` + `installShadow`, the fresh-local-on-type-clash path
+// every other binder here already takes (`gcArrayHof`'s `elem_param`), so a
+// repeated source name becomes its own wasm local when an earlier one locked
+// it to another record.
+test "wat: front 170 s7 P5 ---- sibling `case`s over different records share no wasm local for one catch-all binder name" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\import {io.terminal.print} from "std";
+        \\
+        \\type Box<T>(value: T, label: string)
+        \\
+        \\type Pt(x: i32, label: string)
+        \\
+        \\pub fn main() -> void {
+        \\    val b = Box(value: 5, label: "box");
+        \\    val s = case b {
+        \\        Box(value: 3, ..) -> "three";
+        \\        _ { o ->
+        \\            o.label + "!"
+        \\        }
+        \\    };
+        \\    print(s);
+        \\    val p = Pt(x: 5, label: "pt");
+        \\    print(case p {
+        \\        Pt(x: 3, ..) -> "three";
+        \\        _ { o ->
+        \\            o.label
+        \\        }
+        \\    });
+        \\}
+    , "box!\npt\n");
+}
+
 // Decision 1027 — the same-package half of the cell `wasm_same_shape_types_distinct` (its
 // package-qualified half needs a dependency, its conformance case's): each declared group's
 // brand keeps two declarations of one shape two types.
