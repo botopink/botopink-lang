@@ -268,18 +268,6 @@ test "js: record ---- fn-typed field (hook-shape record)" {
     );
 }
 
-// `Element[]`, a single value, and a `string` all coerce into a
-// `Children`-typed parameter (the builder children model).
-test "js: call ---- Children coercion (list / single / text)" {
-    try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn node() -> string { return "n"; }
-        \\fn box(children: Children) -> string { return "x"; }
-        \\val many = box([node(), node()]);
-        \\val one = box(node());
-        \\val txt = box("hi");
-    );
-}
-
 test "js: interface literal ---- basic" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() -> void {

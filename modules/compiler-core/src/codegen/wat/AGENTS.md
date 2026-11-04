@@ -2558,11 +2558,10 @@ from the parameter's declared function type (`expected_fn` set per argument in
 `lowerPlainCall`), so `{ n -> n.startsWith(p) }` for `gone: fn(name: string) ->
 bool` has a string `n` (cell `lambda_arg_param_type`).
 
-**Three record/array recoveries onze's blog on wasm needed** (cells
-`children_for_walk`, `unwrap_or_record_field`): a record field declared
-`Children` is the `[len][e0]…` blob of the array the program built (the
-coercion is type-level only), so `for (e.children)` walks it (`isChildrenTyped`
-in `isArrayExpr`; the element is an untyped word); and `r.unwrapOr(d)` /
+**Two record recoveries onze's blog on wasm needed** (cells
+`children_array_walk`, `unwrap_or_record_field`): a record field declared as an
+array is the `[len][e0]…` blob its initialiser built, so `for (e.children)`
+walks it (`elemTypeRefOf` in `isArrayExpr`); and `r.unwrapOr(d)` /
 `o.unwrapOr(d)` answers the record of its default, else the `@Result`'s declared
 ok payload (`recordTypeOfExpr`), so a field read off it never falls to the
 unique-field guess that refuses a name some record declares as a float.

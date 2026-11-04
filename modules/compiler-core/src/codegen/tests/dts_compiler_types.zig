@@ -1,5 +1,5 @@
 //! .d.ts emitter: the types the compiler names without any module declaring
-//! them (`Bytes`, `Children`, `Asset`, a std `Context` reached through an
+//! them (`Bytes`, `Asset`, a std `Context` reached through an
 //! inferred type) are spelled with their JavaScript shape or imported, never
 //! left as a name `tsc` cannot find (`Cannot find name 'Bytes'`).
 
@@ -34,12 +34,6 @@ test ".d.ts: bytes is a Uint8Array" {
     try expectDts(
         \\pub fn size(b: bytes) -> bytes { return b; }
     , &.{"size(b: Uint8Array): Uint8Array"}, &.{": bytes"});
-}
-
-test ".d.ts: Children is an array" {
-    try expectDts(
-        \\pub type El(tag: string, children: Children)
-    , &.{"readonly children: any[]"}, &.{"Children"});
 }
 
 test ".d.ts: a std Context named by an inferred type is imported" {

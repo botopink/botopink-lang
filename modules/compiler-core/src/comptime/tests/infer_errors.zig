@@ -1094,6 +1094,28 @@ test "infer error: unknown type ---- a variant field annotation names nothing" {
     );
 }
 
+// Decisions 804 (4), 857 (2): the compiler knows no markup child list. `Children`
+// is a name like any other — unknown unless a module declares it — and a child
+// list a library declares is an ordinary type, which coerces nothing into it.
+test "infer error: unknown type ---- `Children` is no compiler-known name" {
+    const msg = try typeErrorMessage(std.testing.allocator, "type El(tag: string, children: Children)");
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "unknown type 'Children'") != null);
+}
+
+test "infer error: a declared child list coerces no single child into it" {
+    const msg = try typeErrorMessage(std.testing.allocator,
+        \\type Kids = El[];
+        \\type El(tag: string, children: Kids)
+        \\fn div(children: Kids) -> El { return El(tag: "div", children: children); }
+        \\fn leaf() -> El { return El(tag: "b", children: []); }
+        \\val many = div([leaf(), leaf()]);
+        \\val one = div(leaf());
+    );
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "type mismatch") != null);
+}
+
 test "infer: unknown type ---- a forward reference to a type declared below checks" {
     try h.assertInfersOk(std.testing.allocator,
         \\type Outer(inner: Inner)

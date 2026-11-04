@@ -920,9 +920,6 @@ const Builder = struct {
         if (std.mem.eql(u8, name, "noreturn")) return "never";
         // Decision 346 — `bytes` is a `Uint8Array` (`commonJS.jsPrototypeOwner`).
         if (std.mem.eql(u8, name, "bytes")) return "Uint8Array";
-        // The compiler-known markup child list is an array at run time (the
-        // coercion is type-level only, `comptime/env.zig`).
-        if (std.mem.eql(u8, name, "Children")) return "any[]";
         // The answer of a template or a `syntax` function: any value, as
         // `unknown` is (decision 716).
         if (std.mem.eql(u8, name, "anyvalue")) return "unknown";

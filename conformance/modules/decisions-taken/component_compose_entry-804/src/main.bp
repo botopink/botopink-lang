@@ -38,6 +38,7 @@ fn runCase(comptime name: string) -> void {
 }
 
 pub async fn main() -> Async<Result<void, string>> {
+    runCase("children_array_walk");
     runCase("component_compose_called");
     runCase("component_compose_entry");
     runCase("component_compose_missing");

@@ -1,0 +1,19 @@
+//// A record field declared `El[]`, an array of the record itself: `for (e.children)` walks it on every
+//// target, the element recursing as the record it is (decision 857 (1); the compiler-known `Children`
+//// it was written over retired with 804 (4)). wasm refused the walk, "nothing shows this iterable is one".
+
+import {io.terminal.print} from "std";
+
+pub type El(tag: string, children: El[])
+
+pub fn render(e: El) -> string {
+    var inner = "";
+    for (e.children) { c ->
+        inner = inner + render(c);
+    }
+    return "<" + e.tag + ">" + inner + "</" + e.tag + ">";
+}
+
+pub fn main() -> void {
+    print(render(El(tag: "a", children: [El(tag: "b", children: []), El(tag: "c", children: [])])));
+}

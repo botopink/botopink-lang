@@ -2905,9 +2905,8 @@ pub const Env = struct {
         return null;
     }
 
-    /// True when `name` names a type the module (or the compiler) knows — a
-    /// typedef, a binding, a behavior, an ambient behavior or a compiler-known
-    /// name. The one lookup behind the bare name's and a generic application
+    /// True when `name` names a type the module knows — a typedef, a binding,
+    /// a behavior or an ambient behavior. The one lookup behind the bare name's and a generic application
     /// head's refusal.
     pub fn typeNameDeclared(self: *Env, name: []const u8) bool {
         if (self.typeDefs.get(name) != null) return true;
@@ -2916,8 +2915,7 @@ pub const Env = struct {
         // without being a typedef: its decl is recorded here.
         if (self.assocInterfaceDecls.get(name) != null) return true;
         // An ambient behavior of `primitives.bp`'s compiler section (decision 539 (6)).
-        if (self.ambientBehaviorDecls.contains(name)) return true;
-        return isCompilerKnownTypeName(name);
+        return self.ambientBehaviorDecls.contains(name);
     }
 
     /// C10 second pass — after every declaration of the module is registered,
@@ -2938,7 +2936,7 @@ pub const Env = struct {
     /// Records a written type name whose lookup waits for the second pass
     /// (`checkPendingTypeNames`); only an annotation the parser located counts.
     pub fn notePendingTypeName(self: *Env, name: []const u8) void {
-        if (self.typeRefLoc != null and !isCompilerKnownTypeName(name)) {
+        if (self.typeRefLoc != null) {
             self.pendingTypeNames.append(self.arena, .{ .name = name, .loc = self.typeRefLoc }) catch {};
         }
     }
@@ -3075,8 +3073,8 @@ pub const Env = struct {
         // annotation in scope is a synthesised or re-entered one — a generic
         // parameter resolved outside the context that binds it, a signature
         // rebuilt from a stored type — and has neither a caret to red at nor a
-        // source the user wrote. Compiler-known names never enter the list.
-        if (self.typeRefLoc != null and !isCompilerKnownTypeName(name)) {
+        // source the user wrote.
+        if (self.typeRefLoc != null) {
             self.pendingTypeNames.append(self.arena, .{
                 .name = name,
                 .loc = self.typeRefLoc,
@@ -3094,16 +3092,6 @@ pub const PendingTypeName = struct {
     name: []const u8,
     loc: ?ast.Loc,
 };
-
-/// C10 — names the compiler knows without any module declaring them, so the
-/// two-pass registration cannot see them as typedefs: `Children` is the markup
-/// child list a UI library annotates, coerced by `childrenCoercion` in
-/// `infer.zig`.
-fn isCompilerKnownTypeName(name: []const u8) bool {
-    const known = [_][]const u8{"Children"};
-    for (known) |k| if (std.mem.eql(u8, name, k)) return true;
-    return false;
-}
 
 /// Type guard information for narrowing at call sites.
 /// `fn f(x: T) -> x is NarrowedT` records the param index and narrowed type name.

@@ -12379,9 +12379,6 @@ fn locateLast(env: *Env, err: InferError, loc: ast.Loc) InferError {
 
 /// Calls `unify` and, if it fails, stamps the expression's location onto the error.
 fn unifyAt(env: *Env, a: *T.Type, b: *T.Type, loc: ast.Loc) InferError!void {
-    // `Children` coercion — applied before unification since `unifyAt` is
-    // always called target-first (`unifyAt(param, arg)`).
-    if (childrenCoercion(env, a, b)) return;
     // Decision 8 §6 T7 — read before `unify` links anything.
     const ta = a.deref();
     const tb = b.deref();
@@ -12523,26 +12520,6 @@ fn unifyArgument(env: *Env, param: *T.Type, arg: *T.Type, loc: ast.Loc) InferErr
     try unifyAt(env, param, arg, loc);
 }
 
-/// True when `source` coerces into a `Children`-typed `target`. A `Children`
-/// parameter (the builder children model a markup DSL's `div { … }` needs)
-/// accepts another `Children`, any array (`Element[]` — the list form), a
-/// a `string` (→ a text child), or a single value of a type the program
-/// declares (an `Element` → a one-element list; the marker `Renderable` that
-/// named the node type left with decision 804 (2), and `Children` itself
-/// leaves with 804 (4)). Coercion is one-directional: it only fires when the
-/// *declared* type (`target`) is `Children`, never the reverse.
-fn childrenCoercion(env: *Env, target: *T.Type, source: *T.Type) bool {
-    const t = target.deref();
-    if (t.* != .named or !std.mem.eql(u8, t.named.name, "Children")) return false;
-    const s = source.deref();
-    return switch (s.*) {
-        .named => |n| std.mem.eql(u8, n.name, "Children") or
-            std.mem.eql(u8, n.name, "array") or
-            std.mem.eql(u8, n.name, "string") or
-            env.lookupTypeDef(n.name) != null,
-        else => false,
-    };
-}
 /// The refusal a `compiler_surface` builtin carries, reported at its place.
 fn refuseSurface(env: *Env, args: []ast.CallArgOf(.typed), loc: ast.Loc) InferError {
     var parts: [3][]const u8 = .{ "", "", "" };

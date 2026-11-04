@@ -22408,15 +22408,6 @@ const Emitter = struct {
     /// The declared element type of what a `for` walks — an array, an
     /// `Array<T>`, an eager `@Iter<T>` / `@AsyncIter<T>` — when its type is
     /// known.
-    /// `e` is declared `Children`, the compiler-known markup child list. Its
-    /// coercion is type-level only (`codegen/AGENTS.md`), so a value the
-    /// program built is the `[len][e0]…` blob of an array literal — what
-    /// `for (e.children)` walks; its element is a word the loop binds untyped.
-    fn isChildrenTyped(self: *Emitter, e: ast.Expr) bool {
-        const t = self.typeRefOf(e) orelse return false;
-        return t == .named and std.mem.eql(u8, t.named, "Children");
-    }
-
     fn elemTypeRefOf(self: *Emitter, e: ast.Expr) ?ast.TypeRef {
         const t = eagerTypeRef(self.typeRefOf(e) orelse return null);
         return switch (t) {
@@ -31791,7 +31782,7 @@ const Emitter = struct {
                 // stored in `Ticker(s: …)` included. `for await (t.s)` fell to
                 // the unknown-iterable no-op and yielded nothing. An optional
                 // field (`?T[]`) is not an array until it is unwrapped.
-                .identAccess => self.elemTypeRefOf(e) != null or self.isChildrenTyped(e) or self.tupleElemArrayShape(e) != null,
+                .identAccess => self.elemTypeRefOf(e) != null or self.tupleElemArrayShape(e) != null,
                 else => false,
             },
             .collection => |col| switch (col.kind) {

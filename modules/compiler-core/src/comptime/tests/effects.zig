@@ -427,7 +427,7 @@ test "context error: use of a component outside a component body is refused" {
 //
 // The features a `@Context` hook + markup-builder model relies on: records with
 // function-typed fields (the `{value, set}` hook shape), anonymous record types
-// as annotations, function types returning arrays, and `Children` coercion.
+// as annotations and function types returning arrays.
 
 // a record can carry a function-typed field (`set: fn(next: T)`); `set` is a
 // soft keyword, valid as a field name.
@@ -471,19 +471,6 @@ test "context: anonymous record type as return annotation" {
         \\fn mk() -> #(value: i32, set: fn(next: i32)) {
         \\    return #(0, { n -> });
         \\}
-    );
-}
-
-// `Element[]` coerces into a `Children`-typed parameter (the builder children
-// model `div([a, b])`); a single `Element` and a `string` coerce too.
-test "context: Element[] coerces into Children" {
-    try h.assertInfersOk(std.testing.allocator,
-        \\val Element = type()
-        \\fn div(children: Children) -> Element { return Element(); }
-        \\fn a() -> Element { return Element(); }
-        \\val list = div([a(), a()]);
-        \\val one = div(a());
-        \\val text = div("hello");
     );
 }
 

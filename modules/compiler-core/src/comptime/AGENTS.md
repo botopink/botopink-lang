@@ -1433,14 +1433,15 @@ is left alone. A named type returned where the fn declares a behavior it impleme
 Body annotations resolve the fn's generic params (`env.fnGenericMap`). A bare `return;` unifies
 with `void` in a fn with a declared return type.
 
-## `Children` coercion
+## Records and function fields
 
+- No type is coerced by its name: the compiler-known `Children` and its
+  coercions (a list, a single value, a `string`) retired with decision 804 (4);
+  a markup library declares its child list as an ordinary type of its own,
+  and `Children` written anywhere is an unknown name (857 (2)).
 - The anonymous record type `{ f: T }` and literal `record { … }` left the
   surface in front 12 step 4 (they are tuples, decision 8 §6); `Type.record`
   stays in the type model for the structural types inference still builds.
-- `childrenCoercion` (checked in `unifyAt`, target-first) lets an argument bind
-  to a `Children` parameter when it is `Children`, any array, a `string` (text
-  child). One-directional.
 - A function-typed record field (`set: fn(next: T)`) is an ordinary `Type.func`
   field.
 
@@ -2848,8 +2849,7 @@ Only an annotation the parser located enters the list. `Env.typeRefLoc` is set b
 `resolveParamType` / `resolveFieldType` / `resolveReturnType` (infer.zig) from `Param.typeLoc`,
 `Field.typeLoc` and `FnDecl`/`BehaviorMethod`'s `returnTypeLoc`; a resolution with none in scope is a
 synthesised or re-entered one (a generic parameter resolved outside the context that binds it) and
-stays permissive. Two names are compiler-known without a declaration and never red:
-`Children` (coerced by `childrenCoercion`) and `Binding` (what `compiler.lookup` yields, the `ref` field of
+stays permissive. One name is known without a declaration and never reds: `Binding` (what `compiler.lookup` yields, the `ref` field of
 the registered `CustomNode`). `noreturn` is a registered primitive (`Env.registerBuiltins`), the
 declared return of `@panic` / `todo` / `trap`.
 
