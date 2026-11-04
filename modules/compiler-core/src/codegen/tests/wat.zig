@@ -7580,3 +7580,75 @@ test "wat: gc ---- an empty array literal into a field typed by an alias of a un
         \\
     );
 }
+
+// 144 B-229 — a `case` arm whose name is both a record and a payload
+// variant of the enum under test (decision 8 §5.3b: "Block" is a record
+// AND `Token.Layout`'s leaf) sent the whole module to `.linear`, not for a
+// case-arm gap: `emitPatternTest`'s disambiguation OR's the record's own
+// type test with `emitVariantIdentityTest`, whose payload branch was
+// linear-only (heap-floor, header load, `variantDescriptorAddr` ->
+// `internString`, which `gcFail`s outright in a GC module) — no GC form at
+// all. `emitTagTest`'s own GC branch (`ref.test` against the variant's
+// struct type, already precise against the colliding record, a different
+// GC nominal type) is the form `emitVariantIdentityTest` was missing.
+// A second, unrelated gap sat right behind it: `t: Token.Layout`, a plain
+// parameter typed by a section written as a path, read a word (`i32`)
+// in `gcReprOfType`'s `.named` branch, which checked `self.enums` by the
+// name as written and never tried the F1 mangling (`Bp__Token__Layout`)
+// a nested section's enum is actually keyed under — unlike the binder of a
+// `case` arm's own payload field, whose type the comptime pass already
+// mangles. `sectionEnumKey` (shared with `enumOfSubject`) is the fix.
+test "wat: gc ---- a case arm name that is also a record, over a payload enum's section, stays GC" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\type Block(size: i32)
+        \\
+        \\type Token {
+        \\    Layout {
+        \\        Block,
+        \\        Inline,
+        \\        Size {
+        \\            Small,
+        \\            Large,
+        \\        }
+        \\    }
+        \\    Text {
+        \\        Bold,
+        \\    }
+        \\}
+        \\
+        \\fn layoutSizeCss(s: Token.Layout.Size) -> string {
+        \\    return case s {
+        \\        Small -> "font-size:small";
+        \\        Large -> "font-size:large";
+        \\    };
+        \\}
+        \\
+        \\fn layoutCss(t: Token.Layout) -> string {
+        \\    return case t {
+        \\        Block -> "display:block";
+        \\        Inline -> "display:inline";
+        \\        Size(_inner) -> layoutSizeCss(_inner);
+        \\    };
+        \\}
+        \\
+        \\fn tokenCss(t: Token) -> string {
+        \\    return case t {
+        \\        Layout(_inner) -> layoutCss(_inner);
+        \\        Text(_inner) -> "font-weight:bold";
+        \\    };
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    print(tokenCss(.Layout.Block));
+        \\    print(tokenCss(.Layout.Inline));
+        \\    print(tokenCss(.Layout.Size.Large));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\display:block
+        \\display:inline
+        \\font-size:large
+        \\
+    );
+}

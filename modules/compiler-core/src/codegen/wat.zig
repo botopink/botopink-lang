@@ -7699,10 +7699,14 @@ const Emitter = struct {
                 if (std.mem.eql(u8, n, "bigint")) return .{ .ref = .bigint };
                 const name = if (std.mem.eql(u8, n, "Self")) (self.self_type orelse self.sig_owner orelse return null) else n;
                 if (self.records.contains(name)) return .{ .ref = .{ .record = name } };
-                if (self.enums.get(name)) |vs| {
+                // A section written as a path (`t: Token.Layout`) is the F1
+                // mangling's own enum key (`sectionEnumKey`, decision 836):
+                // the checker leaves the annotation as written, so a GC
+                // signature resolves it the way a `case` subject's type does.
+                if (self.sectionEnumKey(name)) |ename| if (self.enums.get(ename)) |vs| {
                     if (!enumHasPayload(vs)) return null;
-                    return .{ .ref = .{ .enum_ = name } };
-                }
+                    return .{ .ref = .{ .enum_ = ename } };
+                };
                 if (isGenericParamName(n, self.owner_tparams, self.fn_tparams)) return .{ .ref = .unknown };
                 // A behavior-typed value is any implementer's: the `anyref`
                 // of its own reference, which a method call dispatches on
@@ -18921,6 +18925,11 @@ const Emitter = struct {
     /// header one, never a load of what would be a record's first field.
     fn emitVariantIdentityTest(self: *Emitter, fv: FoundVariant, subj: []const u8, loc: ast.Loc) anyerror!void {
         if (enumHasPayload(fv.variants)) {
+            // A GC module's payload variant is its own nominal struct type:
+            // `ref.test` against it (`emitTagTest`'s own GC branch) is
+            // already a value's identity, precise against the colliding
+            // record (a different GC type) — no descriptor, no `internString`.
+            if (self.mode == .gc) return self.emitTagTest(.{ .user = fv }, subj);
             var it = self.enums.iterator();
             while (it.next()) |entry| {
                 if (entry.value_ptr.*.ptr != fv.variants.ptr) continue;
@@ -19062,6 +19071,21 @@ const Emitter = struct {
         return .{ .variant = out };
     }
 
+    /// The enum key `self.enums` declares for a written name: `name` itself
+    /// when it is already one, else — a section written as a path
+    /// (`Token.Layout.Break`) — the F1 mangling it was declared under
+    /// (`Bp__Token__Layout__Break`, decision 836). Null when neither names an
+    /// enum this emitter registered.
+    fn sectionEnumKey(self: *Emitter, name: []const u8) ?[]const u8 {
+        if (self.enums.contains(name)) return name;
+        if (std.mem.indexOfScalar(u8, name, '.') == null) return null;
+        const mangled = std.fmt.allocPrint(self.arena(), ast.section_type_prefix ++ "{s}", .{
+            std.mem.replaceOwned(u8, self.arena(), name, ".", "__") catch return null,
+        }) catch return null;
+        if (self.enums.getKey(mangled)) |declared| return declared;
+        return null;
+    }
+
     /// The enum `subject` is a value of, when its declared type names one:
     /// a parameter, a local, a field or a call typed by the enum, `self`
     /// inside the enum's own method, and a section written as a path
@@ -19081,13 +19105,7 @@ const Emitter = struct {
                 else => return null,
             };
         };
-        if (self.enums.contains(written)) return written;
-        if (std.mem.indexOfScalar(u8, written, '.') == null) return null;
-        const mangled = std.fmt.allocPrint(self.arena(), ast.section_type_prefix ++ "{s}", .{
-            std.mem.replaceOwned(u8, self.arena(), written, ".", "__") catch return null,
-        }) catch return null;
-        if (self.enums.getKey(mangled)) |declared| return declared;
-        return null;
+        return self.sectionEnumKey(written);
     }
 
     /// The record a constructor pattern names (`Person(n, a)`), when no enum
