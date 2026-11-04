@@ -7384,3 +7384,81 @@ test "wat: gc ---- a tuple element read off an array-of-tuples' `.at() ?? defaul
         \\
     );
 }
+
+// B-206 — a gap inside a loaded case reports the case's own file and line:
+// `foreign_origin` is the generated `run()` import's synthetic site
+// (`comptime/load.zig` `withRunImports` folds the import's line and column
+// into one large synthetic line number), never a place the loaded package
+// itself wrote — its AST still carries its own real locations. Before this,
+// the located diagnostic here named the CONSUMER's own `src/main.bp` at that
+// giant synthetic line; now it names the loaded package's own file and line,
+// through `Diagnostic.TypeDiagnostic.origin` (decision 532's mechanism, reused:
+// one attempt, one located diagnostic).
+test "wat: gc ---- a loaded package's refusal is located in its own file, never the generated run() import's synthetic site (B-206)" {
+    const alloc = std.testing.allocator;
+    const io = std.testing.io;
+    const moduleMod = @import("../../module.zig");
+    const Loaded = struct {
+        const files = [_][2][]const u8{
+            .{ "packages/gap/botopink.json", "{ \"name\": \"gap\" }" },
+            .{
+                "packages/gap/src/main.bp",
+                "import {io.terminal.print} from \"std\";\n\ntype P(x: i32)\n\npub fn main() -> void {\n    print([P(x: 1), P(x: 1)].unique().length);\n}\n",
+            },
+        };
+        fn read(_: std.Io, arena: std.mem.Allocator, _: []const u8, rel: []const u8) moduleMod.PackageFiles.ReadError![]const u8 {
+            for (files) |f| if (std.mem.eql(u8, f[0], rel)) return arena.dupe(u8, f[1]) catch return error.OutOfMemory;
+            return error.FileNotFound;
+        }
+    };
+    const src =
+        \\import {compiler, io.terminal.print} from "std";
+        \\
+        \\var got: string = "";
+        \\
+        \\comptime {
+        \\    val loaded = comptime compiler.load("packages/gap");
+        \\    case loaded {
+        \\        Ok(m) -> compiler.init({ ->
+        \\            val r = m.run();
+        \\            got = case r {
+        \\                Ok(t) -> t;
+        \\                Error(f) -> f.message;
+        \\            };
+        \\        });
+        \\        Error(r) -> compiler.init({ -> got = "refused"; });
+        \\    }
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    print(got);
+        \\}
+    ;
+    var outputs = try codegen.generateWith(alloc, &.{.{
+        .path = "",
+        .source = src,
+        .srcPath = "src/main.bp",
+        .root = true,
+        .files = .{ .root = "", .io = io, .read = Loaded.read },
+    }}, io, h.configs[3], .{ .execute = false });
+    defer {
+        for (outputs.items) |*o| o.result.deinit(alloc);
+        outputs.deinit(alloc);
+    }
+    for (outputs.items) |o| {
+        if (!std.mem.eql(u8, o.name, "") and !std.mem.eql(u8, o.name, "main")) continue;
+        const d = o.result.diagnostic orelse return error.ExpectedCompileError;
+        switch (d) {
+            .type => |t| {
+                try std.testing.expect(std.mem.indexOf(u8, t.message, "unique") != null);
+                const origin = t.origin orelse return error.RefusalNotLocatedInLoadedFile;
+                try std.testing.expectEqualStrings("packages/gap/src/main.bp", origin.file);
+                try std.testing.expectEqual(@as(usize, 6), origin.loc.line);
+                try std.testing.expectEqual(@as(usize, 30), origin.loc.col);
+                return;
+            },
+            .syntax => return error.ExpectedCompileError,
+        }
+    }
+    return error.ModuleDidNotCompile;
+}

@@ -514,7 +514,7 @@ pub fn codegenEmit(
                     const diagnostic: moduleOutput.Diagnostic = if (missing) |me|
                         try me.diagnostic(alloc)
                     else if (refused) |r|
-                        .{ .type = .{ .message = r.message, .loc = r.loc } }
+                        .{ .type = .{ .message = r.message, .loc = r.loc, .origin = if (r.loaded) |ld| .{ .file = try loadedDeclFile(alloc, ld.pkg, ld.src, ct.name), .loc = r.loc.? } else null } }
                     else
                         return err;
                     // 144 B-225 — `me.name` was `alloc`'s own copy
@@ -557,7 +557,7 @@ pub fn codegenEmit(
                             const diagnostic: moduleOutput.Diagnostic = if (unit_missing) |me|
                                 try me.diagnostic(alloc)
                             else if (unit_refused) |r|
-                                .{ .type = .{ .message = r.message, .loc = r.loc } }
+                                .{ .type = .{ .message = r.message, .loc = r.loc, .origin = if (r.loaded) |ld| .{ .file = try loadedDeclFile(alloc, ld.pkg, ld.src, ct.name), .loc = r.loc.? } else null } }
                             else
                                 return err;
                             // 144 B-225 — `alloc`'s own copy, done with now.
@@ -997,6 +997,36 @@ fn declaresPubBehavior(o: *const ComptimeOutput, name: []const u8) bool {
 fn srcPathOf(linked: []const Linked, from: usize, own: []const u8) []const u8 {
     if (from >= linked.len) return own;
     return linked[from].src_path;
+}
+
+/// The package-relative file a loaded declaration's gap or refusal names
+/// (decisions 787, 792, B-206): the loaded case's own directory
+/// (`cases/<case>/`, decoded from `pkg`'s `bp_load__` encoding — a loaded
+/// package's file is named by the package's own path, `cases/<case>/src/main.bp`,
+/// `load.packageName`) in front of `src`, the loaded declaration's own path;
+/// `src` alone when `pkg` names no loaded package (an ordinary module's gap);
+/// `fallback` when `src` is empty (the declaration's path is unknown).
+fn loadedDeclFile(ar: std.mem.Allocator, pkg: ?[]const u8, src: []const u8, fallback: []const u8) ![]u8 {
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    if (pkg) |p| if (std.mem.startsWith(u8, p, @import("../comptime/load.zig").package_prefix)) {
+        const enc = p[@import("../comptime/load.zig").package_prefix.len..];
+        var i: usize = 0;
+        while (i < enc.len) {
+            if (std.mem.startsWith(u8, enc[i..], "__")) {
+                try out.append(ar, '/');
+                i += 2;
+            } else if (std.mem.startsWith(u8, enc[i..], "_x") and i + 4 <= enc.len) {
+                try out.append(ar, std.fmt.parseInt(u8, enc[i + 2 .. i + 4], 16) catch '?');
+                i += 4;
+            } else {
+                try out.append(ar, enc[i]);
+                i += 1;
+            }
+        }
+        try out.append(ar, '/');
+    };
+    try out.print(ar, "{s}", .{if (src.len > 0) src else fallback});
+    return out.toOwnedSlice(ar);
 }
 
 /// The name a value of a linked type prints under: a mangled `<module>/<Name>`
@@ -2025,7 +2055,11 @@ fn recordGcFailure(em: *Emitter, own_src: []const u8) void {
         em.gcGapText(ar) catch return
     else if (em.refusal) |r| blk: {
         const l = r.loc orelse break :blk r.message;
-        const file = if (em.foreign_origin != null or em.src_path.len == 0) (if (own_src.len > 0) own_src else em.module_name) else em.src_path;
+        // B-206 — a loaded declaration's refusal names its own file (decoded
+        // from `r.loaded`), never `foreign_origin`'s synthetic site.
+        const file = if (r.loaded) |ld|
+            loadedDeclFile(ar, ld.pkg, ld.src, if (own_src.len > 0) own_src else em.module_name) catch break :blk r.message
+        else if (em.foreign_origin != null or em.src_path.len == 0) (if (own_src.len > 0) own_src else em.module_name) else em.src_path;
         break :blk std.fmt.allocPrint(ar, "{s} at {s}:{d}:{d}", .{ r.message, file, l.line, l.col }) catch return;
     } else if (em.missing_external) |m|
         std.fmt.allocPrint(ar, "a host-backed function with no wasm binding (`{s}`)", .{m.name}) catch return
@@ -4820,8 +4854,18 @@ const Emitter = struct {
 
     /// A lowering this backend refused: the located message the driver reports
     /// in place of the module. `message` is owned by the emitter's `alloc` and
-    /// handed to the diagnostic (`codegenEmit`).
-    pub const Refusal = struct { message: []u8, loc: ?ast.Loc };
+    /// handed to the diagnostic (`codegenEmit`). `loaded` (decisions 787, 792,
+    /// B-206) is set when the declaration being lowered is a `compiler.load()`-ed
+    /// package's own (`pkg`/`src`, borrowed from `self.loaded_pkg`/`self.src_path`,
+    /// alive for the rest of the emit): `loc` is then a real location in the
+    /// loaded package's own file, which `loadedDeclFile` decodes — never
+    /// `foreign_origin`'s site, which is the generated `run()` import's,
+    /// synthetic, and names no line the loaded package itself wrote.
+    pub const Refusal = struct {
+        message: []u8,
+        loc: ?ast.Loc,
+        loaded: ?struct { pkg: []const u8, src: []const u8 } = null,
+    };
 
     /// Where a `.gc` gap was met (decision 1097): a location in the file
     /// `src` names (the package-relative path of the declaration being
@@ -4837,14 +4881,27 @@ const Emitter = struct {
     /// Stop the emit at a construct this backend cannot lower: records the
     /// located message and answers the error every lowering path propagates.
     /// Written `return self.refuse(loc, "…", .{…})`.
+    ///
+    /// A declaration spliced in from a `compiler.load()`-ed package
+    /// (`self.loaded_pkg != null`, decisions 787, 792) still carries its own
+    /// real location on every node (`loc`, read off the loaded source) — it is
+    /// never "another module's code" the way an ordinary cross-module import
+    /// is, so it gets neither the suffix nor `foreign_origin`'s site, which
+    /// `comptime/load.zig`'s `withRunImports` only ever synthesises for the
+    /// generated `run()` import that reaches it (B-206).
     fn refuse(self: *Emitter, loc: ?ast.Loc, comptime f: []const u8, args: anytype) anyerror {
-        const message = if (self.foreign_origin != null)
+        const loaded = self.loaded_pkg != null and loc != null;
+        const message = if (self.foreign_origin != null and !loaded)
             std.fmt.allocPrint(self.alloc, f ++ " — in another module's code this line reaches", args) catch |err| return err
         else
             std.fmt.allocPrint(self.alloc, f, args) catch |err| return err;
         if (gc_debug) std.debug.print("REFUSE[{s}] {s} @{d}:{d}\n", .{ if (self.mode == .gc) "gc" else "lin", message, if (loc) |l| l.line else 0, if (loc) |l| l.col else 0 });
         if (self.refusal) |old| self.alloc.free(old.message);
-        self.refusal = .{ .message = message, .loc = self.foreign_origin orelse loc };
+        self.refusal = .{
+            .message = message,
+            .loc = if (loaded) loc else self.foreign_origin orelse loc,
+            .loaded = if (loaded) .{ .pkg = self.loaded_pkg.?, .src = self.src_path } else null,
+        };
         return error.WasmLoweringRefused;
     }
 
@@ -7389,28 +7446,8 @@ const Emitter = struct {
         try out.appendSlice(ar, why);
         if (func) |f| try out.print(ar, " in `{s}`", .{f});
         if (site.loc) |l| {
-            try out.appendSlice(ar, " at ");
-            // A loaded package's file is named by the package's own path
-            // (`cases/<case>/src/main.bp`): its name spells it
-            // (`load.packageName`).
-            if (site.pkg) |pkg| if (std.mem.startsWith(u8, pkg, @import("../comptime/load.zig").package_prefix)) {
-                const enc = pkg[@import("../comptime/load.zig").package_prefix.len..];
-                var i: usize = 0;
-                while (i < enc.len) {
-                    if (std.mem.startsWith(u8, enc[i..], "__")) {
-                        try out.append(ar, '/');
-                        i += 2;
-                    } else if (std.mem.startsWith(u8, enc[i..], "_x") and i + 4 <= enc.len) {
-                        try out.append(ar, std.fmt.parseInt(u8, enc[i + 2 .. i + 4], 16) catch '?');
-                        i += 4;
-                    } else {
-                        try out.append(ar, enc[i]);
-                        i += 1;
-                    }
-                }
-                try out.append(ar, '/');
-            };
-            try out.print(ar, "{s}:{d}:{d}", .{ if (site.src.len > 0) site.src else self.module_name, l.line, l.col });
+            const file = try loadedDeclFile(ar, site.pkg, site.src, self.module_name);
+            try out.print(ar, " at {s}:{d}:{d}", .{ file, l.line, l.col });
         }
         return out.items;
     }
