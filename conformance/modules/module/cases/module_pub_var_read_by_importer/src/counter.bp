@@ -1,0 +1,10 @@
+//// A module-level `pub var`, imported by name and read in another module:
+//// one value for the whole program (decision 547), so the importer reads what
+//// the owner's functions wrote. On erlang the reader `count/0` was not
+//// exported — the import read `undef` at run time (144 B-240).
+
+pub var count: i32 = 0;
+
+pub fn bump() -> void {
+    count = count + 1;
+}

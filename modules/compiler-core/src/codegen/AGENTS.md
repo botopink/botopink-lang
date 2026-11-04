@@ -1930,6 +1930,13 @@ codegen/
   reaches the declared one; a call of an imported val holding a fun applies
   what the reader answers). Before, the importer emitted the bare variable and
   the owner exported nothing — an unbound variable at compile time.
+  A module-level `pub var` is read the same way, `owner:name()`, its reader
+  the storage read `memoryVarForms` emits, so that reader is exported too;
+  before, only its `'__bp_priv__<name>'/0` wrapper was, and the importer's
+  read was `undef` at run time — what a decorator's executor stored in the
+  `var` (a `compiler.ast`-built closure among them) never reached the module
+  reading it (`conformance/modules/module/cases/module_pub_var_read_by_importer`,
+  144 B-240).
 - **Strings**: `+` over a `string` is binary concatenation, flattened into ONE
   construction — `a + b + c` → `<<"a", (b())/binary, C/binary>>` (`stringConcatNode`).
   `isStringExpr` decides: a string literal, a `+` chain with a string operand, a

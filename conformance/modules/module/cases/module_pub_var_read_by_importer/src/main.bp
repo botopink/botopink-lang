@@ -1,0 +1,17 @@
+pub mod counter;
+pub mod marks;
+import {counter.bump, counter.count};
+import {marks.component, marks.registered};
+import {io.terminal.print} from "std";
+
+#[component]
+pub type Widget(n: i32)
+
+pub fn main() -> void {
+    print(count.toString());
+    bump();
+    bump();
+    print(count.toString());
+    val f = registered;
+    if (f != null) print(f()) else print("not registered");
+}

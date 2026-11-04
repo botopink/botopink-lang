@@ -40,3 +40,7 @@ out b
 out 3.0
 == module_var_in_dependency
 out 2
+== module_pub_var_read_by_importer
+out 0
+out 2
+out checked:42

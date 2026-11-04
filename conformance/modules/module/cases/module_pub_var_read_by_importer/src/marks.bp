@@ -1,0 +1,26 @@
+//// B-240's shape: a decorator's executor stores a closure whose body is a
+//// `compiler.ast` tree calling the annotated type's member by name in this
+//// module's `pub var`; `main`, another module, reads the `var` and calls it.
+
+import {compiler, compiler.Call, compiler.Member, compiler.Name} from "std";
+
+pub var registered: ?fn() -> string = null;
+
+pub fn registerCheck(f: fn() -> string) -> void {
+    registered = f;
+}
+
+pub fn component(syntax decl: unknown) -> void {
+    val owner = compiler.name(decl)!;
+    compiler.addMember("pub fn make() -> "
+        + owner
+        + " { return "
+        + owner
+        + "(n: 42); }");
+    compiler.addMember("pub fn check() -> string { return \"checked:\" + "
+        + owner
+        + ".make().n.toString(); }");
+    compiler.init({ ->
+        registerCheck({ -> compiler.ast(Call(callee: Member(target: Name(owner), member: "check"), args: [])) });
+    });
+}

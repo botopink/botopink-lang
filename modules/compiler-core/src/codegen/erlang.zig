@@ -2347,9 +2347,12 @@ fn emitErlangModule(
     for (pub_fns.items) |f| try exports.append(b.arena, .{ .name = f.name, .arity = fnArityNoSelf(f) });
     // A module-level `pub val` is its 0-arity function (`top_vals`); another
     // module reads it as `owner:name()` (`imported_vals`), so it is exported
-    // like a `pub fn` (decision 140).
+    // like a `pub fn` (decision 140). A module-level `pub var` is read the
+    // same way — `owner:name()`, its 0-arity reader (`memoryVarForms`) — so
+    // its reader is exported too; without it an importing module's read is
+    // `undef` at run time (144 B-240).
     for (program.decls) |decl| switch (decl) {
-        .val => |v| if (v.isPub and !v.mutable and em.top_vals.contains(v.name)) {
+        .val => |v| if (v.isPub and (if (v.mutable) em.module_vars.contains(v.name) else em.top_vals.contains(v.name))) {
             try exports.append(b.arena, .{ .name = v.name, .arity = 0 });
         },
         else => {},

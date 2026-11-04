@@ -46,5 +46,6 @@ pub async fn main() -> Async<Result<void, string>> {
     runCase("module_named_like_its_package");
     runCase("module_val_call_init");
     runCase("module_var_in_dependency");
+    runCase("module_pub_var_read_by_importer");
     return candidate.finish(accepted, answers, adapter.target(), (comptime compiler.src()).root);
 }
