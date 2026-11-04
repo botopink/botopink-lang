@@ -19594,6 +19594,14 @@ const Emitter = struct {
         if (field_ty) |t| {
             if (isStringTypeRef(t)) try self.str_locals.put(n, {});
             if (isBoolTypeRef(t)) try self.bool_locals.put(n, {});
+            // `payloadFieldLocal` (the sibling binding for a nested pattern
+            // test over the same kind of field) always notes the field's own
+            // declared type; a plain name binding (`.Filled(item: i)`) did
+            // not, so `i`'s own optionality (`?string`) never reached
+            // `local_typerefs` and a `??` over it (`i ?? "?"`) found no
+            // optional to read (`optInfoOf`'s fallback). The tparam branch
+            // below still runs after and overrides this for a generic field.
+            try self.noteTypedBinder(n, t);
         }
         // The payload of a variant declared as one of the enum's type
         // parameters is typed by what the subject says it is: the argument of
@@ -27028,12 +27036,45 @@ const Emitter = struct {
         return taskValueTypeRef(t) orelse t;
     }
 
+    /// `array<Async<Result<T, E>>>` — `allOf`'s own `tasks` parameter shape:
+    /// already-started tasks (no thunk), each a COMPOSITE value naming every
+    /// one of the function's own type parameters somewhere in it, never a
+    /// bare `T` (`arrayThunkAsyncParam`'s and the plain-`T` branch below's own
+    /// shapes). Null for anything else, including a composite that leaves
+    /// one of its own arguments unbound by a type parameter.
+    fn arrayTaskCompositeParam(declared: ast.TypeRef, gps: []const ast.GenericParam) ?ast.TypeRef {
+        const el = arrayElemRef(declared) orelse return null;
+        const tv = taskValueTypeRef(el) orelse return null;
+        if (tv != .generic) return null;
+        for (tv.generic.args) |a| {
+            if (a != .named or !isGenericParamName(a.named, gps, &.{})) return null;
+        }
+        return tv;
+    }
+
+    /// The composite task value an array literal of already-started tasks
+    /// (`[slow(20, "x"), slow(1, "y")]`, `allOf`'s own shape) answers — its
+    /// first element's own task value, read the same way `arrayLitThunkTaskValue`
+    /// reads a thunk's.
+    fn arrayLitTaskCompositeValue(self: *Emitter, arg: ast.Expr) ?ast.TypeRef {
+        if (arg != .collection or arg.collection.kind != .arrayLit) return null;
+        const elems = arg.collection.kind.arrayLit.elems;
+        if (elems.len == 0) return null;
+        const t = self.typeRefOf(elems[0]) orelse return null;
+        return taskValueTypeRef(t);
+    }
+
     /// `await f(args)` of a generic `f` whose declared answer `v` names a
     /// type parameter inside a generic type (`@Result<T, string>`): `v` with
-    /// each parameter a plain-`T` argument binds written in, or — front 229
-    /// s3 — a parameter declared `array<fn() -> Async<T>>` (`runAll`'s own
-    /// `tasks`) binds `T` from the argument's own array-of-thunks shape, the
-    /// same walk `gcSpawnAllAnswers` applies to the callee's own tasks. Null
+    /// each parameter a plain-`T` argument binds written in, a bare `t:
+    /// @Async<T>` parameter bound by the argument's own task value (`wait<T>(t:
+    /// Async<T>) -> Async<T>`, a generic pass-through), or — front 229 s3 — a
+    /// parameter declared `array<fn() -> Async<T>>` (`runAll`'s own `tasks`)
+    /// binds `T` from the argument's own array-of-thunks shape, the same walk
+    /// `gcSpawnAllAnswers` applies to the callee's own tasks; a parameter
+    /// declared `array<Async<Result<T, E>>>` (`allOf`'s own shape: already
+    /// started tasks, each a composite value) binds every one of its type
+    /// parameters the same way, off the first element's own task value. Null
     /// when the call is no generic call, or nothing binds.
     fn bindAwaitedGeneric(self: *Emitter, call: ast.Expr, v: ast.TypeRef) ?ast.TypeRef {
         const cc = switch (call) {
@@ -27061,6 +27102,24 @@ const Emitter = struct {
             if (p.typeRef == .named and isGenericParamName(p.typeRef.named, f.genericParams, &.{})) {
                 const to: ast.TypeRef = if (self.concreteTypeOf(arg)) |c| .{ .named = c } else (self.typeRefOf(arg) orelse continue);
                 subs.append(ar, .{ .name = p.typeRef.named, .to = to }) catch return null;
+                continue;
+            }
+            // `t: @Async<T>` (`wait<T>(t: Async<T>) -> Async<T>`): `T` is the
+            // argument's own task value, not an array at all.
+            if (taskValueTypeRef(p.typeRef)) |want| if (want == .named and isGenericParamName(want.named, f.genericParams, &.{})) {
+                const at = self.typeRefOf(arg) orelse continue;
+                const to = taskValueTypeRef(at) orelse continue;
+                subs.append(ar, .{ .name = want.named, .to = to }) catch return null;
+                continue;
+            };
+            if (arrayTaskCompositeParam(p.typeRef, f.genericParams)) |composite| {
+                const at = self.arrayLitTaskCompositeValue(arg) orelse continue;
+                if (at == .generic and std.mem.eql(u8, at.generic.name, composite.generic.name) and at.generic.args.len == composite.generic.args.len) {
+                    for (composite.generic.args, at.generic.args) |pa, aa| {
+                        if (pa != .named) continue;
+                        subs.append(ar, .{ .name = pa.named, .to = aa }) catch return null;
+                    }
+                }
                 continue;
             }
             const pname = arrayThunkAsyncParam(p.typeRef) orelse continue;
@@ -33213,6 +33272,17 @@ const Emitter = struct {
             self.pending_case_want = want;
             defer self.pending_case_want = null;
             return self.lowerValue(e);
+        }
+        // A scalar into an `unknown` slot (a type parameter's, a generic
+        // field's — `Dict<i64, V>.insert`'s own key) goes in its box, as
+        // `emitConvert` already does for it; read directly, `lossyConversion`
+        // below answers true for ANY reference (`isWord`'s own default), so
+        // without this an `i64` boxed into `unknown` was refused outright as
+        // a narrowing — the module never even reached `emitConvert`'s own
+        // correct boxing.
+        if (self.mode == .gc and !from.isRef() and want == .ref and want.ref == .unknown) {
+            try self.lowerValue(e);
+            return self.gcBox(from);
         }
         // A float or an `i64` asked for as a narrower word would be truncated
         // or wrapped (`i32.trunc_f64_s`, `i32.wrap_i64`) — a different number

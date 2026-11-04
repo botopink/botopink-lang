@@ -4630,6 +4630,48 @@ test "wat: gc ---- a for-loop element's field awaited through a generic host cal
     );
 }
 
+// Front 170 s7 P5-a's full re-measure (2026-11-04) found "an awaited task of
+// a type parameter" still hit two members `bindAwaitedGeneric` never covered
+// — neither a `Component<T>` (B-209/1102's own trigger), both plain generic
+// functions: `allOf<T, E>(tasks: array<Async<Result<T, E>>>)` binds a
+// COMPOSITE task value (`Result<T, E>`, not a bare `T`), off an array of
+// already-started tasks (no thunk, `arrayThunkAsyncParam`'s own shape); and
+// `wait<T>(t: Async<T>) -> Async<T>` is a bare `@Async<T>` parameter with no
+// array at all. `arrayTaskCompositeParam` / `arrayLitTaskCompositeValue` and a
+// new `taskValueTypeRef(p.typeRef)` branch cover each.
+test "wat: gc ---- an awaited generic call binds T through a composite task value or a bare Async<T> parameter" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\async fn greet(name: string) -> Async<string> {
+        \\    return "hi " + name;
+        \\}
+        \\async fn wait<T>(t: Async<T>) -> Async<T> {
+        \\    return await t;
+        \\}
+        \\async fn slow(millis: i32, value: string) -> Async<Result<string, string>> {
+        \\    return value;
+        \\}
+        \\fn show(label: string, r: Result<array<string>, string>) -> void {
+        \\    case r {
+        \\        Ok(xs) -> print(label + " ok " + xs.join(","));
+        \\        Error(e) -> print(label + " error " + e);
+        \\    }
+        \\}
+        \\async fn run() -> Async<void> {
+        \\    show("allOf", await async.allOf([slow(2, "x"), slow(1, "y")]));
+        \\    print(await wait(greet("world")));
+        \\}
+        \\pub async fn main() -> Async<void> {
+        \\    await run();
+        \\}
+        \\
+        \\import {async, io.terminal.print} from "std";
+    ,
+        \\allOf ok x,y
+        \\hi world
+        \\
+    );
+}
+
 // Front 229 s4 — decision 985's wasm half: a lambda argument of a method's
 // specialisation is written against the copy's substituted parameter types,
 // the method's own type parameter included (`fold<A>`'s `A` bound to `f64`
@@ -4884,6 +4926,34 @@ test "wat: gc ---- a u64 in a tuple in a type parameter's slot prints unsigned" 
         \\Box(value: #(18446744073709551615, 1))
         \\true
         \\false
+        \\
+    );
+}
+
+// Front 170 s7 P5-a's full re-measure (2026-11-04) found "the wasm backend
+// would narrow this `i64` value to an `unknown` slot it does not fit" still
+// hit `i64_is_64_bit_everywhere-319`'s `i64_dict_key_across_safe_edge` case
+// — not front 229 s8 (which fixed a different gap under the same reason
+// text). `lowerCoerced` called `lossyConversion` directly, which answers
+// true for an `i64` into ANY reference repr (`isWord`'s own default), so an
+// `i64` key boxed into a `Dict<i64, V>`'s `unknown` slot was refused outright
+// before ever reaching `emitConvert`'s own correct `i64`-into-`unknown`
+// boxing (which `lowerCoerced` calls right after, had it gotten there).
+test "wat: gc ---- an i64 boxed into a generic container's unknown key slot" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\pub fn main() -> void {
+        \\    val below: i64 = 9007199254740991l;
+        \\    val d = Dict.empty().insert(below, "below").insert(below + 1l, "above");
+        \\    print(d.at(9007199254740991l) ?? "?");
+        \\    print(d.at(9007199254740992l) ?? "?");
+        \\    print(d.size());
+        \\}
+        \\
+        \\import {collections.Dict, io.terminal.print} from "std";
+    ,
+        \\below
+        \\above
+        \\2
         \\
     );
 }
@@ -8200,6 +8270,52 @@ test "wat: gc ---- `null ?? x`'s never-taken binder arm still type-checks in the
     ,
         \\0
         \\7
+        \\
+    );
+}
+
+// Front 170 s7 P5-a's full re-measure (2026-11-04) found "a binding over a
+// condition that is no optional" still hit `conformance/modules/case`'s
+// `case_payload_null_then_binder`, despite this reason's own P5-e fix above
+// (36→0). A third, narrower trigger: `bindPayloadName` (a `case` arm's
+// named-field binder, `.Filled(item: i)`) only calls `noteTypedBinder` for
+// the field's declared type inside its generic/type-parameter branch
+// (`tparamArgOf`) — a plain declared field type such as `?string` never
+// reached `local_typerefs` at all, so `optInfoOf(i)` (and `typeRefOf(i)`)
+// answered null and `i ?? "?"`'s binder-condition lowering (`lowerIfExpr`)
+// had nothing to read. `payloadFieldLocal`, the sibling function binding the
+// same kind of field for a nested pattern test, already called
+// `noteTypedBinder` unconditionally; `bindPayloadName` now does too.
+test "wat: gc ---- a case arm's named optional payload binder answers its own `??`" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\type Slot {
+        \\    Filled(item: ?string),
+        \\    Empty,
+        \\}
+        \\fn describe(s: Slot) -> string {
+        \\    return case s {
+        \\        .Filled(null) {
+        \\            "filled with nothing"
+        \\        }
+        \\        .Filled(item: i) {
+        \\            "filled with " + (i ?? "?")
+        \\        }
+        \\        .Empty {
+        \\            "empty"
+        \\        }
+        \\    };
+        \\}
+        \\pub fn main() -> void {
+        \\    print(describe(Slot.Filled(item: null)));
+        \\    print(describe(Slot.Filled(item: "a")));
+        \\    print(describe(Slot.Empty));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\filled with nothing
+        \\filled with a
+        \\empty
         \\
     );
 }

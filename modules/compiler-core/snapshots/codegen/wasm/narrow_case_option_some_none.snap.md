@@ -55,15 +55,13 @@ import {io.terminal.print} from "std";
   (import "std@__rt" "__ti_register" (func $__ti_register (param structref)))
   (import "std@__rt" "__write_bytes" (func $__write_bytes (param i32 i32)))
   (import "std@__rt" "__alloc" (func $__alloc (param i32) (result i32)))
-  (global $__cap (import "std@__rt" "__cap") (mut arrayref))
-  (global $__cap_depth (import "std@__rt" "__cap_depth") (mut i32))
+  (import "std@number" "wat:number.i32ToString" (func $__abi___std_number_i32ToString (param i32) (result arrayref)))
   (import "std@__rt" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") (import "std@__rt" "memory") 1)
   (global $__heap_ptr (import "std@__rt" "__heap_ptr") (mut i32))
   (func $describe (param $opt anyref) (result (ref null $str))
     (local $v i32)
     (local $__case_0 anyref)
-    (local $__gc0 (ref null $str))
     local.get $opt
     local.set $__case_0
     local.get $__case_0
@@ -90,12 +88,8 @@ import {io.terminal.print} from "std";
     struct.get $var_Opt_Some $f0
     local.set $v
     global.get $__s1
-    call $__cap_begin
-    local.set $__gc0
     local.get $v
-    call $__print_i32_raw
-    local.get $__gc0
-    call $__cap_end
+    call $__std_number_i32ToString
     call $__str_concat
       )
       (else
@@ -454,32 +448,10 @@ import {io.terminal.print} from "std";
     array.copy $str $str
     local.get $r
   )
-  (func $__cap_begin (result (ref null $str))
-    (local $o (ref null $str))
-    global.get $__cap
+  (func $__std_number_i32ToString (param $p0 i32) (result (ref null $str))
+    local.get $p0
+    call $__abi___std_number_i32ToString
     ref.cast (ref null $str)
-    local.set $o
-    i32.const 0
-    array.new_default $str
-    global.set $__cap
-    global.get $__cap_depth
-    i32.const 1
-    i32.add
-    global.set $__cap_depth
-    local.get $o
-  )
-  (func $__cap_end (param $o (ref null $str)) (result (ref null $str))
-    (local $s (ref null $str))
-    global.get $__cap
-    ref.cast (ref null $str)
-    local.set $s
-    local.get $o
-    global.set $__cap
-    global.get $__cap_depth
-    i32.const 1
-    i32.sub
-    global.set $__cap_depth
-    local.get $s
   )
   (data $__d0 "empty")
   (global $__s0 (mut (ref null $str)) (ref.null $str))
