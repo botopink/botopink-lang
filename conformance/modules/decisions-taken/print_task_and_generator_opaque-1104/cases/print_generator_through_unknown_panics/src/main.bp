@@ -1,0 +1,23 @@
+//// Decision 1104 — a generator (`AsyncIter<T>`) reached through a generic
+//// parameter the call binds to one is `print`ed through the `unknown` slot's
+//// dynamic case: the same named panic on every target, caught here by
+//// `failure.attempt` so its exact message is the thing compared, not an
+//// uncaught process exit.
+
+import {failure, failure.Failure, io.terminal.print} from "std";
+
+async iter fn mkIter() -> AsyncIter<i32> {
+    yield 1;
+}
+
+fn show<T>(x: T) -> void {
+    print(x);
+}
+
+pub async fn main() -> Async<void> {
+    val it = mkIter();
+    case failure.attempt({ -> show(it) }) {
+        Ok(_) -> print("printed");
+        Error(f) -> print(f.kind + ": " + f.message);
+    }
+}

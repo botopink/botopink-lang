@@ -1,0 +1,9 @@
+botopink-cell 2
+== print_task_refused_at_build
+refused error: print-task: `print` of a task (`Async<i32>`) — printing one observes scheduling state erlang and beam cannot report
+at src/main.bp:13:11
+== print_generator_refused_at_build
+refused error: print-generator: `print` of a generator (`AsyncIter<i32>`) — printing one observes scheduling state erlang and beam cannot report
+at src/main.bp:12:11
+== print_generator_through_unknown_panics
+out panic: wasm cannot print a generator value dynamically yet

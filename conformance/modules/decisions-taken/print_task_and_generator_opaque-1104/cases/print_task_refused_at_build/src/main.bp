@@ -1,0 +1,14 @@
+//// Decision 1104 — `print` of a value whose static type is a task (`Async<T>`)
+//// is refused at build, naming the type and the call (`print-task`): printing
+//// one observes scheduling state erlang and beam cannot report, so no fixed
+//// text would be honest on every target.
+
+import {io.terminal.print} from "std";
+
+async fn mk() -> Async<i32> {
+    return 1;
+}
+
+pub async fn main() -> Async<void> {
+    print(mk());
+}

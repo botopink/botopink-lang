@@ -1,0 +1,13 @@
+//// Decision 1104 — `print` of a value whose static type is a generator
+//// (`AsyncIter<T>`) is refused at build, naming the type and the call
+//// (`print-generator`).
+
+import {io.terminal.print} from "std";
+
+async iter fn mkIter() -> AsyncIter<i32> {
+    yield 1;
+}
+
+pub async fn main() -> Async<void> {
+    print(mkIter());
+}
