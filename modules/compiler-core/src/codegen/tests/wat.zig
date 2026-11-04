@@ -7536,3 +7536,47 @@ test "wat: gc ---- a loaded package's refusal is located in its own file, never 
     }
     return error.ModuleDidNotCompile;
 }
+
+// Front 170 s7 P5-d — P5-a's biggest measured reason, "an empty array
+// literal of no known type" (re-measured after this piece's two earlier
+// sub-fixes landed: 301 -> 366 occurrences, library-only, every one at a
+// GUI library's own leaf-element constructor, whose field's declared type
+// is that library's own alias: a union some of whose members are arrays,
+// decision 150's own shape for such a union). The fix is generic, not keyed
+// on that library's own name for its alias (229 s9's "a bare name never
+// decides it" — a type the program happens to name one way gets no special
+// reading, only what every union of this shape gets): `type Kids = Node[]
+// | string;` used as a record field's declared type, an empty array
+// literal given where the field wants `Kids`.
+// `gcReprOfType` had no case for a union type at all (`unionMembers`, after
+// resolving any alias naming one through `self.type_aliases` /
+// `aliasErase.expandOuter`, the same resolution `gcExpandResultAliasReturns`
+// already applies to a return alias) and fell through to the bare word
+// `watType` defaults every unmatched shape to, so `gcRecordCtor`'s field
+// repr for `children: []` was `.i32` and the empty literal's own `gc_want`
+// was never an array reference — `gcArrayLit`'s empty-elems branch had
+// nothing to take a class from and fell back to the deleted linear
+// lowering. A union with an array member now reads as the `anyref` array
+// decision 150's union ARRAY LITERALS already build, so the field repr IS
+// an array reference and the empty literal closes against it.
+test "wat: gc ---- an empty array literal into a field typed by an alias of a union-with-an-array resolves decision 150's slot (front 170 s7 P5-d)" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\pub type Node(tag: string)
+        \\pub type Kids = Node[] | string;
+        \\pub type Branch(tag: string, kids: Kids)
+        \\
+        \\pub fn leaf(tag: string) -> Branch {
+        \\    return Branch(tag: tag, kids: []);
+        \\}
+        \\
+        \\pub fn main() -> void {
+        \\    val b = leaf("x");
+        \\    print(b.tag);
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\x
+        \\
+    );
+}

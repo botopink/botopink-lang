@@ -7654,9 +7654,39 @@ const Emitter = struct {
         return aliasErase.substitute(self.arena(), alias.target, alias.genericParams, args) catch null;
     }
 
+    /// Decision 150 — `t0` (an alias of `self.type_aliases` expanded to its
+    /// target first, through `aliasErase.expandOuter`, exactly as
+    /// `gcExpandResultAliasReturns` reads a return alias) is a union type
+    /// (`unionMembers`) at least one of whose members is an array: the
+    /// `anyref` array a union array literal already builds. Null for
+    /// anything else, including a union with no array member at all.
+    fn gcUnionArrayRepr(self: *Emitter, t0: ast.TypeRef) ?Repr {
+        const resolved = aliasErase.expandOuter(self.arena(), t0, &self.type_aliases) orelse t0;
+        const members = eagerTypeRef(resolved).unionMembers() orelse return null;
+        for (members) |m| if (arrayElemTypeRef(eagerTypeRef(m)) != null) return .{ .ref = .{ .arr = .any } };
+        return null;
+    }
+
     /// The reference a GC module holds a value of type `t0` as, null for a
     /// scalar and for a type with no GC form here.
     fn gcReprOfType(self: *Emitter, t0: ast.TypeRef) ?Repr {
+        // Front 170 s7 P5-d, reason "an empty array literal of no known
+        // type"'s union/coercion residual — a union type some of whose
+        // members are arrays (`Node[] | string`, written bare or through any
+        // alias naming such a union — `type Kids = Node[] | string;` —
+        // resolved the same way `gcExpandResultAliasReturns` resolves a
+        // return alias, `self.type_aliases` / `aliasErase.expandOuter`)
+        // takes decision 150's union-array repr: every slot the same
+        // `anyref` array a union array LITERAL already builds
+        // (`gcArrayLit`'s `union_elems` branch), each element its own box or
+        // reference. The decision is the union's own members, never a
+        // type's name (229 s9's "a bare name never decides it" — a type the
+        // program happens to call `Children` gets no reading here a type of
+        // the same shape under any other name would not also get). Checked
+        // before `eagerTypeRef` peels an effect wrapper: a union is never
+        // one, so this only ever widens what the switch below would
+        // otherwise answer for a plain named type with no case of its own.
+        if (self.gcUnionArrayRepr(t0)) |r| return r;
         // Front 164 s2 P4 — a task is a `$task`, whatever it settles with.
         if (isTaskTypeRef(t0)) return .{ .ref = .task };
         const t = eagerTypeRef(t0);
@@ -9912,6 +9942,15 @@ const Emitter = struct {
             .str => try self.lowerCoerced(value, Repr.string),
             .ref => {
                 var r = self.wasmTypeOf(value);
+                // Front 170 s7 P5-d — an empty array literal boxed into a
+                // declared union has nothing of its own a plain expression
+                // reading (`gcReprOfExpr`) can answer, but the slot's own
+                // declared type may still name an array member
+                // (`gcUnionArrayRepr`, decision 150): read the class from
+                // there before falling back to the refusal below.
+                if (!r.isRef() and isEmptyArrayLit(value)) if (hint) |h| if (self.gcUnionArrayRepr(h)) |ar| {
+                    r = ar;
+                };
                 if (!r.isRef()) r = self.gcReprOfExpr(value) orelse return self.gcFail("a value of no GC reference as an unknown");
                 if (r == .ref and (r.ref == .bytes or r.ref == .cell or r.ref == .bigint)) return self.gcFail("a value with no unknown form");
                 try self.lowerCoerced(value, r);
@@ -27968,7 +28007,22 @@ const Emitter = struct {
     fn lowerBoxedInto(self: *Emitter, target: ?ast.TypeRef, value: ast.Expr) anyerror!void {
         if (self.mode == .gc) {
             const t = target orelse return self.gcFail("a box into no declared type");
-            if (isUnknownTypeRef(t)) return self.lowerAsUnknown(value);
+            if (isUnknownTypeRef(t)) {
+                // Front 170 s7 P5-d — only a union some of whose members are
+                // arrays (`gcUnionArrayRepr`) carries itself as `gcAsUnknown`'s
+                // `hint`, exactly as a `case` arm's box already does
+                // (`self.arm_box_as`/`caseArmBoxType`): an empty array
+                // literal with nothing of its own to answer a shape from
+                // (`gcReprOfExpr`) still has the declared union to read one
+                // from. The bare `unknown` target (no union, `gcUnionArrayRepr`
+                // null) sets no hint at all, as before `box_as`
+                // (`elemBoxOfTypeRef`'s very first check answers `.as_is` for
+                // ANY hint naming `unknown` — including itself — which would
+                // wrongly force every plain scalar argument's `.ref` kind
+                // instead of its own `i32_`/`f64_`/`bool_`/`str`).
+                if (self.gcUnionArrayRepr(t) != null) self.box_as = t;
+                return self.lowerAsUnknown(value);
+            }
             // A generic constructor over a union argument: its payloads are
             // boxed whatever the slot (`gcGenericArg`).
             if (self.ctorUnionArgs(t, value) != null) {
