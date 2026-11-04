@@ -8855,3 +8855,35 @@ test "wat: gc ---- a tuple literal's null optional slot is absent (144 B-246)" {
         \\
     );
 }
+
+// 144 B-252 — `mk<R>(f: fn() -> R) -> R[]` over `{ -> true }`: the lambda's
+// declared answer names `R`, a type parameter nothing binds at the lambda's
+// own emission (`gcSigRepr(rt, null)` rightly answers null for it), so
+// `gcEmitLifted`'s `ret` fell back to `tail_type` (`lambdaTailType`) — which
+// read the bare `true` tail as a plain `i32`, like `wasmTypeOf` reads any
+// bool everywhere else, with only `isBoolExpr` saying otherwise. The tail
+// boxed as `$box_i32`, and `__unk_print_q`'s `$box_bool` arm (checked first)
+// never matched a dynamically `$box_i32` value, so the array printed `[1]`
+// on wasm — both GC and the linear fallback (`printShapeOf`'s own `mapAll`-
+// shaped heuristic has no case for a zero-argument thunk, so a linear build
+// defaults to `.i32` too, by the same gap one level up) — never `[true]`,
+// which erlang and commonJS always answered. `lambdaTailType` now asks
+// `isBoolExpr` of the tail before falling back to `wasmTypeOf`'s plain
+// `i32`, so the lambda boxes `$box_bool` and the array prints `[true]`.
+test "wat: gc ---- a generic fn's unbound return type reads a bool tail's own box (144 B-252)" {
+    try h.assertWasmGcRunLog(std.testing.allocator,
+        \\fn mk<R>(f: fn() -> R) -> R[] {
+        \\    return [f()];
+        \\}
+        \\pub fn main() -> void {
+        \\    print(mk({ -> true }));
+        \\    print(mk({ -> 7 }));
+        \\}
+        \\
+        \\import {io.terminal.print} from "std";
+    ,
+        \\[true]
+        \\[7]
+        \\
+    );
+}

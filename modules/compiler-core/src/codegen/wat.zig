@@ -22824,10 +22824,34 @@ const Emitter = struct {
         }
     }
 
+    /// The expression `lambdaTailType` reads the type of: the tail
+    /// statement's own expression, or the value of a trailing `return`. Null
+    /// for an empty body or a value-less `return` — there `lambdaTailType`
+    /// answers `.i32` with nothing to ask `isBoolExpr` about.
+    fn lambdaTailExpr(body: []const ast.Stmt) ?ast.Expr {
+        if (body.len == 0) return null;
+        const last = body[ast.lastRealIndex(body)].expr;
+        return switch (last) {
+            .jump => |j| switch (j.kind) {
+                .@"return" => |r| if (r) |v| v.* else null,
+                else => null,
+            },
+            else => last,
+        };
+    }
+
     /// The wasm type an inlined lambda body leaves (its tail, or the value of a
     /// trailing `return`).
     fn lambdaTailType(self: *Emitter, body: []const ast.Stmt) Repr {
         if (body.len == 0) return .i32;
+        // A bool tail — `true`, `false`, a comparison, `!x`, a bound bool
+        // local or field — reads as a plain `i32` below like any other
+        // word: only `isBoolExpr` says it is a `bool`. Unchecked, a generic
+        // fn's unbound return type (`gcSigRepr` answers null for it) fell
+        // back to this answer and boxed a `true` tail as `$box_i32`, which
+        // the printer read back as `1`, never `true` (144 B-252:
+        // `mk<R>(f: fn() -> R) -> R[]` called `mk({ -> true })`).
+        if (lambdaTailExpr(body)) |te| if (self.isBoolExpr(te)) return .bool;
         const idx = ast.lastRealIndex(body);
         const last = body[idx].expr;
         return switch (last) {
@@ -25802,7 +25826,8 @@ const Emitter = struct {
         const tail_type: ?Repr = if (l.body.len > 0) self.lambdaTailType(l.body) else null;
         const ret: Repr = if (l.ret_ft) |rt|
             // A declared answer naming a type parameter nothing binds here
-            // (`attempt<T>(f: fn() -> T)`): the body's own, in its box.
+            // (`attempt<T>(f: fn() -> T)`): the body's own, in its box —
+            // `tail_type` (`lambdaTailType`), bool-aware since 144 B-252.
             (self.gcSigRepr(rt, null) orelse tail_type orelse return self.gcFail("a lambda answer of a type with no repr"))
         else if (l.ret_seen) |rs|
             rs
